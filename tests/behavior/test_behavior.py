@@ -8,6 +8,7 @@ import random
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
@@ -345,21 +346,78 @@ class BehaviorTests(unittest.IsolatedAsyncioTestCase):
             self.outcome = outcome
             if outcome == "timeout":
                 self.config = replace(self.config, send_timeout_seconds=.01)
+                loop = asyncio.get_running_loop()
+                tick = loop.time()
+                release = asyncio.Event()
+
                 async def timeout_sender(request):
+                    nonlocal tick
                     self.assertTrue(await request.authorize())
                     self.platform_calls.append(request)
-                    await asyncio.sleep(10)
+                    # Expire only after real authorization and synthetic dispatch.
+                    tick += .02
+                    # A later release makes a missing timeout fail, not hang.
+                    loop.call_at(tick, release.set)
+                    await release.wait()
+
                 service = self.new_service(sender=timeout_sender)
+                with patch.object(loop, "time", lambda: tick):
+                    result = await self.execute(f"i-{index}", context, service=service)
+                self.assertEqual(result.reason_codes, ("send_unavailable",))
             else:
                 service = self.service
-            result = await self.execute(f"i-{index}", context, service=service)
+                result = await self.execute(f"i-{index}", context, service=service)
             self.assertEqual(result.status, "unknown")
             self.assertFalse(result.receipt_recorded)
             self.assertEqual(await self.succeeded_events(context), [])
-            await self.execute(f"i-{index}", context, service=service)
+            self.assertEqual((await self.store.get_intent(context, f"i-{index}"))["status"],
+                             "unknown")
+            self.assertEqual((await self.execute(f"i-{index}", context, service=service)).status,
+                             "unknown")
         self.assertEqual(len(self.model_requests), 3)
         self.assertEqual(len(self.platform_calls), 3)
         self.assertEqual(await self.store.quota_usage(period="2026-11-05", pool="send"), 3)
+
+    async def test_timeout_during_authorization_is_unknown_without_dispatch(self):
+        self.config = replace(self.config, send_timeout_seconds=.01)
+        loop = asyncio.get_running_loop()
+        tick = loop.time()
+        authorizing = asyncio.Event()
+        guard_waiting = asyncio.Event()
+        authorized = asyncio.Event()
+        release = asyncio.Event()
+
+        async def pending_validation(request, materials):
+            nonlocal tick
+            if authorizing.is_set():
+                guard_waiting.set()
+                # Expire inside the real guard, before authorization can finish.
+                tick += .02
+                loop.call_at(tick, release.set)
+                await release.wait()
+
+        async def timeout_sender(request):
+            authorizing.set()
+            self.assertTrue(await request.authorize())
+            authorized.set()
+            self.platform_calls.append(request)
+
+        self.on_validate = pending_validation
+        service = self.new_service(sender=timeout_sender)
+        with patch.object(loop, "time", lambda: tick):
+            result = await self.execute(service=service)
+        self.assertTrue(guard_waiting.is_set())
+        self.assertFalse(authorized.is_set())
+        self.assertEqual(result.status, "unknown")
+        self.assertEqual(result.reason_codes, ("send_unavailable",))
+        self.assertFalse(result.receipt_recorded)
+        self.assertEqual((result.model_calls, result.sender_calls), (1, 1))
+        self.assertEqual((await self.store.get_intent(self.context, "i"))["status"], "unknown")
+        self.assertEqual(await self.succeeded_events(), [])
+        self.assertEqual((await self.execute(service=service)).status, "unknown")
+        self.assertEqual(len(self.model_requests), 1)
+        self.assertEqual(self.platform_calls, [])
+        self.assertEqual(await self.store.quota_usage(period="2026-11-05", pool="send"), 1)
 
     async def test_explicit_send_rejection_is_failed_not_succeeded(self):
         self.outcome = "rejected"
