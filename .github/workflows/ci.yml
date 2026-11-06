@@ -177,7 +177,31 @@ jobs:
           cache-dependency-path: astrbot_plugin_livingemotion/tests/ui/package-lock.json
       - name: Install locked test dependencies
         run: npm ci --prefix tests/ui --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org
+      - name: Use official Ubuntu mirrors with bounded downloads
+        run: |
+          sudo python3 - <<'PY'
+          from pathlib import Path
+
+          mirrors = Path("/etc/apt/apt-mirrors.txt")
+          sources = Path("/etc/apt/sources.list.d/ubuntu.sources")
+          if f"mirror+file:{mirrors}" not in sources.read_text():
+              raise RuntimeError("Expected Ubuntu mirror-list source is missing")
+          # Keep the runner's suites, components and signature configuration intact.
+          mirrors.write_text(
+              "https://archive.ubuntu.com/ubuntu/\tpriority:1\n"
+              "https://security.ubuntu.com/ubuntu/\tpriority:2\n"
+          )
+          Path("/etc/apt/apt.conf.d/zzzz-livingemotion-downloads").write_text(
+              'Acquire::http::Timeout "20";\n'
+              'Acquire::https::Timeout "20";\n'
+              'Acquire::Retries "1";\n'
+          )
+          print(mirrors.read_text(), end="")
+          PY
+          apt-config dump Acquire::Retries Acquire::http::Timeout Acquire::https::Timeout
       - name: Install matching Chromium and Linux system libraries
+        env:
+          PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: "60000"
         run: tests/ui/node_modules/.bin/playwright install --with-deps chromium
       - name: Rebuild the pinned local chart module
         run: npm --prefix tests/ui run build && git diff --exit-code -- pages/livingemotion/vendor/d3-force.mjs
