@@ -1,0 +1,864 @@
+{
+  "environment": {
+    "os": "darwin 24.6.0",
+    "arch": "arm64",
+    "node": "v25.6.0",
+    "browser": "156.0.8078.80"
+  },
+  "scope": "纯合成 fixture；无生产调用；不证明宿主鉴权与后端业务接线",
+  "cases": [
+    {
+      "name": "双主题 × 390/1280 × 七区布局、正文与控件对比度",
+      "passed": true
+    },
+    {
+      "name": "首帧系统偏好、手动持久化、存储失败仍切换与减少动效",
+      "passed": true
+    },
+    {
+      "name": "每页10条、筛选与刷新保留、主题不改业务或触发请求",
+      "passed": true
+    },
+    {
+      "name": "原生配置草稿、409冲突复核、保存仅发patch与版本",
+      "passed": true
+    },
+    {
+      "name": "键盘导航、详情、模拟、确认弹窗与unknown不重试",
+      "passed": true
+    },
+    {
+      "name": "恶意文本仅作为文字、私人正文与四类来源分型",
+      "passed": true
+    },
+    {
+      "name": "缺失/非法数值、空记录、接口失败、缺bridge均不伪造状态",
+      "passed": true
+    },
+    {
+      "name": "401/403及读取中认证失效清空私人视图与草稿",
+      "passed": true
+    },
+    {
+      "name": "未配置生成能力禁用；生产页面不载入fixture",
+      "passed": true
+    },
+    {
+      "name": "展开表单、私人正文、弹窗、空态与错误态双主题对比度",
+      "passed": true
+    },
+    {
+      "name": "跨页签同步主题、跟随系统变化、无效草稿跨分区仍阻止保存",
+      "passed": true
+    },
+    {
+      "name": "宿主通用主题属性不能覆盖页面偏好",
+      "passed": true
+    }
+  ],
+  "layouts": [
+    {
+      "width": 1280,
+      "theme": "light",
+      "section": "overview",
+      "scrollWidth": 1280,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 1280,
+      "theme": "light",
+      "section": "persona",
+      "scrollWidth": 1280,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 1280,
+      "theme": "light",
+      "section": "emotion",
+      "scrollWidth": 1280,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 1280,
+      "theme": "light",
+      "section": "behavior",
+      "scrollWidth": 1280,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 1280,
+      "theme": "light",
+      "section": "night",
+      "scrollWidth": 1280,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 1280,
+      "theme": "light",
+      "section": "experience",
+      "scrollWidth": 1280,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 1280,
+      "theme": "light",
+      "section": "memory",
+      "scrollWidth": 1280,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 1280,
+      "theme": "dark",
+      "section": "overview",
+      "scrollWidth": 1280,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 1280,
+      "theme": "dark",
+      "section": "persona",
+      "scrollWidth": 1280,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 1280,
+      "theme": "dark",
+      "section": "emotion",
+      "scrollWidth": 1280,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 1280,
+      "theme": "dark",
+      "section": "behavior",
+      "scrollWidth": 1280,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 1280,
+      "theme": "dark",
+      "section": "night",
+      "scrollWidth": 1280,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 1280,
+      "theme": "dark",
+      "section": "experience",
+      "scrollWidth": 1280,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 1280,
+      "theme": "dark",
+      "section": "memory",
+      "scrollWidth": 1280,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "section": "overview",
+      "scrollWidth": 390,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "section": "persona",
+      "scrollWidth": 390,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "section": "emotion",
+      "scrollWidth": 390,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "section": "behavior",
+      "scrollWidth": 390,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "section": "night",
+      "scrollWidth": 390,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "section": "experience",
+      "scrollWidth": 390,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "section": "memory",
+      "scrollWidth": 390,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "section": "overview",
+      "scrollWidth": 390,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "section": "persona",
+      "scrollWidth": 390,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "section": "emotion",
+      "scrollWidth": 390,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "section": "behavior",
+      "scrollWidth": 390,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "section": "night",
+      "scrollWidth": 390,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "section": "experience",
+      "scrollWidth": 390,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "section": "memory",
+      "scrollWidth": 390,
+      "navigationCount": 7,
+      "unnamed": 0,
+      "small": 0
+    }
+  ],
+  "contrast": [
+    {
+      "width": 1280,
+      "theme": "light",
+      "section": "overview",
+      "textMin": 5.836687208481632,
+      "controlMin": 3.670318687978071,
+      "focusMin": 4.908231499532905,
+      "textCount": 75,
+      "controlEdges": 17,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 1280,
+      "theme": "light",
+      "section": "persona",
+      "textMin": 5.836687208481632,
+      "controlMin": 3.670318687978071,
+      "focusMin": 4.908231499532905,
+      "textCount": 43,
+      "controlEdges": 17,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 1280,
+      "theme": "light",
+      "section": "emotion",
+      "textMin": 5.836687208481632,
+      "controlMin": 3.670318687978071,
+      "focusMin": 4.908231499532905,
+      "textCount": 283,
+      "controlEdges": 33,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 1280,
+      "theme": "light",
+      "section": "behavior",
+      "textMin": 5.836687208481632,
+      "controlMin": 3.670318687978071,
+      "focusMin": 4.908231499532905,
+      "textCount": 148,
+      "controlEdges": 37,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 1280,
+      "theme": "light",
+      "section": "night",
+      "textMin": 5.836687208481632,
+      "controlMin": 3.670318687978071,
+      "focusMin": 4.908231499532905,
+      "textCount": 54,
+      "controlEdges": 17,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 1280,
+      "theme": "light",
+      "section": "experience",
+      "textMin": 5.836687208481632,
+      "controlMin": 3.670318687978071,
+      "focusMin": 4.908231499532905,
+      "textCount": 129,
+      "controlEdges": 37,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 1280,
+      "theme": "light",
+      "section": "memory",
+      "textMin": 5.836687208481632,
+      "controlMin": 3.670318687978071,
+      "focusMin": 4.908231499532905,
+      "textCount": 46,
+      "controlEdges": 17,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 1280,
+      "theme": "dark",
+      "section": "overview",
+      "textMin": 7.945815552066019,
+      "controlMin": 4.836210254693734,
+      "focusMin": 6.34297748685158,
+      "textCount": 75,
+      "controlEdges": 17,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 1280,
+      "theme": "dark",
+      "section": "persona",
+      "textMin": 7.945815552066019,
+      "controlMin": 4.836210254693734,
+      "focusMin": 6.34297748685158,
+      "textCount": 43,
+      "controlEdges": 17,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 1280,
+      "theme": "dark",
+      "section": "emotion",
+      "textMin": 7.816941334647276,
+      "controlMin": 4.836210254693734,
+      "focusMin": 6.34297748685158,
+      "textCount": 283,
+      "controlEdges": 33,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 1280,
+      "theme": "dark",
+      "section": "behavior",
+      "textMin": 7.816941334647276,
+      "controlMin": 4.836210254693734,
+      "focusMin": 6.34297748685158,
+      "textCount": 148,
+      "controlEdges": 37,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 1280,
+      "theme": "dark",
+      "section": "night",
+      "textMin": 7.945815552066019,
+      "controlMin": 4.836210254693734,
+      "focusMin": 6.34297748685158,
+      "textCount": 54,
+      "controlEdges": 17,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 1280,
+      "theme": "dark",
+      "section": "experience",
+      "textMin": 7.816941334647276,
+      "controlMin": 4.836210254693734,
+      "focusMin": 6.34297748685158,
+      "textCount": 129,
+      "controlEdges": 37,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 1280,
+      "theme": "dark",
+      "section": "memory",
+      "textMin": 7.945815552066019,
+      "controlMin": 4.836210254693734,
+      "focusMin": 6.34297748685158,
+      "textCount": 46,
+      "controlEdges": 17,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "section": "overview",
+      "textMin": 5.836687208481632,
+      "controlMin": 3.670318687978071,
+      "focusMin": 4.908231499532905,
+      "textCount": 74,
+      "controlEdges": 17,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "section": "persona",
+      "textMin": 5.836687208481632,
+      "controlMin": 3.670318687978071,
+      "focusMin": 4.908231499532905,
+      "textCount": 42,
+      "controlEdges": 17,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "section": "emotion",
+      "textMin": 5.836687208481632,
+      "controlMin": 3.670318687978071,
+      "focusMin": 4.908231499532905,
+      "textCount": 282,
+      "controlEdges": 33,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "section": "behavior",
+      "textMin": 5.836687208481632,
+      "controlMin": 3.670318687978071,
+      "focusMin": 4.908231499532905,
+      "textCount": 147,
+      "controlEdges": 37,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "section": "night",
+      "textMin": 5.836687208481632,
+      "controlMin": 3.670318687978071,
+      "focusMin": 4.908231499532905,
+      "textCount": 53,
+      "controlEdges": 17,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "section": "experience",
+      "textMin": 5.836687208481632,
+      "controlMin": 3.670318687978071,
+      "focusMin": 4.908231499532905,
+      "textCount": 128,
+      "controlEdges": 37,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "section": "memory",
+      "textMin": 5.836687208481632,
+      "controlMin": 3.670318687978071,
+      "focusMin": 4.908231499532905,
+      "textCount": 45,
+      "controlEdges": 17,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "section": "overview",
+      "textMin": 7.945815552066019,
+      "controlMin": 4.836210254693734,
+      "focusMin": 6.34297748685158,
+      "textCount": 74,
+      "controlEdges": 17,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "section": "persona",
+      "textMin": 7.945815552066019,
+      "controlMin": 4.836210254693734,
+      "focusMin": 6.34297748685158,
+      "textCount": 42,
+      "controlEdges": 17,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "section": "emotion",
+      "textMin": 7.816941334647276,
+      "controlMin": 4.836210254693734,
+      "focusMin": 6.34297748685158,
+      "textCount": 282,
+      "controlEdges": 33,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "section": "behavior",
+      "textMin": 7.816941334647276,
+      "controlMin": 4.836210254693734,
+      "focusMin": 6.34297748685158,
+      "textCount": 147,
+      "controlEdges": 37,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "section": "night",
+      "textMin": 7.945815552066019,
+      "controlMin": 4.836210254693734,
+      "focusMin": 6.34297748685158,
+      "textCount": 53,
+      "controlEdges": 17,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "section": "experience",
+      "textMin": 7.816941334647276,
+      "controlMin": 4.836210254693734,
+      "focusMin": 6.34297748685158,
+      "textCount": 128,
+      "controlEdges": 37,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "section": "memory",
+      "textMin": 7.945815552066019,
+      "controlMin": 4.836210254693734,
+      "focusMin": 6.34297748685158,
+      "textCount": 45,
+      "controlEdges": 17,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "component": "expanded-form-and-editor",
+      "textMin": 5.836687208481632,
+      "controlMin": 3.3984825346907575,
+      "focusMin": 4.908231499532905,
+      "textCount": 299,
+      "controlEdges": 53,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "component": "private-body-and-source",
+      "textMin": 5.836687208481632,
+      "controlMin": 3.670318687978071,
+      "focusMin": 4.908231499532905,
+      "textCount": 154,
+      "controlEdges": 45,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "component": "action-dialog",
+      "textMin": 5.836687208481632,
+      "controlMin": 3.670318687978071,
+      "focusMin": 4.908231499532905,
+      "textCount": 67,
+      "controlEdges": 37,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "component": "loading",
+      "textMin": 5.836687208481632,
+      "controlMin": 3.670318687978071,
+      "focusMin": 4.908231499532905,
+      "textCount": 31,
+      "controlEdges": 17,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "component": "empty",
+      "textMin": 5.836687208481632,
+      "controlMin": 3.670318687978071,
+      "focusMin": 4.908231499532905,
+      "textCount": 73,
+      "controlEdges": 33,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "component": "records-error",
+      "textMin": 5.836687208481632,
+      "controlMin": 3.670318687978071,
+      "focusMin": 4.908231499532905,
+      "textCount": 71,
+      "controlEdges": 29,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "component": "unauthorized",
+      "textMin": 5.836687208481632,
+      "controlMin": 3.670318687978071,
+      "focusMin": 4.908231499532905,
+      "textCount": 32,
+      "controlEdges": 17,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "light",
+      "component": "refresh-error",
+      "textMin": 5.836687208481632,
+      "controlMin": 3.670318687978071,
+      "focusMin": 4.908231499532905,
+      "textCount": 75,
+      "controlEdges": 17,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "component": "expanded-form-and-editor",
+      "textMin": 6.8766495597479285,
+      "controlMin": 3.7556523506832455,
+      "focusMin": 6.34297748685158,
+      "textCount": 299,
+      "controlEdges": 53,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "component": "private-body-and-source",
+      "textMin": 7.816941334647276,
+      "controlMin": 4.836210254693734,
+      "focusMin": 6.34297748685158,
+      "textCount": 154,
+      "controlEdges": 45,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "component": "action-dialog",
+      "textMin": 7.816941334647276,
+      "controlMin": 4.269188627913331,
+      "focusMin": 6.34297748685158,
+      "textCount": 67,
+      "controlEdges": 37,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "component": "loading",
+      "textMin": 7.816941334647276,
+      "controlMin": 4.836210254693734,
+      "focusMin": 6.34297748685158,
+      "textCount": 31,
+      "controlEdges": 17,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "component": "empty",
+      "textMin": 7.816941334647276,
+      "controlMin": 4.836210254693734,
+      "focusMin": 6.34297748685158,
+      "textCount": 73,
+      "controlEdges": 33,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "component": "records-error",
+      "textMin": 7.945815552066019,
+      "controlMin": 4.836210254693734,
+      "focusMin": 6.34297748685158,
+      "textCount": 71,
+      "controlEdges": 29,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "component": "unauthorized",
+      "textMin": 7.945815552066019,
+      "controlMin": 4.836210254693734,
+      "focusMin": 6.34297748685158,
+      "textCount": 32,
+      "controlEdges": 17,
+      "failures": [],
+      "borderFailures": []
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "component": "refresh-error",
+      "textMin": 7.945815552066019,
+      "controlMin": 4.836210254693734,
+      "focusMin": 6.34297748685158,
+      "textCount": 75,
+      "controlEdges": 17,
+      "failures": [],
+      "borderFailures": []
+    }
+  ],
+  "pageErrors": [],
+  "externalRequests": [],
+  "screenshots": [
+    "1280-light-overview.png",
+    "1280-dark-overview.png",
+    "390-light-overview.png",
+    "390-light-emotion.png",
+    "390-dark-overview.png",
+    "390-dark-emotion.png",
+    "390-light-private-reading.png",
+    "390-dark-private-reading.png"
+  ],
+  "source_sha256": {
+    "index.html": "86992beaea88e3c0a4dbf098b523e2ceda5798e4d6c05b002aa1f32ad3f07f22",
+    "theme.js": "17631d5300afc8cfa633a86a33557bc8aded9ce485e234984041eb9186299d1a",
+    "style.css": "c95bb5774ced9885b18b05d1b41cda3a1aa2648e1fbd4191b38c62f7b07f33df",
+    "app.mjs": "479b8f1beafb19f10af284396e9fd445325cac6d1ce330f379918b90d948167a",
+    "api.mjs": "b69bf468c95d006d92bbfedf3db8474eee6197aa816a6d06bf2f04023062c1aa",
+    "model.mjs": "9a7c81fd1a4c554fc61cba3b94aa96343b55332b1cce468b0efebea3b183919d"
+  },
+  "passed": true
+}

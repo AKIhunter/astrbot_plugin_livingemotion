@@ -1,0 +1,25 @@
+name: astrbot_plugin_livingemotion
+display_name: livingEmotion
+short_desc: 基于原生人格的 Bot 感受、关系与作息，长期记忆可选。
+desc: >-
+  独立实现 Bot 感受、对方观察、关系、长夜与私人日记梦境。
+  提供极简白昼/黑夜管理页；默认 active，自主、日记、梦和外部写入分别启用。
+  0.1.0 冻结候选已完成固定宿主本地分层验收，尚未发布或生产部署。
+help: >-
+  从 AstrBot 插件页打开 livingemotion，先检查健康与能力再运行无费用模拟。
+  le_wake 用于叫醒，指令前缀以宿主配置为准；配置、迁移 CLI 与限制见 README。
+version: 0.1.0
+author: AKIhunter
+# PRIVATE repository; use authenticated access. Commits and CI are recorded in GitHub.
+repo: https://github.com/AKIhunter/astrbot_plugin_livingemotion
+# Conservative version gate, not a full acceptance claim; see docs/compatibility.md.
+astrbot_version: "==4.29.4"
+social_link: https://github.com/AKIhunter
+tags:
+  - 情绪
+  - 原生人格
+  - 作息
+  - WebUI
+views:
+  - name: livingemotion
+    description: Bot 状态、关系、作息与私人体验管理

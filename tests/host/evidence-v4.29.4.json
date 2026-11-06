@@ -1,0 +1,441 @@
+{
+  "checks": [
+    {
+      "name": "core_initialized",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "no_configured_providers",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "only_builtin_local_platforms",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "StarTools_data_root",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "fixture_loaded_by_real_plugin_manager",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "fixture_initialized",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "reload_1",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "reload_2",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "reload_3",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "one_fixture_task_after_reload",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "web_routes_replaced_after_reload",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "event_bot_and_route",
+      "passed": true,
+      "category": "real_class_synthetic_input"
+    },
+    {
+      "name": "persona_config",
+      "passed": true,
+      "category": "real_class_synthetic_input"
+    },
+    {
+      "name": "persona_conversation",
+      "passed": true,
+      "category": "real_class_synthetic_input"
+    },
+    {
+      "name": "persona_forced",
+      "passed": true,
+      "category": "real_class_synthetic_input"
+    },
+    {
+      "name": "persona_explicit_none",
+      "passed": true,
+      "category": "real_class_synthetic_input"
+    },
+    {
+      "name": "missing_provider_fail_closed",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "real_loopback_http_started",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "anonymous_401:/api/plug/livingemotion_host_probe/status",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "anonymous_401:/api/v1/plugins/extensions/livingemotion_host_probe/status",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "anonymous_401:/api/v1/plugins/livingemotion_host_probe/views/probe",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "anonymous_401:/api/plugin/page/bridge-sdk.js",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "anonymous_write_401",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "invalid_token_401",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "real_login_success",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "authenticated_200:/api/plug/livingemotion_host_probe/status",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "authenticated_200:/api/v1/plugins/extensions/livingemotion_host_probe/status",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "guard_dashboard_pass:GET:/api/plug/livingemotion_host_probe/guarded",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "guard_dashboard_pass:POST:/api/plug/livingemotion_host_probe/guarded",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "guard_dashboard_pass:GET:/api/v1/plugins/extensions/livingemotion_host_probe/guarded",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "guard_dashboard_pass:POST:/api/v1/plugins/extensions/livingemotion_host_probe/guarded",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "native_plugin_request_json",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "page_entry_200",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "scoped_page_asset_200",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "scoped_bridge_sdk_200",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "asset_token_rejected:/api/plug/livingemotion_host_probe/status",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "asset_token_rejected:/api/v1/plugins/extensions/livingemotion_host_probe/status",
+      "passed": false,
+      "category": "real_host"
+    },
+    {
+      "name": "asset_token_rejected_for_write",
+      "passed": false,
+      "category": "real_host"
+    },
+    {
+      "name": "guard_asset_rejected:GET:/api/plug/livingemotion_host_probe/guarded",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "guard_asset_rejected:POST:/api/plug/livingemotion_host_probe/guarded",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "guard_asset_rejected:GET:/api/v1/plugins/extensions/livingemotion_host_probe/guarded",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "guard_asset_rejected:POST:/api/v1/plugins/extensions/livingemotion_host_probe/guarded",
+      "passed": true,
+      "category": "real_host"
+    },
+    {
+      "name": "guard_rejected:oauth_typed",
+      "passed": true,
+      "category": "real_http_synthetic_token"
+    },
+    {
+      "name": "guard_rejected:oauth_untyped_scope",
+      "passed": true,
+      "category": "real_http_synthetic_token"
+    },
+    {
+      "name": "guard_rejected:oauth_auth_source",
+      "passed": true,
+      "category": "real_http_synthetic_token"
+    },
+    {
+      "name": "guard_rejected:forged_signature",
+      "passed": true,
+      "category": "real_http_synthetic_token"
+    },
+    {
+      "name": "guard_rejected:expired",
+      "passed": true,
+      "category": "real_http_synthetic_token"
+    },
+    {
+      "name": "terminate_stops_fixture_task",
+      "passed": true,
+      "category": "real_host"
+    }
+  ],
+  "host_head": "61335414433db721b3f7ecc93f90deafe0a59d78",
+  "runtime": "3.12.16 (main, Oct 26 2026, 13:59:40) [Clang 23.1.3 ]",
+  "started_unix": 1793893844.3735812,
+  "packages": {
+    "APScheduler": "3.11.3",
+    "Deprecated": "3.0.1",
+    "Flask": "3.1.3",
+    "Hypercorn": "0.18.0",
+    "Jinja2": "3.1.6",
+    "MarkupSafe": "3.0.4",
+    "PyJWT": "2.15.1",
+    "PyOTP": "2.10.0",
+    "PySocks": "1.7.1",
+    "PyYAML": "6.0.3",
+    "Pygments": "2.21.0",
+    "Quart": "0.22.0",
+    "SQLAlchemy": "2.1.8",
+    "Werkzeug": "3.1.9",
+    "aiocqhttp": "1.4.4",
+    "aiodocker": "0.27.0",
+    "aiofiles": "25.1.0",
+    "aiohappyeyeballs": "2.7.1",
+    "aiohttp": "3.14.5",
+    "aiosignal": "1.4.0",
+    "aiosqlite": "0.22.1",
+    "annotated-doc": "0.0.5",
+    "annotated-types": "0.8.0",
+    "anthropic": "2.5.0",
+    "anyio": "4.16.0",
+    "attrs": "26.1.0",
+    "beautifulsoup4": "4.15.0",
+    "blinker": "1.9.0",
+    "certifi": "2026.10.23",
+    "cffi": "2.1.1",
+    "chardet": "5.1.0",
+    "charset-normalizer": "3.5.2",
+    "click": "8.5.0",
+    "cobble": "0.1.4",
+    "cryptography": "50.0.2",
+    "dashscope": "2.0.3",
+    "defusedxml": "0.7.1",
+    "dingtalk-stream": "0.24.3",
+    "distro": "1.9.0",
+    "docstring_parser": "0.18.0",
+    "et_xmlfile": "2.0.0",
+    "faiss-cpu": "1.15.1",
+    "fastapi": "0.162.0",
+    "filelock": "4.2.9",
+    "filetype": "1.2.0",
+    "frozenlist": "1.8.0",
+    "google-auth": "2.62.1",
+    "google-genai": "2.34.0",
+    "greenlet": "3.5.6",
+    "h11": "0.16.0",
+    "h2": "4.4.1",
+    "hpack": "4.2.0",
+    "httpcore": "1.0.9",
+    "httpcore2": "2.16.0",
+    "httpx": "0.28.1",
+    "httpx-sse": "0.4.3",
+    "httpx2": "2.16.0",
+    "hyperframe": "6.1.0",
+    "idna": "3.20",
+    "itsdangerous": "2.2.0",
+    "jieba": "0.42.1",
+    "jiter": "0.18.0",
+    "jsonschema": "4.26.0",
+    "jsonschema-specifications": "2025.9.1",
+    "lark-oapi": "1.7.5",
+    "loguru": "0.7.3",
+    "lxml": "6.1.3",
+    "mammoth": "1.13.0",
+    "markdown-it-py": "4.2.0",
+    "markdownify": "1.2.3",
+    "markitdown-no-magika": "0.1.2",
+    "mcp": "1.30.0",
+    "mdurl": "0.1.2",
+    "multidict": "7.2.1",
+    "numpy": "2.5.4",
+    "openai": "3.46.0",
+    "openpyxl": "3.1.5",
+    "opentelemetry-api": "1.45.2",
+    "opentelemetry-sdk": "1.45.2",
+    "opentelemetry-semantic-conventions": "0.66b2",
+    "optionaldict": "0.1.2",
+    "ormsgpack": "1.13.0",
+    "packaging": "26.3",
+    "pandas": "3.1.1",
+    "pillow": "13.0.0",
+    "pip": "26.3",
+    "priority": "2.0.0",
+    "propcache": "0.5.4",
+    "psutil": "7.1.3",
+    "py-cord": "2.8.1",
+    "pyasn1": "0.6.5",
+    "pyasn1_modules": "0.4.2",
+    "pycparser": "3.12",
+    "pycryptodome": "4.3.0",
+    "pydantic": "2.14.3",
+    "pydantic-settings": "2.16.2",
+    "pydantic_core": "2.50.4",
+    "pydub": "0.25.1",
+    "pypdf": "6.21.4",
+    "pyromark": "0.10.4",
+    "python-dateutil": "4.0.0",
+    "python-docx": "1.2.0",
+    "python-dotenv": "1.2.4",
+    "python-multipart": "0.0.33",
+    "python-ripgrep": "0.0.8",
+    "python-socks": "3.2.1",
+    "python-telegram-bot": "22.8",
+    "qq-botpy": "1.2.1",
+    "qrcode": "8.2",
+    "rank-bm25": "0.2.2",
+    "referencing": "0.37.0",
+    "regex": "2026.9.29",
+    "reportlab": "5.1.0",
+    "requests": "2.34.2",
+    "requests-toolbelt": "1.0.0",
+    "rich": "15.0.0",
+    "rpds-py": "2026.9.1",
+    "shellingham": "1.5.4",
+    "shipyard-neo-sdk": "0.2.0",
+    "shipyard-python-sdk": "0.2.4",
+    "silk-python": "0.2.9",
+    "six": "1.17.0",
+    "slack_sdk": "3.46.0",
+    "sniffio": "1.3.1",
+    "socksio": "1.0.0",
+    "soupsieve": "4.0.1",
+    "sqlmodel": "0.0.48",
+    "sse-starlette": "3.6.0",
+    "starlette": "1.10.0",
+    "telegramify-markdown": "1.4.2",
+    "tenacity": "9.1.4",
+    "tiktoken": "0.14.0",
+    "truststore": "0.10.5",
+    "typer": "0.27.3",
+    "typing-inspection": "0.4.5",
+    "typing_extensions": "4.16.0",
+    "tzdata": "2026.6",
+    "tzlocal": "5.4.5",
+    "urllib3": "2.8.0",
+    "uvicorn": "0.54.0",
+    "watchfiles": "1.3.0",
+    "websocket-client": "1.9.2",
+    "websockets": "15.0.1",
+    "wechatpy": "1.8.18",
+    "wrapt": "2.5.2",
+    "wsproto": "1.3.2",
+    "xinference-client": "4.1.0",
+    "xlrd": "2.0.2",
+    "xmltodict": "1.0.4",
+    "yarl": "1.25.1"
+  },
+  "host_source_sha256": {
+    "pyproject.toml": "b6924ec216a36a87a4f3793ff6ad11e5fb20f71b83d52f036c6c941f1b831a36",
+    "astrbot/core/star/base.py": "df31faedb1978e9c07f5d1e78eb91dee0232c8625ec12aeb667ab146a98b8f0e",
+    "astrbot/core/star/star_manager.py": "6146ef6162716a6aa64cae5bf13bd93bcdd6c681a45e35ffd017f690715255fd",
+    "astrbot/core/star/context.py": "314e7c1bd8e5bc86b6d15ad450866a2e7828cd4e51bb267670cb4642431fac2d",
+    "astrbot/core/star/star_tools.py": "d400dfff63d085802c7be7a7667b3630c69a85c11a45673c875c193165e0b572",
+    "astrbot/core/persona_mgr.py": "78f31f5c5c8b580fa2a4f4c888c64ea451c6d19880f607c2ae9a8707a9571cb1",
+    "astrbot/core/platform/astr_message_event.py": "821d6554248db68c59537425a6e9646fe83b4d5319e81c5a3b6760a3aebaf69a",
+    "astrbot/core/platform/message_session.py": "86563844e9a0322cfaf475fda4f3699017c6747232c065298264b541af5a9ca3",
+    "astrbot/api/web.py": "faeb09a65f0f0559edfc4794ce152b5465e18c31ee4ab40c0a4e0f5ec8579d04",
+    "astrbot/dashboard/server.py": "d911fd8273505aad4e088fafe55b6b634ea67e3515d67107dc6a23a76abea821",
+    "astrbot/dashboard/api/auth.py": "1ac9e90ee25412656f295aadcb48a119386ef62dc0c7516cf50e1a40512026ee",
+    "astrbot/dashboard/api/plugins.py": "4ae3fa76ac36ec4cfb286057627cf97cee589ee6d7d8a36a83dc2fd43897c074",
+    "astrbot/dashboard/plugin_page_bridge.js": "3ad3753b47405c809e9acb6e8457f4fae5a3b54c76911b2c37bc9914f62fe1e4",
+    "astrbot/dashboard/services/plugin_page_service.py": "262c68315e5f957d8c0dcd13904b958a6d8268aa2b3dfc236c915f9f8418771f"
+  },
+  "platforms": [
+    "webchat"
+  ],
+  "event_fields": {
+    "bot": "synthetic-bot-a",
+    "adapter": "synthetic_adapter",
+    "instance": "synthetic-instance-a",
+    "umo": "synthetic-instance-a:GroupMessage:synthetic-group"
+  },
+  "http_port": 55307,
+  "asset_token_management_status": {
+    "/api/plug/livingemotion_host_probe/status": 401,
+    "/api/v1/plugins/extensions/livingemotion_host_probe/status": 200,
+    "/api/v1/plugins/extensions/livingemotion_host_probe/check": 200
+  },
+  "model_network_calls": 0,
+  "real_message_sends": 0,
+  "browser_bridge_handshake": "not_executed",
+  "completed": true,
+  "blocked_runtime_operations": [
+    "socket.getaddrinfo",
+    "socket.getaddrinfo",
+    "socket.getaddrinfo",
+    "subprocess.Popen"
+  ],
+  "success": false
+}

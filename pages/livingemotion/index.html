@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>livingEmotion · 状态与体验</title>
+  <script src="./theme.js"></script>
+  <link rel="stylesheet" href="./style.css">
+  <script type="module" src="./app.mjs"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
+  <header class="masthead">
+    <div class="identity">
+      <div class="wordmark" aria-label="livingEmotion">living<span>Emotion</span><i aria-hidden="true"></i></div>
+      <p class="eyebrow">状态与体验 <span aria-hidden="true">/</span> PRIVATE CONSOLE</p>
+    </div>
+    <div class="theme-control">
+      <div class="theme-switch" role="group" aria-label="页面主题">
+        <button type="button" data-theme-choice="light" aria-pressed="false">白昼</button>
+        <button type="button" data-theme-choice="dark" aria-pressed="false">黑夜</button>
+      </div>
+      <span id="theme-status" class="micro" aria-live="polite"></span>
+    </div>
+  </header>
+  <div class="scope-bar">
+    <label for="context">当前范围</label>
+    <select id="context" disabled><option value="">等待宿主提供范围</option></select>
+    <span id="connection" class="micro">正在连接宿主</span>
+    <button id="refresh" type="button">刷新状态</button>
+  </div>
+  <div class="workspace">
+    <nav id="navigation" aria-label="管理分区">
+      <button type="button" data-section="overview" aria-current="page"><span>01</span>总览</button>
+      <button type="button" data-section="persona"><span>02</span>人格</button>
+      <button type="button" data-section="emotion"><span>03</span>情绪与关系</button>
+      <button type="button" data-section="behavior"><span>04</span>主动行为</button>
+      <button type="button" data-section="night"><span>05</span>长夜</button>
+      <button type="button" data-section="experience"><span>06</span>日记与梦境</button>
+      <button type="button" data-section="memory"><span>07</span>记忆接入</button>
+    </nav>
+    <main id="main" tabindex="-1">
+      <div class="section-heading">
+        <div><p id="section-kicker" class="eyebrow">01 / OVERVIEW</p><h1 id="section-title">总览</h1></div>
+        <span id="mode" class="status">等待状态</span>
+      </div>
+      <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+      <div id="content" aria-busy="true"><p class="empty">正在读取已授权的状态…</p></div>
+      <section id="settings" hidden></section>
+      <section id="records" hidden aria-label="历史记录"></section>
+      <section id="editor" class="editor" hidden aria-label="保存原生配置">
+        <div class="section-heading"><h2>待保存更改</h2><span id="draft-count" class="micro"></span></div>
+        <p class="hint">直接写回同一份 AstrBot 原生配置。刷新状态保留本页草稿；刷新浏览器会放弃未保存草稿。</p>
+        <label for="change-reason">修改原因（必填）</label>
+        <input id="change-reason" maxlength="300" autocomplete="off">
+        <div class="button-row">
+          <button id="save" class="primary" type="button">保存到原生配置</button>
+          <button id="rebase" type="button" hidden>读取最新配置并复核草稿</button>
+          <button id="discard" type="button">放弃更改</button>
+        </div>
+      </section>
+      <footer class="page-footer"><span>livingEmotion</span><span>主观状态不等于真实事实</span></footer>
+    </main>
+  </div>
+  <dialog id="action-dialog" aria-labelledby="action-title" aria-describedby="action-description">
+    <form id="action-form">
+      <p class="eyebrow">MANUAL ACTION / 手动操作</p>
+      <h2 id="action-title"></h2>
+      <p id="action-description"></p>
+      <label for="action-reason">操作原因（必填）</label>
+      <input id="action-reason" required maxlength="300" autocomplete="off">
+      <p id="action-error" class="error-text" role="alert"></p>
+      <div class="button-row">
+        <button id="confirm-action" type="submit" class="primary">确认执行一次</button>
+        <button id="cancel-action" type="button">取消</button>
+      </div>
+    </form>
+  </dialog>
+  <noscript>管理页面需要 JavaScript 才能通过宿主读取数据；不会显示缓存或演示状态。</noscript>
+  <script src="/api/plugin/page/bridge-sdk.js"></script>
+</body>
+</html>

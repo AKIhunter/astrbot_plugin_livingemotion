@@ -1,0 +1,22 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".."]
+# F6's released regression suite keeps its existing path for independent reruns.
+python_files = ["test_*.py", "*_test.py", "performance_f6.py"]
+# Host-dependent suites have explicit runners; never count a missing host as a skip/pass.
+# Keep portable runtime/window budgets and verification regressions in the default lane.
+addopts = """
+-ra --strict-markers
+--ignore=tests/host
+--ignore=tests/console/test_console.py
+--ignore=tests/budgets/test_model_payload.py
+"""
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+timeout = 60
+faulthandler_timeout = 30
+norecursedirs = [".git", ".venv*", "node_modules", ".ci-work", "tests/host"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100

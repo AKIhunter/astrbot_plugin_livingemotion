@@ -1,0 +1,194 @@
+name: Portable checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Portable Python ${{ matrix.python }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    defaults:
+      run:
+        working-directory: astrbot_plugin_livingemotion
+    env:
+      PYTHONUTF8: "1"
+      PYTHONHASHSEED: "0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: astrbot_plugin_livingemotion
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: astrbot_plugin_livingemotion/requirements-dev.txt
+      - name: Install test dependencies
+        run: python -m pip install --index-url https://pypi.org/simple -r requirements-dev.txt
+      - name: Check dependency consistency
+        run: python -m pip check
+      - name: Record resolved dependencies
+        run: python -m pip freeze
+      - name: Documentation links, metadata and configuration contract
+        run: |
+          python - <<'PY'
+          import ast
+          import json
+          import re
+          import tomllib
+          from pathlib import Path
+          from urllib.parse import unquote, urlsplit
+
+          import yaml
+          from packaging.specifiers import SpecifierSet
+
+          root = Path.cwd()
+          metadata = yaml.safe_load((root / "metadata.yaml").read_text())
+          assert metadata["name"] == "astrbot_plugin_livingemotion"
+          assert metadata["display_name"] == "livingEmotion"
+          assert metadata["repo"] == "https://github.com/AKIhunter/astrbot_plugin_livingemotion"
+          assert metadata["astrbot_version"] == "==4.29.4"
+          assert "4.29.4" in SpecifierSet(metadata["astrbot_version"])
+          entry = ast.parse((root / "main.py").read_text())
+          versions = [
+              ast.literal_eval(decorator.args[3])
+              for node in entry.body if isinstance(node, ast.ClassDef)
+              for decorator in node.decorator_list
+              if isinstance(decorator, ast.Call)
+              and isinstance(decorator.func, ast.Name) and decorator.func.id == "register"
+          ]
+          assert versions == [metadata["version"]]
+          for view in metadata["views"]:
+              assert (root / "pages" / view["name"] / "index.html").is_file()
+          config = ast.parse((root / "config.py").read_text())
+          defaults = {
+              item.target.id: ast.literal_eval(item.value)
+              for node in config.body if isinstance(node, ast.ClassDef) and node.name == "Config"
+              for item in node.body if isinstance(item, ast.AnnAssign) and item.value is not None
+          }
+          schema = json.loads((root / "_conf_schema.json").read_text())
+          assert defaults == {key: value["default"] for key, value in schema.items()}
+          options = tomllib.loads((root / "pyproject.toml").read_text())["tool"]["pytest"]["ini_options"]
+          assert "performance_f6.py" in options["python_files"]
+          docs = [root / name for name in (
+              "README.md", "CHANGELOG.md", "THIRD_PARTY_NOTICES.md",
+              "docs/architecture.md", "docs/api.md", "docs/compatibility.md",
+              "docs/installation.md", "docs/delivery-notes.md", "docs/memory.md", "docs/migration.md",
+          )]
+          links = 0
+          for path in docs:
+              text = path.read_text()
+              assert not any(line.rstrip() != line for line in text.splitlines()), path
+              for raw in re.findall(r"\[[^\]]*\]\(([^)\s]+)\)", text):
+                  parsed = urlsplit(raw)
+                  if parsed.scheme or parsed.netloc or not parsed.path:
+                      continue
+                  target = (path.parent / unquote(parsed.path)).resolve()
+                  assert target.is_relative_to(root), (path, raw)
+                  assert target.exists(), (path, raw)
+                  links += 1
+          print(f"Checked {len(docs)} documents, {links} local link targets, metadata and {len(defaults)} defaults")
+          PY
+      - name: Declare separate native-host acceptance tier
+        run: |
+          printf '%s\n' \
+            'Default pytest includes portable budgets, verification and all 18 F6 regressions.' \
+            'Excluded native-host tiers: tests/host, tests/console/test_console.py, tests/budgets/test_model_payload.py.' \
+            'Run their explicit pinned-host commands in docs/delivery-notes.md; this job does not certify them.'
+      - name: Reject raw tracked evidence and personal workspace paths
+        run: |
+          python - <<'PY'
+          import json
+          import re
+          import subprocess
+          from pathlib import Path
+
+          tracked = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\0")
+          allowed = {
+              "tests/host/evidence-v4.29.4.json",
+              "tests/console/evidence-v4.29.4.json",
+              "tests/ui/evidence/browser-results.json",
+              *("tests/ui/evidence/" + name for name in (
+                  "1280-light-overview.png", "1280-dark-overview.png",
+                  "390-light-overview.png", "390-dark-overview.png",
+                  "390-light-emotion.png", "390-dark-emotion.png",
+                  "390-light-private-reading.png", "390-dark-private-reading.png",
+              )),
+          }
+          personal_path = re.compile(r"(?:/Users/|/home/)[^/\s]+/")
+          for name in filter(None, tracked):
+              path = Path(name)
+              evidence = ("/evidence/" in name or path.name.startswith("evidence"))
+              if evidence or (name.startswith("tests/") and path.suffix in {".xml", ".log", ".png"}):
+                  assert name in allowed, f"Unreviewed evidence: {name}"
+              if path.suffix == ".md" or (name in allowed and path.suffix == ".json"):
+                  text = path.read_text()
+                  assert not personal_path.search(text), f"Personal path: {name}"
+                  if path.suffix == ".json":
+                      json.loads(text)
+          print("Tracked artifact allowlist and documentation path checks passed")
+          PY
+      - name: Portable Python regression tests
+        run: python -m pytest -q
+      - name: Committed whitespace check
+        run: git show --format= --check HEAD
+
+  ui:
+    name: UI unit and synthetic Chromium
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: astrbot_plugin_livingemotion
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: astrbot_plugin_livingemotion
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: astrbot_plugin_livingemotion/tests/ui/package-lock.json
+      - name: Install locked test dependencies
+        run: npm ci --prefix tests/ui --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org
+      - name: Install matching Chromium and Linux system libraries
+        run: tests/ui/node_modules/.bin/playwright install --with-deps chromium
+      - name: UI unit tests
+        run: npm --prefix tests/ui test
+      - name: Remove checked-in evidence before this run
+        run: node --input-type=module -e "import { rm } from 'node:fs/promises'; await rm('tests/ui/evidence', { recursive:true, force:true });"
+      - name: Synthetic browser checks
+        id: browser
+        run: npm --prefix tests/ui run test:browser
+      - name: Retain allowlisted synthetic evidence only
+        if: always() && steps.browser.outcome != 'skipped' && steps.browser.outcome != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-ui
+          path: |
+            astrbot_plugin_livingemotion/tests/ui/evidence/browser-results.json
+            astrbot_plugin_livingemotion/tests/ui/evidence/1280-light-overview.png
+            astrbot_plugin_livingemotion/tests/ui/evidence/1280-dark-overview.png
+            astrbot_plugin_livingemotion/tests/ui/evidence/390-light-overview.png
+            astrbot_plugin_livingemotion/tests/ui/evidence/390-dark-overview.png
+            astrbot_plugin_livingemotion/tests/ui/evidence/390-light-emotion.png
+            astrbot_plugin_livingemotion/tests/ui/evidence/390-dark-emotion.png
+            astrbot_plugin_livingemotion/tests/ui/evidence/390-light-private-reading.png
+            astrbot_plugin_livingemotion/tests/ui/evidence/390-dark-private-reading.png
+          if-no-files-found: warn
+          retention-days: 7

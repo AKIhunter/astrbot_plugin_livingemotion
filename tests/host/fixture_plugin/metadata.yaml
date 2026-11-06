@@ -1,0 +1,4 @@
+name: livingemotion_host_probe
+author: local-test
+desc: Independent isolated host contract fixture, not livingEmotion.
+version: 0.0.1
