@@ -117,7 +117,8 @@ async def write_relationship_override(store, context, *, expected_version,
 
 
 def context_dto(context):
-    return {"id": context.account_key, "persona_id": context.persona_id,
+    return {"id": context.account_key, "scope_key": context.scope_key,
+            "persona_id": context.persona_id,
             "platform": context.platform, "view_scope": context.scene_kind.value,
             "scene_id": context.scene_id, "account_id": context.account_id,
             "label": f"{context.platform} / {context.scene_id} / {context.account_id}"}

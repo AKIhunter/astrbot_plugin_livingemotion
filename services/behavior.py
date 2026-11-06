@@ -15,7 +15,7 @@ from ..adapters.memory.base import material_allowed
 from ..contracts import (
     ActorRole, Availability, BehaviorIntent, BehaviorPreview, BotAffect,
     CommitResult, ContentKind, Context, Event, EvidenceRef, IntentStatus, NightPhase,
-    NightState, Relationship, SceneKind, finite, stable_key,
+    NightState, Relationship, SceneKind, SleepState, finite, stable_key,
 )
 from ..ports.memory import Material, MemoryRequest, RecallResult, ValidationResult
 from ..storage import SQLiteStore
@@ -317,13 +317,24 @@ class BehaviorService:
         if snapshot.relationship.identity_revision != context.identity_revision:
             reasons.append("relationship_revision_changed")
         if snapshot.night is not None:
-            if snapshot.night.phase in (NightPhase.SETTLING, NightPhase.ASLEEP):
+            if (snapshot.night.phase in (NightPhase.SETTLING, NightPhase.ASLEEP)
+                    or snapshot.night.display_state in (
+                        SleepState.NAP, SleepState.GROGGY, SleepState.DROWSY, SleepState.DEEP_SLEEP,
+                    )):
                 reasons.append("sleeping")
             if snapshot.night.energy < policy.min_energy:
                 reasons.append("low_energy")
         elif self.availability is None:
             reasons.append("availability_unavailable")
         if attempt is not None:
+            if behavior_score(snapshot) < policy.min_score:
+                reasons.append("below_score_threshold")
+            if attempt.intent.purpose == "proactive:emotional_share":
+                relation = snapshot.relationship
+                if (relation.score < 600 or not relation.evidence_complete
+                        or (relation.trust is not None and relation.trust < .55)
+                        or (relation.boundary is not None and relation.boundary >= .5)):
+                    reasons.append("relationship_boundary_changed")
             if snapshot.lifecycle_revision != attempt.snapshot.lifecycle_revision:
                 reasons.append("lifecycle_changed")
             if snapshot.persona_prompt != attempt.snapshot.persona_prompt:

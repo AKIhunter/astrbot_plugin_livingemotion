@@ -88,7 +88,8 @@ async def main():
             }
             sources = ("config.py", "contracts.py", "runtime/console.py", "storage/schema.py",
                        "storage/sqlite.py", "storage/state_scope.py", "storage/console_data.py",
-                       "domain/relationship_inference.py")
+                       "domain/relationship_inference.py", "domain/proactivity.py",
+                       "storage/proactivity.py")
             provenance = {
                 "captured_at": datetime.now(timezone.utc).isoformat(),
                 "field_count": len(state["config"]["fields"]),

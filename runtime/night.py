@@ -444,6 +444,8 @@ class NightRuntime:
         if self.closed or not self.config.enabled:
             return
         now = self.store.clock()
+        proactive_scopes = set()
+        proactive_contexts = {c.scope_key: c for c in self._contexts.values()}
         for context in tuple(self._contexts.values()):
             if context.scene_kind == SceneKind.PUBLIC_COMMENT:
                 continue
@@ -467,11 +469,10 @@ class NightRuntime:
                 except ValueError:
                     self._task_fault = "provider_budget_contract_unavailable"
             if self.config.autonomy_enabled and len(self._actions) < self.config.queue_size:
-                # One logical attempt per cooldown slot; never resume an old intent.
-                intent_id = "scheduled:" + stable_key(
-                    context.scope_key, int(now // self.behavior_policy().cooldown_seconds),
-                )
-                self.spawn_action(self.behavior.execute(context, intent_id=intent_id))
+                if (context.scope_key not in proactive_scopes
+                        and context == proactive_contexts[context.scope_key]):
+                    proactive_scopes.add(context.scope_key)
+                    await self.maybe_proact(context)
         if now - self._last_cleanup >= 3600:
             await self.store.cleanup()
             self._last_cleanup = now

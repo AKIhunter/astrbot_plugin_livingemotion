@@ -168,6 +168,32 @@ export function renderSettings(root, state, options, updateControls) {
           input.setCustomValidity(error.message); input.setAttribute("aria-invalid", "true"); input.reportValidity(); updateControls();
         }
       });
+      if (field.key === "autonomy_scopes") {
+        const choices = node("div", undefined, "details-content");
+        const sources = new Map(list(state.scopes?.contexts).filter(c =>
+          typeof c.scope_key === "string" && c.scope_key
+        ).map(c => [c.scope_key, c]));
+        for (const [scopeKey, scope] of sources) {
+          const choice = node("label", undefined, "scope-choice");
+          const check = node("input"); check.type = "checkbox";
+          check.dataset.autonomyScope = scopeKey;
+          check.dataset.editable = input.dataset.editable;
+          check.checked = String(value || "").split(/\s+/).includes(scopeKey);
+          check.addEventListener("change", () => {
+            const scopes = new Set(input.value.split(/\s+/).filter(Boolean));
+            if (check.checked) scopes.add(scopeKey); else scopes.delete(scopeKey);
+            input.value = [...scopes].join(" ");
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+          });
+          input.addEventListener("input", () => {
+            check.checked = input.value.split(/\s+/).includes(scopeKey);
+          });
+          choice.append(check, node("span", `${text(scope.platform)} / ${scope.view_scope === "group" ?
+            "群聊 " + text(scope.scene_id) : "私聊 " + text(scope.account_id)}`));
+          choices.append(choice);
+        }
+        description.append(node("p", "勾选允许联系的会话，保存后生效。", "hint"), choices);
+      }
       wrapper.append(description, input);
       (field.advanced || advancedPattern.test(field.key) ? advancedBody : common).append(wrapper);
     }

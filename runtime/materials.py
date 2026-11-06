@@ -5,6 +5,7 @@ from dataclasses import replace
 from ..adapters.memory.base import material_allowed
 from ..contracts import ActorRole, ContentKind, Context, Event, EvidenceRef, stable_key
 from ..ports.memory import Material, RecallResult, ValidationResult
+from ..storage.proactivity import read_schedule
 
 
 class Materials:
@@ -73,16 +74,34 @@ class Materials:
         if request.purpose == "wake_catchup":
             return RecallResult(await self.catchup_materials(request))
         local = await self.local_behavior_materials(request)
+        proactive = request.purpose.startswith("proactive:")
+        recent = set()
+        if proactive:
+            schedule = await read_schedule(self.store, request.context)
+            recent = set((schedule or {}).get("recent_topics", ()))
+            local = tuple(item for item in local if (
+                item.evidence.kind == ContentKind.INTERACTION
+                and stable_key(item.evidence.provider, item.evidence.source_id) not in recent
+            ))
+            # A different authorized anchor rotates retrieval across old interests
+            # instead of repeatedly querying the most recent sentence.
+            local = tuple(sorted(local, key=lambda item: stable_key(
+                request.request_id, item.evidence.source_id,
+            )))
         external = RecallResult()
         if self.config.memory_read:
             # Background recall deliberately does not impersonate a live event.
             external = await self.memory.recall(
                 replace(request, query=local[-1].text[:4096] if local else ""),
             )
-        selected = list(external.materials[:request.limit])
+        selected = [item for item in external.materials if not proactive or
+                    stable_key(item.evidence.provider, item.evidence.source_id) not in recent
+                    ][:request.limit]
         for item in reversed(local):
             if item not in selected and len(selected) < request.limit:
                 selected.append(item)
+        if proactive:
+            selected = selected[:2 if request.purpose == "proactive:memory_followup" else 1]
         return RecallResult(tuple(selected), external.reason_codes)
 
     async def validate_behavior_materials(self, request, materials):

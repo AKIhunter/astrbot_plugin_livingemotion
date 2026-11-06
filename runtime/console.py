@@ -17,6 +17,8 @@ from ..storage.console_data import (
 )
 from ..services.experience import dream_view
 from .projector import snapshot
+from ..domain.proactivity import MOTIVES
+from ..storage.proactivity import read_schedule
 
 
 class ApplicationError(Exception):
@@ -53,6 +55,11 @@ FIELD_LABELS = {
     "active_end": "主动时段结束", "behavior_daily_limit": "每日主动行为总额度",
     "behavior_scope_daily_limit": "每个会话每日主动额度",
     "behavior_cooldown_seconds": "主动行为冷却", "behavior_unanswered_limit": "未回应次数上限",
+    "behavior_random_min_minutes": "随机等待最短时间",
+    "behavior_random_max_minutes": "随机等待最长时间",
+    "behavior_idle_minutes": "聊天结束后安静时间",
+    "behavior_style": "主动节奏", "behavior_emotional_share": "允许分享心情",
+    "behavior_provider_id": "主动聊天模型",
     "diary_retries": "日记重试次数", "dream_per_night": "每夜梦境上限",
     "diary_retention_days": "日记保留时间", "dream_retention_days": "梦境保留时间",
     "dream_half_life_seconds": "梦境清晰度半衰期", "experience_body_chars": "日记与梦境字数上限",
@@ -126,11 +133,13 @@ class Console:
 
     def config_dto(self, options=None):
         enums = {"mode": ["active", "observe_only"], "memory_mode": ["none", "local_lite", "external"],
-                 "persona_mode": ["follow", "explicit", "none"], "wake_mode": ["chat", "never", "both"]}
+                 "persona_mode": ["follow", "explicit", "none"], "wake_mode": ["chat", "never", "both"],
+                 "behavior_style": ["gentle", "balanced", "lively"]}
         enum_labels = {"active": "正常运行", "observe_only": "仅观察", "none": "不使用",
                        "local_lite": "旧版本地记录", "external": "外部记忆",
                        "follow": "跟随会话人格", "explicit": "指定人格",
-                       "chat": "仅私聊", "never": "不允许聊天唤醒", "both": "私聊或群原生@Bot"}
+                       "chat": "仅私聊", "never": "不允许聊天唤醒", "both": "私聊或群原生@Bot",
+                       "gentle": "轻柔", "balanced": "自然", "lively": "活泼"}
         values = to_dict(self.config)
         options = options or {}
         result_fields = []
@@ -160,6 +169,21 @@ class Console:
             if f.name == "persona_id":
                 item["type"] = "enum"
                 item["options"] = options.get("personas", [])
+            behavior_help = {
+                "autonomy_enabled": "打开后会自动等待合适时机，只联系主动行为范围内的会话。",
+                "autonomy_scopes": "勾选允许TA主动联系的会话；也可填写完整范围标识，多个用空格隔开。",
+                "behavior_style": "轻柔更少打扰，自然平衡，活泼更愿意开口；每日额度始终生效。",
+                "behavior_random_min_minutes": "每次机会后重新等待，最短值不能大于最长值。",
+                "behavior_random_max_minutes": "等待结束会再检查是否适合开口，不保证到点发送。",
+                "behavior_idle_minutes": "聊天活跃时先不插话；群聊按全群最近消息计算。",
+                "behavior_emotional_share": "仅在熟悉的私聊关系中轻轻分享心情，不索取安慰或强求回复。",
+                "behavior_provider_id": "主动聊天单独选模型，留空沿用当前聊天模型。",
+            }
+            if f.name in behavior_help:
+                item["help"] = behavior_help[f.name]
+            if f.name in ("behavior_random_min_minutes", "behavior_random_max_minutes",
+                          "behavior_idle_minutes"):
+                item.update(min=1, max=1440 if f.name == "behavior_idle_minutes" else 10080)
             result_fields.append(item)
         return {
             "revision": self.revision, "source": "AstrBot native plugin configuration",
@@ -274,6 +298,24 @@ class Console:
         availability = await self.availability(context)
         source = self.bridge.source(context)
         preview = await self.behavior.preview_behavior(context)
+        schedule = await read_schedule(self.store, context)
+        behavior_history = (await self.behavior_history(context, self.store_period(), None)
+                            if hasattr(self, "behavior_history") else None)
+        behavior_ready = False
+        try:
+            await self._purpose_binding(context, "behavior")
+            behavior_ready = True
+        except (ValueError, ImportError, AttributeError):
+            pass
+        if schedule and self.config.autonomy_enabled and preview.eligible:
+            stalled = (self.store.clock() - schedule["checked_at"]
+                       > max(300, self.config.scheduler_seconds * 3))
+            stuck = (schedule["last_outcome"] == "running"
+                     and self.store.clock() >= schedule.get("deadline", float("inf")))
+            state["health"].append({
+                "name": "主动调度", "status": "degraded" if stalled or stuck else "ok",
+                "reason": "opportunity_interrupted" if stuck else "scheduler_delayed" if stalled else "ready",
+            })
         model_ready = False
         try:
             await self.model_binding(context)
@@ -312,8 +354,30 @@ class Console:
                       "energy": night.energy / 100, "energy_percent": night.energy,
                       "energy_max": 100, "sleep_at": night.sleep_started_at,
                       "wake_at": night.wake_at, "reason": ""},
-            "behavior": {"enabled": self.config.autonomy_enabled,
-                         "reason": ", ".join(preview.reason_codes), "candidates": []},
+            "behavior": {
+                "enabled": self.config.autonomy_enabled,
+                "reason": ", ".join(preview.reason_codes), "candidates": [],
+                "scope_key": context.scope_key,
+                "remaining": (max(0, min(
+                    self.config.behavior_daily_limit - behavior_history.global_used,
+                    self.config.behavior_scope_daily_limit - behavior_history.scope_used,
+                )) if behavior_history else None),
+                "backoff": (behavior_history.unanswered_count if behavior_history else None),
+                "next_check_at": (schedule or {}).get("next_at"),
+                "last_check_at": (schedule or {}).get("checked_at"),
+                "last_outcome": (schedule or {}).get("last_outcome", "waiting"),
+                "last_reason": (schedule or {}).get("last_reason", "random_wait"),
+                "last_motive": MOTIVES.get((schedule or {}).get("last_mode"), ("尚未开口", ""))[0],
+                "random_interval": [self.config.behavior_random_min_minutes,
+                                    self.config.behavior_random_max_minutes],
+                "style": self.config.behavior_style,
+                "cooldown_until": (max(
+                    (behavior_history.last_attempt_at or 0) + self.config.behavior_cooldown_seconds
+                    if behavior_history.last_attempt_at is not None else 0,
+                    behavior_history.cooldown_until or 0,
+                ) or None) if behavior_history else None,
+                "motives": [label for label, _ in MOTIVES.values()],
+            },
             "actions": [
                 {"id": name, "enabled": enabled,
                  "reason": "" if enabled else "Current mode, provider or policy does not permit this action"}
@@ -323,7 +387,7 @@ class Console:
                     ("diary.generate", active and self.config.diary_enabled and model_ready),
                     ("dream.generate", active and self.config.dream_enabled and model_ready
                      and night.phase.value == "asleep" and night.sleep_stage == "REM"),
-                    ("behavior.send", active and model_ready and preview.eligible),
+                    ("behavior.send", active and behavior_ready and preview.eligible),
                 )
             ],
         })
@@ -333,9 +397,20 @@ class Console:
             state["context_id"] = ""
             state["observation"] = None
             state["relationship"] = None
+            state["behavior"].update(
+                scope_key="", next_check_at=None, last_check_at=None, remaining=None,
+                backoff=None, last_outcome="waiting",
+                last_reason="select_scene", last_motive="选择私聊或群聊后查看",
+            )
             # A global numerical view is not a new audience for private reasons.
             state["bot_state"]["reason"] = ""
         return state
+
+    def store_period(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        return (datetime.fromtimestamp(self.store.clock(), ZoneInfo(self.config.timezone))
+                .date().isoformat() if self.config.timezone else "")
 
     async def console_records(self, context_id="", kind="", page=1, page_size=10, query="",
                               persona_id="", view_scope="", platform=""):

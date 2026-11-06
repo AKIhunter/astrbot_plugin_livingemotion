@@ -43,6 +43,12 @@ class Config:
     behavior_scope_daily_limit: int = 2
     behavior_cooldown_seconds: int = 7200
     behavior_unanswered_limit: int = 2
+    behavior_random_min_minutes: int = 90
+    behavior_random_max_minutes: int = 240
+    behavior_idle_minutes: int = 20
+    behavior_style: str = "balanced"
+    behavior_emotional_share: bool = True
+    behavior_provider_id: str = ""
     diary_retries: int = 2
     dream_per_night: int = 2
     diary_retention_days: int = 30
@@ -116,6 +122,10 @@ class Config:
             raise ValueError("invalid night policy version")
         if self.wake_mode not in ("chat", "never", "both"):
             raise ValueError("invalid wake mode")
+        if self.behavior_style not in ("gentle", "balanced", "lively"):
+            raise ValueError("invalid behavior style")
+        if self.behavior_random_min_minutes > self.behavior_random_max_minutes:
+            raise ValueError("invalid behavior random interval")
         if self.night_policy_version == 2 and self.night_schedule_enabled and not self.timezone:
             raise ValueError("timezone required for night policy 2")
         if self.timezone:
@@ -172,6 +182,7 @@ class Config:
             ("experience_body_chars", 8000),
             ("lie_in_max_minutes", 1440), ("wake_reply_limit", 100),
             ("wake_window_minutes", 1440), ("closing_lead_minutes", 60),
+            ("behavior_random_max_minutes", 10080), ("behavior_idle_minutes", 1440),
         ):
             if getattr(self, name) > maximum:
                 raise ValueError(f"{name}: exceeds safety maximum {maximum}")

@@ -43,13 +43,14 @@ from .projector import Projector, current_affect, snapshot
 from .refinement import Refinement
 from .relationship_projection import read_relationship_projection
 from .state_scope import source_affect
+from .proactivity import Proactivity
 
 SUFFIX = "<!--livingemotion:state:v1-->"
 CATCHUP_SUFFIX = "<!--livingemotion:crawled_history:v2-->"
 MEMORY_SUFFIX = "<!--livingemotion:memory:v2-->"
 
 
-class Application(Console, NightRuntime, Generation, Materials, Refinement):
+class Application(Console, NightRuntime, Generation, Materials, Refinement, Proactivity):
     def __init__(self, host_context, native_config, data_dir: Path, *, bridge_factory=AstrBotBridge):
         self.host, self.native_config = host_context, native_config
         self.config = Config.from_mapping(native_config)
@@ -256,6 +257,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement):
             scope_daily_limit=self.config.behavior_scope_daily_limit,
             cooldown_seconds=self.config.behavior_cooldown_seconds,
             unanswered_limit=self.config.behavior_unanswered_limit,
+            min_score=.20,
             max_output_tokens=min(512, self.config.model_output_tokens),
             model_timeout_seconds=self.config.model_timeout_seconds,
         )

@@ -436,10 +436,10 @@ try {
     assert.equal(await page.locator("html").getAttribute("data-le-theme"), "dark");
     await context.close();
   });
-  await caseRun("真实Console样例、81字段单位、float步进与原生一次保存刷新", async () => {
+  await caseRun("真实Console样例、原生字段单位、float步进与一次保存刷新", async () => {
     const { context, page } = await open("native-dto");
     await section(page, "settings");
-    assert.equal(await page.locator("#settings [data-key]").count(), 82);
+    assert.equal(await page.locator("#settings [data-key]").count(), nativeDTOEvidence.field_count + 1);
     assert.equal(await page.locator("#config-energy_reply_cost").getAttribute("type"), "number");
     assert.equal(await page.locator("#config-energy_reply_cost").getAttribute("step"), "0.1");
     assert.equal(await page.locator("#config-energy_max").isDisabled(), true);
@@ -457,6 +457,31 @@ try {
     assert.equal(await page.locator("#config-provider_id").inputValue(), "fixture-chat");
     const names = await page.locator("#settings label").allTextContents();
     assert.ok(names.every(name => /[\u4e00-\u9fff]/.test(name)), "全部设置标签应为中文");
+    await context.close();
+  });
+  await caseRun("主动行为随机时间、节奏、模型、范围勾选与保存回显", async () => {
+    const { context, page } = await open();
+    await section(page, "behavior");
+    assert.match(await page.locator("#content").textContent(), /随机等待 90–240 分钟/);
+    assert.match(await page.locator("#content").textContent(), /还在聊天，先不插话/);
+    await section(page, "settings");
+    const source = page.locator('[data-autonomy-scope="synthetic-scope-a"]');
+    await source.check();
+    assert.equal(await page.locator("#config-autonomy_scopes").inputValue(), "synthetic-scope-a");
+    await page.locator("#config-behavior_style").selectOption("gentle");
+    await page.locator("#config-behavior_random_min_minutes").fill("120");
+    await page.locator("#config-behavior_random_max_minutes").fill("300");
+    await page.locator("#config-behavior_provider_id").selectOption("fixture-chat");
+    await page.locator("#change-reason").fill("仅合成：选择主动联系范围和节奏");
+    await page.locator("#save").click();
+    await page.getByText("已保存到原生配置。", { exact: true }).waitFor();
+    const calls = await page.evaluate(() => window.__fixture.calls.filter(call => call.method === "POST"));
+    assert.equal(calls.filter(call => call.path === "console/config").length, 1);
+    assert.equal(calls.filter(call => call.path === "console/action").length, 0);
+    await page.reload(); await page.locator("#content[aria-busy=false]").waitFor();
+    assert.equal(await source.isChecked(), true);
+    assert.equal(await page.locator("#config-behavior_style").inputValue(), "gentle");
+    assert.equal(await page.locator("#config-behavior_provider_id").inputValue(), "fixture-chat");
     await context.close();
   });
   await caseRun("范围DTO、同人格共享开关与普通分区不出现配置", async () => {

@@ -37,6 +37,12 @@ export const nativeDTO = {
       "behavior_scope_daily_limit": 2,
       "behavior_cooldown_seconds": 7200,
       "behavior_unanswered_limit": 2,
+      "behavior_random_min_minutes": 90,
+      "behavior_random_max_minutes": 240,
+      "behavior_idle_minutes": 20,
+      "behavior_style": "balanced",
+      "behavior_emotional_share": true,
+      "behavior_provider_id": "",
       "diary_retries": 2,
       "dream_per_night": 2,
       "diary_retention_days": 30,
@@ -157,7 +163,8 @@ export const nativeDTO = {
         "section": "behavior",
         "value": false,
         "type": "boolean",
-        "advanced": false
+        "advanced": false,
+        "help": "打开后会自动等待合适时机，只联系主动行为范围内的会话。"
       },
       {
         "key": "group_autonomy_enabled",
@@ -295,7 +302,8 @@ export const nativeDTO = {
         "section": "behavior",
         "value": "",
         "type": "string",
-        "advanced": false
+        "advanced": false,
+        "help": "勾选允许TA主动联系的会话；也可填写完整范围标识，多个用空格隔开。"
       },
       {
         "key": "muted_scopes",
@@ -426,6 +434,97 @@ export const nativeDTO = {
         "advanced": false,
         "step": 1,
         "unit": "次"
+      },
+      {
+        "key": "behavior_random_min_minutes",
+        "label": "随机等待最短时间",
+        "section": "behavior",
+        "value": 90,
+        "type": "integer",
+        "advanced": false,
+        "step": 1,
+        "unit": "分钟",
+        "help": "每次机会后重新等待，最短值不能大于最长值。",
+        "min": 1,
+        "max": 10080
+      },
+      {
+        "key": "behavior_random_max_minutes",
+        "label": "随机等待最长时间",
+        "section": "behavior",
+        "value": 240,
+        "type": "integer",
+        "advanced": false,
+        "step": 1,
+        "unit": "分钟",
+        "help": "等待结束会再检查是否适合开口，不保证到点发送。",
+        "min": 1,
+        "max": 10080
+      },
+      {
+        "key": "behavior_idle_minutes",
+        "label": "聊天结束后安静时间",
+        "section": "behavior",
+        "value": 20,
+        "type": "integer",
+        "advanced": false,
+        "step": 1,
+        "unit": "分钟",
+        "help": "聊天活跃时先不插话；群聊按全群最近消息计算。",
+        "min": 1,
+        "max": 1440
+      },
+      {
+        "key": "behavior_style",
+        "label": "主动节奏",
+        "section": "behavior",
+        "value": "balanced",
+        "type": "enum",
+        "advanced": false,
+        "options": [
+          {
+            "value": "gentle",
+            "label": "轻柔"
+          },
+          {
+            "value": "balanced",
+            "label": "自然"
+          },
+          {
+            "value": "lively",
+            "label": "活泼"
+          }
+        ],
+        "help": "轻柔更少打扰，自然平衡，活泼更愿意开口；每日额度始终生效。"
+      },
+      {
+        "key": "behavior_emotional_share",
+        "label": "允许分享心情",
+        "section": "behavior",
+        "value": true,
+        "type": "boolean",
+        "advanced": false,
+        "help": "仅在熟悉的私聊关系中轻轻分享心情，不索取安慰或强求回复。"
+      },
+      {
+        "key": "behavior_provider_id",
+        "label": "主动聊天模型",
+        "section": "behavior",
+        "value": "",
+        "type": "enum",
+        "advanced": false,
+        "provider_kind": "chat",
+        "options": [
+          {
+            "value": "",
+            "label": "跟随当前聊天模型"
+          },
+          {
+            "value": "fixture-chat",
+            "label": "合成聊天模型"
+          }
+        ],
+        "help": "主动聊天单独选模型，留空沿用当前聊天模型。"
       },
       {
         "key": "diary_retries",
@@ -995,7 +1094,13 @@ export const nativeDTO = {
           "behavior_daily_limit",
           "behavior_scope_daily_limit",
           "behavior_cooldown_seconds",
-          "behavior_unanswered_limit"
+          "behavior_unanswered_limit",
+          "behavior_random_min_minutes",
+          "behavior_random_max_minutes",
+          "behavior_idle_minutes",
+          "behavior_style",
+          "behavior_emotional_share",
+          "behavior_provider_id"
         ]
       },
       {
@@ -1088,6 +1193,7 @@ export const nativeDTO = {
     "contexts": [
       {
         "id": "fda756877b9e09334637756f7557078936706da40bd77d6ad73ad00dee0f2cb2",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -1097,6 +1203,7 @@ export const nativeDTO = {
       },
       {
         "id": "fa26f35ec2546c181ee72799f01b5aae504e5c4033b7b202d9abecf62d5f11ab",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -1106,6 +1213,7 @@ export const nativeDTO = {
       },
       {
         "id": "dfb32f3bfc4be410769366615ff06d2c19e98932e1931081a830bb8ab15e1e79",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -1115,6 +1223,7 @@ export const nativeDTO = {
       },
       {
         "id": "de24a467cea45b055f7f8def9fc56b4070e20ef6e76c9e97078bb1c6293ce863",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -1124,6 +1233,7 @@ export const nativeDTO = {
       },
       {
         "id": "c639f0787f3e721670ce91c66ea83ae1f3643d241cf98a647895d77ed430d573",
+        "scope_key": "fe330394d0b89a8abe88cfff5e0fc6a1154a3d274cb4efde352a7b88afb1b4ae",
         "persona_id": "fixture-persona",
         "platform": "bilibili",
         "view_scope": "group",
@@ -1133,6 +1243,7 @@ export const nativeDTO = {
       },
       {
         "id": "b6523e02ceff69b99ebe35a09d40dfcf4c6eaf0456ff317bfdffa7c4250efbd0",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -1142,6 +1253,7 @@ export const nativeDTO = {
       },
       {
         "id": "b2843aaa258a1b53a0f8db7536d25dfa3b1e750fcc890b11c5c655c446a38226",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -1151,6 +1263,7 @@ export const nativeDTO = {
       },
       {
         "id": "af4c64efe2bd84af88a5b125e64520e83d16c8bb664e2c9544f66edd5c0eca8c",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -1160,6 +1273,7 @@ export const nativeDTO = {
       },
       {
         "id": "ac17a10a834bbd6546d9df4799a3fbf4180e0f0eb2330a229a24c5d17b6f87cd",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -1169,6 +1283,7 @@ export const nativeDTO = {
       },
       {
         "id": "aa3c7b08efef0610f928e202a72bc946347131b4dd10858badb9498c48f82f74",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -1178,6 +1293,7 @@ export const nativeDTO = {
       },
       {
         "id": "99e913771ab562575d758281889a84d5a651e9ed85199a933b1d36905ba60a43",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -1187,6 +1303,7 @@ export const nativeDTO = {
       },
       {
         "id": "8bea336f974443c4c11057900f7ed8652adc31754428a84ee4b83b85b2fe44e1",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -1196,6 +1313,7 @@ export const nativeDTO = {
       },
       {
         "id": "83f40e4790ac1906f7588f8b52e5b9e5c0db9368fc7d3b32aa2d9b392edd00ab",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -1205,6 +1323,7 @@ export const nativeDTO = {
       },
       {
         "id": "6ed68c6b686c9951261dc5de9738b25019ab809bc0e703c1c626a17f14c6ad81",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -1214,6 +1333,7 @@ export const nativeDTO = {
       },
       {
         "id": "6ec240f3ccf36a9e65f0f924da49e2b7f133782a030fc05cee5fd45c70f557d2",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -1223,6 +1343,7 @@ export const nativeDTO = {
       },
       {
         "id": "6a31c17069f1faa088d70f67b863369c79c828ac93d8dc45f53e943b0d1faa20",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -1232,6 +1353,7 @@ export const nativeDTO = {
       },
       {
         "id": "5887c46fe09940abadf7caa6cf01d5725f4de752431821268b675be39984d3c5",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -1241,6 +1363,7 @@ export const nativeDTO = {
       },
       {
         "id": "54c518ff3fbeb5e9479c2941bd9b2f274fc8495e7acd1c60253fb9f315bdac71",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -1250,6 +1373,7 @@ export const nativeDTO = {
       },
       {
         "id": "52e7028ab96e6d15771e356ec0cc141e9924f6d9c807f92056fabd22000acc42",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -1259,6 +1383,7 @@ export const nativeDTO = {
       },
       {
         "id": "51511c831a5c7e9483c8524dd0d21c9cd5704388bbde5977b68c0b84b2c6e7d6",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -1268,6 +1393,7 @@ export const nativeDTO = {
       },
       {
         "id": "3541c3e1eb5a73c2e9c3cff4062576aa8741454589a14ccac2b743235a818bed",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -1277,6 +1403,7 @@ export const nativeDTO = {
       },
       {
         "id": "20e34e626946676301e279dd297c66c688b26bf3862adb3ff1457474292c8be5",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -1286,6 +1413,7 @@ export const nativeDTO = {
       },
       {
         "id": "1ef1a91376e7269b4f41b29e3d2b8a50f54ce42f81bc7343bb04b473e71a4baf",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -1295,6 +1423,7 @@ export const nativeDTO = {
       },
       {
         "id": "1ccd90c62355721865cacd5c9ecdb7d9c6e45962cde9fa9b49c085cdbbec2515",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -1343,6 +1472,12 @@ export const nativeDTO = {
         "behavior_scope_daily_limit": 2,
         "behavior_cooldown_seconds": 7200,
         "behavior_unanswered_limit": 2,
+        "behavior_random_min_minutes": 90,
+        "behavior_random_max_minutes": 240,
+        "behavior_idle_minutes": 20,
+        "behavior_style": "balanced",
+        "behavior_emotional_share": true,
+        "behavior_provider_id": "",
         "diary_retries": 2,
         "dream_per_night": 2,
         "diary_retention_days": 30,
@@ -1463,7 +1598,8 @@ export const nativeDTO = {
           "section": "behavior",
           "value": false,
           "type": "boolean",
-          "advanced": false
+          "advanced": false,
+          "help": "打开后会自动等待合适时机，只联系主动行为范围内的会话。"
         },
         {
           "key": "group_autonomy_enabled",
@@ -1601,7 +1737,8 @@ export const nativeDTO = {
           "section": "behavior",
           "value": "",
           "type": "string",
-          "advanced": false
+          "advanced": false,
+          "help": "勾选允许TA主动联系的会话；也可填写完整范围标识，多个用空格隔开。"
         },
         {
           "key": "muted_scopes",
@@ -1732,6 +1869,97 @@ export const nativeDTO = {
           "advanced": false,
           "step": 1,
           "unit": "次"
+        },
+        {
+          "key": "behavior_random_min_minutes",
+          "label": "随机等待最短时间",
+          "section": "behavior",
+          "value": 90,
+          "type": "integer",
+          "advanced": false,
+          "step": 1,
+          "unit": "分钟",
+          "help": "每次机会后重新等待，最短值不能大于最长值。",
+          "min": 1,
+          "max": 10080
+        },
+        {
+          "key": "behavior_random_max_minutes",
+          "label": "随机等待最长时间",
+          "section": "behavior",
+          "value": 240,
+          "type": "integer",
+          "advanced": false,
+          "step": 1,
+          "unit": "分钟",
+          "help": "等待结束会再检查是否适合开口，不保证到点发送。",
+          "min": 1,
+          "max": 10080
+        },
+        {
+          "key": "behavior_idle_minutes",
+          "label": "聊天结束后安静时间",
+          "section": "behavior",
+          "value": 20,
+          "type": "integer",
+          "advanced": false,
+          "step": 1,
+          "unit": "分钟",
+          "help": "聊天活跃时先不插话；群聊按全群最近消息计算。",
+          "min": 1,
+          "max": 1440
+        },
+        {
+          "key": "behavior_style",
+          "label": "主动节奏",
+          "section": "behavior",
+          "value": "balanced",
+          "type": "enum",
+          "advanced": false,
+          "options": [
+            {
+              "value": "gentle",
+              "label": "轻柔"
+            },
+            {
+              "value": "balanced",
+              "label": "自然"
+            },
+            {
+              "value": "lively",
+              "label": "活泼"
+            }
+          ],
+          "help": "轻柔更少打扰，自然平衡，活泼更愿意开口；每日额度始终生效。"
+        },
+        {
+          "key": "behavior_emotional_share",
+          "label": "允许分享心情",
+          "section": "behavior",
+          "value": true,
+          "type": "boolean",
+          "advanced": false,
+          "help": "仅在熟悉的私聊关系中轻轻分享心情，不索取安慰或强求回复。"
+        },
+        {
+          "key": "behavior_provider_id",
+          "label": "主动聊天模型",
+          "section": "behavior",
+          "value": "",
+          "type": "enum",
+          "advanced": false,
+          "provider_kind": "chat",
+          "options": [
+            {
+              "value": "",
+              "label": "跟随当前聊天模型"
+            },
+            {
+              "value": "fixture-chat",
+              "label": "合成聊天模型"
+            }
+          ],
+          "help": "主动聊天单独选模型，留空沿用当前聊天模型。"
         },
         {
           "key": "diary_retries",
@@ -2301,7 +2529,13 @@ export const nativeDTO = {
             "behavior_daily_limit",
             "behavior_scope_daily_limit",
             "behavior_cooldown_seconds",
-            "behavior_unanswered_limit"
+            "behavior_unanswered_limit",
+            "behavior_random_min_minutes",
+            "behavior_random_max_minutes",
+            "behavior_idle_minutes",
+            "behavior_style",
+            "behavior_emotional_share",
+            "behavior_provider_id"
           ]
         },
         {
@@ -2494,7 +2728,28 @@ export const nativeDTO = {
     "behavior": {
       "enabled": false,
       "reason": "observe_only",
-      "candidates": []
+      "candidates": [],
+      "scope_key": "",
+      "remaining": null,
+      "backoff": null,
+      "next_check_at": null,
+      "last_check_at": null,
+      "last_outcome": "waiting",
+      "last_reason": "select_scene",
+      "last_motive": "选择私聊或群聊后查看",
+      "random_interval": [
+        90,
+        240
+      ],
+      "style": "balanced",
+      "cooldown_until": null,
+      "motives": [
+        "记忆回访",
+        "关心近况",
+        "轻松闲聊",
+        "分享心情",
+        "久别问候"
+      ]
     },
     "representative_context_id": "fda756877b9e09334637756f7557078936706da40bd77d6ad73ad00dee0f2cb2"
   },
@@ -2578,7 +2833,13 @@ export const nativeDTO = {
           "behavior_daily_limit",
           "behavior_scope_daily_limit",
           "behavior_cooldown_seconds",
-          "behavior_unanswered_limit"
+          "behavior_unanswered_limit",
+          "behavior_random_min_minutes",
+          "behavior_random_max_minutes",
+          "behavior_idle_minutes",
+          "behavior_style",
+          "behavior_emotional_share",
+          "behavior_provider_id"
         ]
       },
       {
@@ -2679,6 +2940,7 @@ export const nativeDTO = {
     "contexts": [
       {
         "id": "fda756877b9e09334637756f7557078936706da40bd77d6ad73ad00dee0f2cb2",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -2688,6 +2950,7 @@ export const nativeDTO = {
       },
       {
         "id": "fa26f35ec2546c181ee72799f01b5aae504e5c4033b7b202d9abecf62d5f11ab",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -2697,6 +2960,7 @@ export const nativeDTO = {
       },
       {
         "id": "dfb32f3bfc4be410769366615ff06d2c19e98932e1931081a830bb8ab15e1e79",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -2706,6 +2970,7 @@ export const nativeDTO = {
       },
       {
         "id": "de24a467cea45b055f7f8def9fc56b4070e20ef6e76c9e97078bb1c6293ce863",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -2715,6 +2980,7 @@ export const nativeDTO = {
       },
       {
         "id": "c639f0787f3e721670ce91c66ea83ae1f3643d241cf98a647895d77ed430d573",
+        "scope_key": "fe330394d0b89a8abe88cfff5e0fc6a1154a3d274cb4efde352a7b88afb1b4ae",
         "persona_id": "fixture-persona",
         "platform": "bilibili",
         "view_scope": "group",
@@ -2724,6 +2990,7 @@ export const nativeDTO = {
       },
       {
         "id": "b6523e02ceff69b99ebe35a09d40dfcf4c6eaf0456ff317bfdffa7c4250efbd0",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -2733,6 +3000,7 @@ export const nativeDTO = {
       },
       {
         "id": "b2843aaa258a1b53a0f8db7536d25dfa3b1e750fcc890b11c5c655c446a38226",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -2742,6 +3010,7 @@ export const nativeDTO = {
       },
       {
         "id": "af4c64efe2bd84af88a5b125e64520e83d16c8bb664e2c9544f66edd5c0eca8c",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -2751,6 +3020,7 @@ export const nativeDTO = {
       },
       {
         "id": "ac17a10a834bbd6546d9df4799a3fbf4180e0f0eb2330a229a24c5d17b6f87cd",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -2760,6 +3030,7 @@ export const nativeDTO = {
       },
       {
         "id": "aa3c7b08efef0610f928e202a72bc946347131b4dd10858badb9498c48f82f74",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -2769,6 +3040,7 @@ export const nativeDTO = {
       },
       {
         "id": "99e913771ab562575d758281889a84d5a651e9ed85199a933b1d36905ba60a43",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -2778,6 +3050,7 @@ export const nativeDTO = {
       },
       {
         "id": "8bea336f974443c4c11057900f7ed8652adc31754428a84ee4b83b85b2fe44e1",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -2787,6 +3060,7 @@ export const nativeDTO = {
       },
       {
         "id": "83f40e4790ac1906f7588f8b52e5b9e5c0db9368fc7d3b32aa2d9b392edd00ab",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -2796,6 +3070,7 @@ export const nativeDTO = {
       },
       {
         "id": "6ed68c6b686c9951261dc5de9738b25019ab809bc0e703c1c626a17f14c6ad81",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -2805,6 +3080,7 @@ export const nativeDTO = {
       },
       {
         "id": "6ec240f3ccf36a9e65f0f924da49e2b7f133782a030fc05cee5fd45c70f557d2",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -2814,6 +3090,7 @@ export const nativeDTO = {
       },
       {
         "id": "6a31c17069f1faa088d70f67b863369c79c828ac93d8dc45f53e943b0d1faa20",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -2823,6 +3100,7 @@ export const nativeDTO = {
       },
       {
         "id": "5887c46fe09940abadf7caa6cf01d5725f4de752431821268b675be39984d3c5",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -2832,6 +3110,7 @@ export const nativeDTO = {
       },
       {
         "id": "54c518ff3fbeb5e9479c2941bd9b2f274fc8495e7acd1c60253fb9f315bdac71",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -2841,6 +3120,7 @@ export const nativeDTO = {
       },
       {
         "id": "52e7028ab96e6d15771e356ec0cc141e9924f6d9c807f92056fabd22000acc42",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -2850,6 +3130,7 @@ export const nativeDTO = {
       },
       {
         "id": "51511c831a5c7e9483c8524dd0d21c9cd5704388bbde5977b68c0b84b2c6e7d6",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -2859,6 +3140,7 @@ export const nativeDTO = {
       },
       {
         "id": "3541c3e1eb5a73c2e9c3cff4062576aa8741454589a14ccac2b743235a818bed",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -2868,6 +3150,7 @@ export const nativeDTO = {
       },
       {
         "id": "20e34e626946676301e279dd297c66c688b26bf3862adb3ff1457474292c8be5",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -2877,6 +3160,7 @@ export const nativeDTO = {
       },
       {
         "id": "1ef1a91376e7269b4f41b29e3d2b8a50f54ce42f81bc7343bb04b473e71a4baf",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -2886,6 +3170,7 @@ export const nativeDTO = {
       },
       {
         "id": "1ccd90c62355721865cacd5c9ecdb7d9c6e45962cde9fa9b49c085cdbbec2515",
+        "scope_key": "c6f0b1435481c305a05da3e29ed5eec7084236a631641dcb2de81913a58683d6",
         "persona_id": "fixture-persona",
         "platform": "qq",
         "view_scope": "private",
@@ -3972,17 +4257,19 @@ export const nativeDTO = {
   }
 };
 export const nativeDTOEvidence = {
-  "captured_at": "2026-11-06T14:49:34.937460+00:00",
-  "field_count": 81,
+  "captured_at": "2026-11-06T15:03:15.706513+00:00",
+  "field_count": 87,
   "scope": "real Console DTO / synthetic host / temporary database",
   "sources_sha256": {
-    "config.py": "4773b316f75c1d1171d2ff6a058d30ac1a684106994874780cc8ee985b1bec43",
+    "config.py": "cdd781c4a5a25c02742e219972d8d89dbf4bebb90b054510a743741b4a10c0f4",
     "contracts.py": "dbc6bc256d6eb58b6fff26a58c652b75a4f6ff1854ad63150ce13a19a1f15696",
-    "runtime/console.py": "d31d4f8288dc7d2a2480139650b66b8be448da7bc7daab6f4b55b57c296261a7",
+    "runtime/console.py": "094650c4b8b8ae320ea633ced7d8791c0233788c3766e46f3ce79ce9d21ceddd",
     "storage/schema.py": "2b3d106e881595456a5198f73d10f584ebc0e47dc632e0b3c1a3c814b900e93e",
     "storage/sqlite.py": "2febb2a71165853a53886cfef170ebf8956cb6d8e516a102817badfcf868c07d",
     "storage/state_scope.py": "cce5716c1ec8d3264c37c6d577b092f8a32a0c9d634595a8ef0f302fb688a2fe",
-    "storage/console_data.py": "d7ccfd222565b6d00d707c5205c86499253deba1dc6dcb5db3b4ec874eec606d",
-    "domain/relationship_inference.py": "73f329394e7094180b7824a0d329826bc7cda3a524c4f5f64a839284b5ec01e9"
+    "storage/console_data.py": "0c56c65d3e47211c2b4fedf2cd777639b9fe472f041d14a172c630577009e719",
+    "domain/relationship_inference.py": "73f329394e7094180b7824a0d329826bc7cda3a524c4f5f64a839284b5ec01e9",
+    "domain/proactivity.py": "c005aaf8a3c3e4fc00b17152bf2f837d306c12b0f0627d5931b77a448d89d718",
+    "storage/proactivity.py": "003859c71234f93c8a004363de459ccc0471e0b81e10023c4e6530d91ec13e54"
   }
 };

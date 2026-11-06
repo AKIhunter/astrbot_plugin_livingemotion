@@ -326,10 +326,23 @@ function renderPreview(root) {
 }
 function renderBehavior(container) {
   const value = state.data.behavior;
+  const explanations = {
+    random_wait: "正在等一个自然的时机", checking: "正在想要不要开口",
+    random_skip: "这次先安静陪着", conversation_active: "还在聊天，先不插话",
+    missed_opportunity: "错过的时机已跳过", opportunity_interrupted: "上次检查中断，已停止旧任务",
+    opportunity_timeout: "这次检查超时，先停下来", select_scene: "选择私聊或群聊查看具体节奏",
+  };
   container.append(block("主动行为状态", pairs([
     ["自主发送", yesno(value.enabled)], ["剩余额度", text(value.remaining)],
-    ["冷却截止", date(value.cooldown_until)], ["未回复退避", text(value.backoff)], ["当前原因", text(value.reason)],
-  ])));
+    ["下次随机检查", date(value.next_check_at)], ["冷却截止", date(value.cooldown_until)],
+    ["未回应次数", text(value.backoff)], ["最近动机", text(value.last_motive)],
+    ["此刻", explanations[value.last_reason] || text(value.last_reason || value.reason)],
+  ])), block("自然地开口",
+    node("p", "想起聊过的事，就问问后续；关系熟悉时，关心近况或轻轻分享心情。每次只留一个容易接住的话头。"),
+    node("p", `随机等待 ${list(value.random_interval).join("–") || "未配置"} 分钟后再次检查。对方没回应时放慢节奏，睡着或正在聊天时先安静。`, "hint"),
+    node("p", "在「设置 → 主动行为」调整节奏、模型与联系范围，保存后自动开始等待。", "hint"),
+    ...(value.scope_key ? [jsonDetails("当前联系范围标识", { scope_key: value.scope_key })] : []),
+  ));
   const control = button("仅模拟 · 不计费不发送", async () => {
     if (!canWrite()) return;
     const generation = state.generation;

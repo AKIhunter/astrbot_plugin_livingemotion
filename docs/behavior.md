@@ -1,8 +1,9 @@
 # T6 主动行为与唯一发送端
 
-状态：服务、宿主发送适配器和离线桩测试已实现；持久历史查询及主入口接线仍待集成。
-文件归属仅 `services/behavior.py`、`tests/behavior/`、
-`adapters/behavior_sender.py` 和本文；不修改入口、API、runtime、storage、contracts 或父规格。
+当前服务已接入持久历史、共享模型预算和主入口。随机闲置主动聊天、
+设置与故障边界以[主动聊天指南](proactive-life.md)为准。
+下文保留早期T6交接与阶段测试记录，其中“待接线”和文件归属说明属于当时阶段，
+不代表当前集成状态；旧测试数量不作为本次功能验收。
 
 ## 给父代理 / Foundation 的接点
 

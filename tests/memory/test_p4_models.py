@@ -78,13 +78,15 @@ async def model_app(tmp_path, monkeypatch):
         diary_at="00:00", timezone="UTC", model_input_tokens=16384,
         diary_provider_id="diary-native", dream_provider_id="dream-native",
         catchup_provider_id="catchup-native", closing_provider_id="closing-native",
+        behavior_provider_id="behavior-native",
         model_daily_limit=2,
     )
     store = SQLiteStore(tmp_path / "models.sqlite3", config=config, clock=lambda: 150)
     await store.open()
     runtime = BackgroundRuntime(store, config)
     providers = {}
-    for pid in ("chat", "diary-native", "dream-native", "catchup-native", "closing-native"):
+    for pid in ("chat", "diary-native", "dream-native", "catchup-native", "closing-native",
+                "behavior-native"):
         release = asyncio.Event()
         release.set()
         providers[pid] = SimpleNamespace(
@@ -103,7 +105,7 @@ async def model_app(tmp_path, monkeypatch):
 
 async def test_p4_purpose_provider_selection_and_one_shared_daily_limit(model_app):
     app = model_app
-    for purpose in ("diary", "dream", "catchup", "closing"):
+    for purpose in ("diary", "dream", "catchup", "closing", "behavior"):
         assert (await app.model_binding(context(), purpose=purpose)).fingerprint == purpose + "-native"
     await app.purpose_model(context(), "catchup", "rules", "full untruncated data", "catchup-1")
     await app.purpose_model(context(), "closing", "rules", "closing data", "closing-1")

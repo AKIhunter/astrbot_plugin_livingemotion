@@ -60,7 +60,11 @@
       "passed": true
     },
     {
-      "name": "真实Console样例、81字段单位、float步进与原生一次保存刷新",
+      "name": "真实Console样例、原生字段单位、float步进与一次保存刷新",
+      "passed": true
+    },
+    {
+      "name": "主动行为随机时间、节奏、模型、范围勾选与保存回显",
       "passed": true
     },
     {
@@ -494,7 +498,7 @@
       "textMin": 5.158286321122933,
       "controlMin": 3.821053807076727,
       "focusMin": 5.618717037207387,
-      "textCount": 157,
+      "textCount": 165,
       "controlEdges": 48,
       "failures": [],
       "borderFailures": []
@@ -542,8 +546,8 @@
       "textMin": 5.316917484948445,
       "controlMin": 3.821053807076727,
       "focusMin": 5.618717037207387,
-      "textCount": 240,
-      "controlEdges": 184,
+      "textCount": 266,
+      "controlEdges": 204,
       "failures": [],
       "borderFailures": []
     },
@@ -602,7 +606,7 @@
       "textMin": 5.77838561708018,
       "controlMin": 5.058080330521035,
       "focusMin": 5.612596749563033,
-      "textCount": 157,
+      "textCount": 165,
       "controlEdges": 48,
       "failures": [],
       "borderFailures": []
@@ -650,8 +654,8 @@
       "textMin": 6.587851837636977,
       "controlMin": 5.058080330521035,
       "focusMin": 5.612596749563033,
-      "textCount": 240,
-      "controlEdges": 184,
+      "textCount": 266,
+      "controlEdges": 204,
       "failures": [],
       "borderFailures": []
     },
@@ -710,7 +714,7 @@
       "textMin": 5.158286321122933,
       "controlMin": 3.821053807076727,
       "focusMin": 5.618717037207387,
-      "textCount": 154,
+      "textCount": 162,
       "controlEdges": 48,
       "failures": [],
       "borderFailures": []
@@ -758,8 +762,8 @@
       "textMin": 5.316917484948445,
       "controlMin": 3.821053807076727,
       "focusMin": 5.618717037207387,
-      "textCount": 237,
-      "controlEdges": 184,
+      "textCount": 263,
+      "controlEdges": 204,
       "failures": [],
       "borderFailures": []
     },
@@ -818,7 +822,7 @@
       "textMin": 5.77838561708018,
       "controlMin": 5.058080330521035,
       "focusMin": 5.612596749563033,
-      "textCount": 154,
+      "textCount": 162,
       "controlEdges": 48,
       "failures": [],
       "borderFailures": []
@@ -866,8 +870,8 @@
       "textMin": 6.587851837636977,
       "controlMin": 5.058080330521035,
       "focusMin": 5.612596749563033,
-      "textCount": 237,
-      "controlEdges": 184,
+      "textCount": 263,
+      "controlEdges": 204,
       "failures": [],
       "borderFailures": []
     },
@@ -878,8 +882,8 @@
       "textMin": 5.158286321122933,
       "controlMin": 3.267681182709747,
       "focusMin": 5.618717037207387,
-      "textCount": 244,
-      "controlEdges": 196,
+      "textCount": 270,
+      "controlEdges": 216,
       "failures": [],
       "borderFailures": []
     },
@@ -974,8 +978,8 @@
       "textMin": 5.77838561708018,
       "controlMin": 3.6877574234310124,
       "focusMin": 5.612596749563033,
-      "textCount": 244,
-      "controlEdges": 196,
+      "textCount": 270,
+      "controlEdges": 216,
       "failures": [],
       "borderFailures": []
     },
@@ -1127,7 +1131,7 @@
     },
     {
       "nodes": 200,
-      "interactive_ms": 129
+      "interactive_ms": 136
     }
   ],
   "motion": [
@@ -1180,11 +1184,11 @@
   "source_sha256": {
     "index.html": "070a0c2e843ec66173c4b651d2dda05543b124dd9c58c24e5ef2f158fdb0e4f6",
     "theme.js": "19a9da86102b0c7e964cd87d51306f33a354d28250897d96a4c81bd6698c2dd8",
-    "style.css": "dc948703d9d6623503d35166e3d9127366baeff6f777f1c2ec7e34d8c086a551",
-    "app.mjs": "39035858f8299367a90df21735aee5edd6cf0f6657fff6cee269ba5bff9c6f19",
+    "style.css": "8fc4d63f688d4b3e20499fa8ebbced6690fc0f704a7ae1649b52216f54ed4372",
+    "app.mjs": "154248cbb6a2f34278428ad04e05ebb378e7e9a0b26c9a587d6131ad5c64ad55",
     "api.mjs": "f3bca253d05c425ab2ba1fce4e4e82fd1dfcd6a7039547b4d398981c564af627",
     "model.mjs": "22c8aa26c083d3961e3d3f03edb3220faf12b994966c7e758c2dd6aff7d03f6e",
-    "settings.mjs": "c17a10bd0910f10245c6b9afd2c322cbc2643b7f3f66d3b9415b1f850f9e9aae",
+    "settings.mjs": "45dc06e5369d85c4a8e8fd6b86ee32c252cce1fb5ed6be247874424e1d4466e9",
     "dom.mjs": "a0b58f94f9538ed1896c70fbf18a7db0e00f0b5adf7277c7cc6627a2e2ed9965",
     "charts/radar.mjs": "5b343b39c4a629e410591c95ca98af7ff30b864ac0ea571c90635a5b9d2a00d1",
     "charts/energy.mjs": "ec46f09b2eddd28422f41a6e41412469f1280f67b347408f0de0373061e2321d",
@@ -1192,42 +1196,44 @@
     "vendor/d3-force.mjs": "ce5f3498070f3dd77305d31b95b7d9b4d81949f02e02ece14a14a4c4c3cf7981"
   },
   "dto_export": {
-    "captured_at": "2026-11-06T14:49:34.937460+00:00",
-    "field_count": 81,
+    "captured_at": "2026-11-06T15:03:15.706513+00:00",
+    "field_count": 87,
     "scope": "real Console DTO / synthetic host / temporary database",
     "sources_sha256": {
-      "config.py": "4773b316f75c1d1171d2ff6a058d30ac1a684106994874780cc8ee985b1bec43",
+      "config.py": "cdd781c4a5a25c02742e219972d8d89dbf4bebb90b054510a743741b4a10c0f4",
       "contracts.py": "dbc6bc256d6eb58b6fff26a58c652b75a4f6ff1854ad63150ce13a19a1f15696",
-      "runtime/console.py": "d31d4f8288dc7d2a2480139650b66b8be448da7bc7daab6f4b55b57c296261a7",
+      "runtime/console.py": "094650c4b8b8ae320ea633ced7d8791c0233788c3766e46f3ce79ce9d21ceddd",
       "storage/schema.py": "2b3d106e881595456a5198f73d10f584ebc0e47dc632e0b3c1a3c814b900e93e",
       "storage/sqlite.py": "2febb2a71165853a53886cfef170ebf8956cb6d8e516a102817badfcf868c07d",
       "storage/state_scope.py": "cce5716c1ec8d3264c37c6d577b092f8a32a0c9d634595a8ef0f302fb688a2fe",
-      "storage/console_data.py": "d7ccfd222565b6d00d707c5205c86499253deba1dc6dcb5db3b4ec874eec606d",
-      "domain/relationship_inference.py": "73f329394e7094180b7824a0d329826bc7cda3a524c4f5f64a839284b5ec01e9"
+      "storage/console_data.py": "0c56c65d3e47211c2b4fedf2cd777639b9fe472f041d14a172c630577009e719",
+      "domain/relationship_inference.py": "73f329394e7094180b7824a0d329826bc7cda3a524c4f5f64a839284b5ec01e9",
+      "domain/proactivity.py": "c005aaf8a3c3e4fc00b17152bf2f837d306c12b0f0627d5931b77a448d89d718",
+      "storage/proactivity.py": "003859c71234f93c8a004363de459ccc0471e0b81e10023c4e6530d91ec13e54"
     }
   },
   "fixture_sha256": {
-    "fixtures.mjs": "419ecac9e526f3d192db00564ea3db6ad360a1e050bca010cefc4fd6b3a5291b",
+    "fixtures.mjs": "91efe76d362f1215b38b1fdcd0fc5c3ddb980cab99dd3dc77529a4c01ae9332d",
     "fixture-bridge.mjs": "9a5a7bda56245f440e9234dc2e21b0d0f1998f163ee09d283509d0d2f689e921",
-    "native-dto.mjs": "34b11b100f51bfce25110f9bc457b6e0571603f20a82ae45beef56e77c0922b4",
-    "export-native-dto.py": "7706a3476e1db5b040f530d933e26c39c205c8edbe3860150eb6f352c776a9a6",
+    "native-dto.mjs": "19ebfa1a1d93cee01c456af6ddd19e0b48ada579b788003588830687f7b79cab",
+    "export-native-dto.py": "c5d8bd7ec19409c533b969b3b1397fea9286b38dada48cb87f4c2bbf38fc40cd",
     "model.test.mjs": "bab194bb999007b19e422ac9072a39e62a9f308e88e4d0e5c3cbcf4862a9d3d4",
-    "browser.test.mjs": "4cdaf4c341a5e45fc229494cd260490f6b79ad905af9ca4b9e8a54641d8ddd3c",
+    "browser.test.mjs": "e32ec52f06f9ada46c6593dd8c9462c98e6844efec6e42e04b8844bbaaca0615",
     "server.mjs": "c68c94613091309966ed773520a2f322c49c281ef3e765b391aaa574c634b0b9",
     "build.mjs": "e6ddce8eb8f4275fd26d60090ec595c80541d8364d8b36e0b1ba72bb81f914eb",
     "package.json": "4f352ff444277f10b19fba9873731bc436ebe1f68828237ce4231f8e06ca1e8b",
     "package-lock.json": "9799954f6ae7c8f2916e717f1f9c03d6c44470c53871f6fd9ee02006f7d5cc50"
   },
-  "completed_at": "2026-11-06T14:50:01.367Z",
-  "preview_url": null,
+  "completed_at": "2026-11-06T15:05:17.391Z",
+  "preview_url": "http://127.0.0.1:18764/tests/ui/fixture.html",
   "source_sha256_after": {
     "index.html": "070a0c2e843ec66173c4b651d2dda05543b124dd9c58c24e5ef2f158fdb0e4f6",
     "theme.js": "19a9da86102b0c7e964cd87d51306f33a354d28250897d96a4c81bd6698c2dd8",
-    "style.css": "dc948703d9d6623503d35166e3d9127366baeff6f777f1c2ec7e34d8c086a551",
-    "app.mjs": "39035858f8299367a90df21735aee5edd6cf0f6657fff6cee269ba5bff9c6f19",
+    "style.css": "8fc4d63f688d4b3e20499fa8ebbced6690fc0f704a7ae1649b52216f54ed4372",
+    "app.mjs": "154248cbb6a2f34278428ad04e05ebb378e7e9a0b26c9a587d6131ad5c64ad55",
     "api.mjs": "f3bca253d05c425ab2ba1fce4e4e82fd1dfcd6a7039547b4d398981c564af627",
     "model.mjs": "22c8aa26c083d3961e3d3f03edb3220faf12b994966c7e758c2dd6aff7d03f6e",
-    "settings.mjs": "c17a10bd0910f10245c6b9afd2c322cbc2643b7f3f66d3b9415b1f850f9e9aae",
+    "settings.mjs": "45dc06e5369d85c4a8e8fd6b86ee32c252cce1fb5ed6be247874424e1d4466e9",
     "dom.mjs": "a0b58f94f9538ed1896c70fbf18a7db0e00f0b5adf7277c7cc6627a2e2ed9965",
     "charts/radar.mjs": "5b343b39c4a629e410591c95ca98af7ff30b864ac0ea571c90635a5b9d2a00d1",
     "charts/energy.mjs": "ec46f09b2eddd28422f41a6e41412469f1280f67b347408f0de0373061e2321d",
@@ -1236,14 +1242,16 @@
   },
   "ui_source_stable": true,
   "dto_sources_after": {
-    "config.py": "4773b316f75c1d1171d2ff6a058d30ac1a684106994874780cc8ee985b1bec43",
+    "config.py": "cdd781c4a5a25c02742e219972d8d89dbf4bebb90b054510a743741b4a10c0f4",
     "contracts.py": "dbc6bc256d6eb58b6fff26a58c652b75a4f6ff1854ad63150ce13a19a1f15696",
-    "runtime/console.py": "d31d4f8288dc7d2a2480139650b66b8be448da7bc7daab6f4b55b57c296261a7",
+    "runtime/console.py": "094650c4b8b8ae320ea633ced7d8791c0233788c3766e46f3ce79ce9d21ceddd",
     "storage/schema.py": "2b3d106e881595456a5198f73d10f584ebc0e47dc632e0b3c1a3c814b900e93e",
     "storage/sqlite.py": "2febb2a71165853a53886cfef170ebf8956cb6d8e516a102817badfcf868c07d",
     "storage/state_scope.py": "cce5716c1ec8d3264c37c6d577b092f8a32a0c9d634595a8ef0f302fb688a2fe",
-    "storage/console_data.py": "d7ccfd222565b6d00d707c5205c86499253deba1dc6dcb5db3b4ec874eec606d",
-    "domain/relationship_inference.py": "73f329394e7094180b7824a0d329826bc7cda3a524c4f5f64a839284b5ec01e9"
+    "storage/console_data.py": "0c56c65d3e47211c2b4fedf2cd777639b9fe472f041d14a172c630577009e719",
+    "domain/relationship_inference.py": "73f329394e7094180b7824a0d329826bc7cda3a524c4f5f64a839284b5ec01e9",
+    "domain/proactivity.py": "c005aaf8a3c3e4fc00b17152bf2f837d306c12b0f0627d5931b77a448d89d718",
+    "storage/proactivity.py": "003859c71234f93c8a004363de459ccc0471e0b81e10023c4e6530d91ec13e54"
   },
   "dto_source_stable": true,
   "passed": true

@@ -31,6 +31,8 @@ export function makeState(contextId = "fixture-a") {
       { name: "长期记忆", status: "degraded", reason: "模式 none；情绪、关系和作息仍可运行" },
     ],
     behavior: { enabled: false, remaining: 3, cooldown_until: null, backoff: "无待回复", reason: "自主发送关闭",
+      random_interval: [90, 240], next_check_at: 1793959200, last_motive: "记忆回访",
+      last_outcome: "skipped", last_reason: "conversation_active",
       candidates: [{ label: "合成候选 A", score: 0.61, vetoes: ["autonomy_disabled", "observe_only"] }] },
     night: { state: "清醒", display_state: "awake", stage: "不在睡眠窗口", energy: 0.76, energy_percent: 76, sleep_at: null, wake_at: null,
       schedule_preview: { summary: "跨午夜夜间，午休独立", drowsy_at: "次日 01:00", wake_at: "次日 08:00 + 本周期赖床" },
@@ -71,8 +73,8 @@ export function makeScopes() {
   return { api_version: 1, personas: [{ id: "fixture-persona", name: "测试人格" }, { id: "fixture-persona-b", name: "第二人格（合成）" }],
     platforms: ["qq", "bilibili"], counts: { global: 2, private: 1, group: 1 },
     contexts: [
-      { id: "fixture-a", persona_id: "fixture-persona", platform: "qq", view_scope: "private", scene_id: "scene-a", account_id: "10001", label: "QQ / 私聊 / 合成 A" },
-      { id: "fixture-b", persona_id: "fixture-persona", platform: "bilibili", view_scope: "group", scene_id: "scene-b", account_id: "10001", label: "B站 / 群聊 / 合成 B" },
+      { id: "fixture-a", scope_key: "synthetic-scope-a", persona_id: "fixture-persona", platform: "qq", view_scope: "private", scene_id: "scene-a", account_id: "10001", label: "QQ / 私聊 / 合成 A" },
+      { id: "fixture-b", scope_key: "synthetic-scope-b", persona_id: "fixture-persona", platform: "bilibili", view_scope: "group", scene_id: "scene-b", account_id: "10001", label: "B站 / 群聊 / 合成 B" },
     ] };
 }
 export function makeRelationships() {

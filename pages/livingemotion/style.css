@@ -138,6 +138,8 @@ th { color: var(--muted); font-weight: 400; }
 .field { display: grid; grid-template-columns: minmax(0, 1fr) minmax(160px, .7fr); gap: 24px; padding: 16px 0; border-bottom: 1px solid var(--line); align-items: start; }
 .field input:not([type="checkbox"]), .field select { width: 100%; }
 .field input[type="checkbox"] { justify-self: start; margin-top: 8px; } .field p { margin: 4px 0 0; }
+.scope-choice { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
+.field .scope-choice input[type="checkbox"] { flex: 0 0 24px; margin: 0; }
 .settings-group { margin-top: 32px; } .settings-group h2 { padding-bottom: 12px; border-bottom: 1px solid var(--control); }
 .editor { margin-top: 24px; padding: 24px; background: var(--subtle); border: 1px solid var(--control); border-radius: 20px; }
 .editor .section-heading { margin-bottom: 12px; } .editor input { width: 100%; margin-top: 8px; }
