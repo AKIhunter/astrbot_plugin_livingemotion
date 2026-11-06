@@ -1,12 +1,14 @@
 export const PAGE_SIZE = 10;
 export const SECTIONS = Object.freeze({
-  overview: ["01", "OVERVIEW", "总览"],
+  overview: ["01", "PERSONAL TELEMETRY", "TA"],
   persona: ["02", "PERSONA", "人格"],
-  emotion: ["03", "EMOTION & RELATIONSHIP", "情绪与关系"],
-  behavior: ["04", "BEHAVIOR", "主动行为"],
-  night: ["05", "NIGHT", "长夜"],
-  experience: ["06", "DIARY & DREAM", "日记与梦境"],
-  memory: ["07", "MEMORY", "记忆接入"],
+  emotion: ["03", "EMOTION", "情绪"],
+  relationships: ["04", "RELATIONSHIPS", "关系"],
+  behavior: ["05", "BEHAVIOR", "主动行为"],
+  night: ["06", "NIGHT", "长夜"],
+  experience: ["07", "DIARY & DREAM", "日记与梦境"],
+  memory: ["08", "MEMORY", "记忆接入"],
+  settings: ["09", "SETTINGS", "设置"],
 });
 export const DIMENSIONS = Object.freeze({
   pleasure: "愉悦", arousal: "唤醒", stress: "压力", social_need: "社交需求",
@@ -17,6 +19,7 @@ export const ACTIONS = Object.freeze({
   "diary.generate": ["生成私人日记", "可能调用模型并消耗额度。只生成私人内容，不发送到聊天。"],
   "dream.generate": ["生成梦境", "可能调用模型并消耗额度。仍须满足睡眠阶段与配额；内容始终是想象。"],
   "behavior.send": ["生成并真实发送", "可能调用模型并向当前范围真实发送消息。硬否决仍生效；结果不明时不要重复执行。"],
+  "experience.pin": ["修改置顶", "保存这篇日记或梦境的置顶状态，不调用模型。取消置顶后按原创建日期恢复保留规则。"],
 });
 export const object = value => value && typeof value === "object" && !Array.isArray(value) ? value : {};
 export const list = value => Array.isArray(value) ? value : [];
@@ -27,12 +30,24 @@ export const percent = value => unit(value) === null ? "未提供" : `${Math.rou
 export const yesno = value => value === true ? "开启" : value === false ? "关闭" : "未提供";
 export const reasons = value => list(value).map(item => text(item, "")).filter(Boolean).join("；") || "未提供";
 export const hasRevision = value => typeof value === "string" && value.length > 0 || typeof value === "number" && Number.isFinite(value);
+export const NIGHT_STATES = Object.freeze({ awake: "清醒", nap: "小憩", groggy: "恍惚", drowsy: "困", deep_sleep: "沉睡" });
+export const energyValue = value => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100 ? value : null;
+export function scopeParams(value) {
+  if (typeof value === "string") return value ? { context_id: value } : {};
+  const selection = object(value);
+  return Object.fromEntries(["persona_id", "view_scope", "context_id", "platform"]
+    .filter(key => typeof selection[key] === "string" && selection[key]).map(key => [key, selection[key]]));
+}
+export function baselineDimensions(data) {
+  return object(data.bot_state?.baseline ?? data.emotion_policy?.baseline ?? data.policy?.emotion?.baseline);
+}
 
-export function date(value) {
+export function date(value, timeZone) {
   if (value === undefined || value === null || value === "") return "未提供";
   const parsed = new Date(typeof value === "number" ? value * 1000 : value);
   return Number.isNaN(parsed.getTime()) ? "时间无效" : new Intl.DateTimeFormat("zh-CN", {
     month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
+    ...(timeZone ? { timeZone } : {}),
   }).format(parsed);
 }
 export function expired(value, now = Date.now()) {
@@ -55,7 +70,7 @@ export function normalizeState(raw) {
     throw Object.assign(new Error("当前范围不在已授权列表内。"), { code: "invalid_context" });
   }
   const config = object(data.config);
-  const fields = list(config.fields).filter(field => field && safeKey(field.key) && Object.hasOwn(SECTIONS, field.section));
+  const fields = list(config.fields).filter(field => field && safeKey(field.key));
   return {
     ...data, context_id: contextId, contexts,
     config: { ...config, values: object(config.values), fields },
@@ -65,7 +80,7 @@ export function normalizeState(raw) {
     relationship: object(data.relationship), persona: object(data.persona),
     availability: object(data.availability), health: list(data.health).map(object),
     behavior: object(data.behavior), night: object(data.night),
-    experience: object(data.experience), memory: object(data.memory),
+    experience: object(data.experience), memory: object(data.memory), scope_selection: object(data.selection ?? data.scope_selection),
   };
 }
 export function normalizeRecords(raw, requestedPage) {
@@ -84,11 +99,15 @@ export function fieldValue(field, input) {
     if (!option) throw new Error("请选择有效选项。");
     return option.value;
   }
-  if (field.type === "integer" || field.type === "number") {
+  if (["integer", "number", "float"].includes(field.type)) {
     const value = input.value.trim() === "" ? NaN : Number(input.value);
     if (!Number.isFinite(value) || field.type === "integer" && !Number.isInteger(value) ||
         typeof field.min === "number" && value < field.min ||
         typeof field.max === "number" && value > field.max) throw new Error("请输入范围内的有效数值。");
+    if (Number.isFinite(field.step) && field.step > 0 &&
+        Math.abs((value - (field.min || 0)) / field.step - Math.round((value - (field.min || 0)) / field.step)) > 1e-7) {
+      throw new Error(`请按 ${field.step} 的步进输入。`);
+    }
     return value;
   }
   if (field.type === "string") return input.value;

@@ -19,18 +19,30 @@ import unittest
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host-source", type=Path, required=True)
+    parser.add_argument("--host-version", choices=("4.29.1", "4.29.2", "4.29.3", "4.29.4"),
+                        default="4.29.4")
     parser.add_argument("--sandbox-parent", type=Path, required=True)
     parser.add_argument("--worker", action="store_true")
-    parser.add_argument("--output", type=Path, default=Path(__file__).with_name("evidence-v4.29.4.json"))
+    parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     host = args.host_source.resolve()
     plugin = Path(__file__).resolve().parents[2]
+    args.output = args.output or Path(__file__).with_name(f"evidence-v{args.host_version}.json")
     if not args.worker:
         host_head = subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=host, text=True,
         ).strip()
-        if host_head != "61335414433db721b3f7ecc93f90deafe0a59d78":
-            parser.error("This regression suite is pinned to the verified AstrBot v4.29.4 HEAD")
+        if args.host_version == "4.29.4":
+            expected = "61335414433db721b3f7ecc93f90deafe0a59d78"
+        else:
+            try:
+                expected = subprocess.check_output(
+                    ["git", "rev-parse", f"v{args.host_version}^{{commit}}"], cwd=host, text=True,
+                ).strip()
+            except subprocess.CalledProcessError:
+                parser.error("The requested host version must have its exact local release tag")
+        if host_head != expected:
+            parser.error("Host HEAD does not match the requested pinned release")
         args.sandbox_parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="console-asgi-", dir=args.sandbox_parent) as root:
             env = {
@@ -46,6 +58,7 @@ def main():
             result = subprocess.run(
                 [sys.executable, str(Path(__file__).resolve()), "--worker",
                  "--host-source", str(host), "--sandbox-parent", root,
+                 "--host-version", args.host_version,
                  "--output", str(args.output.resolve())],
                 env=env, cwd=root, timeout=120,
             )
@@ -83,7 +96,7 @@ def main():
             super().addSubTest(test, subtest, err)
             checks.append({"name": subtest.id(), "passed": err is None, "subtest": True})
 
-    suite = unittest.defaultTestLoader.discover(str(Path(__file__).parent), pattern="test_*.py")
+    suite = unittest.defaultTestLoader.discover(str(Path(__file__).parent), pattern="test_console.py")
     result = unittest.TextTestRunner(verbosity=2, resultclass=EvidenceResult).run(suite)
     host_files = [
         "astrbot/api/web.py", "astrbot/core/star/context.py",
@@ -98,12 +111,14 @@ def main():
     for folder in ("page_api", "tests/console"):
         for path in sorted((plugin / folder).glob("*.py")):
             hashes[str(path.relative_to(plugin))] = hashlib.sha256(path.read_bytes()).hexdigest()
+    for name in ("runtime/console.py", "storage/console_data.py", "domain/emotion.py"):
+        hashes[name] = hashlib.sha256((plugin / name).read_bytes()).hexdigest()
     report = {
         "suite": "real_host_ASGI_and_request_binding_with_synthetic_application",
         "executed_at": datetime.now(timezone.utc).isoformat(),
         "python": platform.python_version(),
         "platform": f"{os.uname().sysname} {os.uname().release}/{os.uname().machine}",
-        "host_version": "4.29.4",
+        "host_version": args.host_version,
         "host_head": os.environ["LIVINGEMOTION_CONSOLE_HOST_HEAD"],
         "dependencies": {name: importlib.metadata.version(name)
                          for name in ("PyJWT", "fastapi", "httpx", "starlette")},

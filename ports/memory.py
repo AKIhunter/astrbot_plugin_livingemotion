@@ -12,6 +12,7 @@ from ..contracts import Context, EvidenceRef, stable_key
 class MemoryMode(str, Enum):
     NONE = "none"
     LOCAL_LITE = "local_lite"
+    LOCAL_VECTOR = "local_vector"
     EXTERNAL = "external"
 
 

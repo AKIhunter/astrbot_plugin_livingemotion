@@ -41,6 +41,33 @@
 
 ## 素材与测试数据
 
+### 前端关系布局依赖（2026-11-06）
+
+`pages/livingemotion/vendor/d3-force.mjs` 是通过固定 `esbuild@0.25.10`
+构建的自托管 ESM，只在关系页载入。锁文件位于 `tests/ui/package-lock.json`。
+运行期不依赖 npm、CDN 或远程脚本。包及传递依赖采用 ISC：
+`d3-force@3.0.0`、`d3-dispatch@3.0.2`、`d3-quadtree@3.0.2`、`d3-timer@3.0.2`。
+esbuild 为 MIT 开发构建工具，不打包进页面。
+
+以下版权及许可适用于上述分发的 D3 代码，不由本项目 MIT 替代：
+
+```text
+Copyright 2010-2021 Mike Bostock (d3-force)
+Copyright 2010-2026 Mike Bostock (d3-dispatch, d3-quadtree, d3-timer)
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+```
+
 本轮不制作 logo/Banner，不借用官方或上游标志。页面为自有 livingEmotion 字标；
 视觉方向参考不构成对他人商标/素材的使用授权。
 测试账号、聊天文本、日记、梦、令牌反例和数据库均为合成/隔离生成，不来自生产。

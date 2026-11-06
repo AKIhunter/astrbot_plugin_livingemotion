@@ -1,3 +1,4 @@
+import { scopeParams } from "./model.mjs";
 export class PageError extends Error {
   constructor(code, message) { super(message); this.code = String(code || "unavailable"); }
 }
@@ -42,7 +43,12 @@ export function createApi(resolveBridge, timeout = 15000) {
     finally { clearTimeout(timer); }
   }
   return {
-    state: contextId => call("apiGet", "console/state", contextId ? { context_id: contextId } : {}),
+    state: selection => call("apiGet", "console/state", scopeParams(selection)),
+    scopes: () => call("apiGet", "console/scopes", {}),
+    settingsOptions: () => call("apiGet", "console/settings-options", {}),
+    relationships: params => call("apiGet", "console/relationships", params),
+    relationship: body => call("apiPost", "console/relationship", body),
+    energy: params => call("apiGet", "console/energy", params),
     records: params => call("apiGet", "console/records", params),
     save: body => call("apiPost", "console/config", body),
     preview: contextId => call("apiPost", "console/preview", { context_id: contextId }),

@@ -2,11 +2,15 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "node build.mjs",
     "test": "node --test model.test.mjs",
+    "fixture:native": "../../.venv/bin/python export-native-dto.py",
     "test:browser": "node browser.test.mjs",
     "preview": "node server.mjs"
   },
   "devDependencies": {
+    "d3-force": "3.0.0",
+    "esbuild": "0.25.10",
     "playwright": "1.64.1"
   }
 }

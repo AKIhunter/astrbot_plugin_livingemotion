@@ -1,9 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { normalizeState, normalizeRecords, percent, unit, fieldValue, safeKey, expired } from "../../pages/livingemotion/model.mjs";
+import { normalizeState, normalizeRecords, percent, unit, fieldValue, safeKey, expired, scopeParams, baselineDimensions, energyValue } from "../../pages/livingemotion/model.mjs";
 import { createApi, unwrap, pageError } from "../../pages/livingemotion/api.mjs";
-import { makeState } from "./fixtures.mjs";
+import { makeState, nativeDTO, makeRelationships } from "./fixtures.mjs";
+import { graphData, NODE_CAP } from "../../pages/livingemotion/charts/relationships.mjs";
+import { energyPoints } from "../../pages/livingemotion/charts/energy.mjs";
+import { settingsGroups, schedulePreview } from "../../pages/livingemotion/settings.mjs";
 
 test("Bot 状态不会从对方观察补值", () => {
   const raw = makeState(); delete raw.bot_state;
@@ -32,6 +35,41 @@ test("配置字段白名单与数值校验", () => {
   assert.throws(() => fieldValue({ type: "number" }, { value: "" }));
   assert.throws(() => fieldValue({ type: "enum", options: [] }, { value: "admin" }));
   assert.equal(fieldValue({ type: "integer", min: 1, max: 10 }, { value: "10" }), 10);
+  assert.equal(fieldValue({ type: "float", step: .1 }, { value: "4.1" }), 4.1);
+  assert.throws(() => fieldValue({ type: "float", step: .1 }, { value: "4.15" }));
+});
+test("实际 Console DTO、float单位、原生任务组单一来源", () => {
+  const state = normalizeState(nativeDTO.state);
+  assert.equal(state.scope_selection.view_scope, "global");
+  assert.equal(state.context_id, "");
+  assert.equal(state.night.energy_percent, 74.1);
+  assert.equal(baselineDimensions(state).pleasure, .5);
+  const missing = makeState(); delete missing.bot_state.baseline;
+  assert.deepEqual(baselineDimensions(missing), {});
+  const groups = settingsGroups(state.config.fields, state.config);
+  const keys = groups.flatMap(group => group.fields.map(field => field.key));
+  assert.equal(new Set(keys).size, state.config.fields.length);
+  assert.equal(keys.length, state.config.fields.length);
+  assert.equal(state.config.fields.find(field => field.key === "energy_reply_cost").type, "float");
+  assert.equal(state.config.fields.find(field => field.key === "energy_reply_cost").unit, "点/次");
+  assert.equal(state.config.readonly[0].value, 100);
+  assert.match(schedulePreview(state.config.values), /恍惚转困 次日 01:00/);
+  assert.match(schedulePreview({ fatigue_start: "bad" }), /未完整配置/);
+  assert.deepEqual(scopeParams({ persona_id: "p", view_scope: "private", scene_id: "bad", actor_id: "admin" }),
+    { persona_id: "p", view_scope: "private" });
+});
+test("关系真实DTO、平台同号隔离与200裁剪；能量不补缺失点", () => {
+  const result = graphData(nativeDTO.relationships);
+  assert.equal(result.items.length, 10);
+  assert.equal(new Set(result.nodes.map(item => item.id)).size, result.nodes.length);
+  const nodes = makeRelationships();
+  assert.notEqual(nodes[0].id, nodes[1].id);
+  const capped = graphData({ api_version: 1, nodes, edges: [], items: nodes.slice(0, 10), total: nodes.length, page_size: 10 });
+  assert.equal(capped.nodes.length, NODE_CAP);
+  const empty = energyPoints(nativeDTO.energy);
+  assert.equal(empty.collected, false); assert.deepEqual(empty.points, []);
+  assert.equal(energyValue(null), null); assert.equal(energyValue(100), 100);
+  assert.throws(() => energyPoints({ ...nativeDTO.energy, page_size: 11 }));
 });
 test("宿主响应包装、401、403和409保留语义", () => {
   assert.deepEqual(unwrap({ status: "ok", data: { api_version: 1 } }), { api_version: 1 });

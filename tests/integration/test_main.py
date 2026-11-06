@@ -133,13 +133,60 @@ async def test_sleep_exemption_uses_native_admin_not_json(tmp_path, hooks, admin
 async def test_registered_wake_still_exempt(tmp_path, hooks):
     app, host, _ = await application(tmp_path, {"night_block_chat": True})
     plugin = plugin_for(app, host, hooks)
-    message = HostMessage()
+    message = HostMessage(admin=True)
     try:
         await sleeping(app, plugin, message)
         assert len([result async for result in plugin.wake(message)]) == 1
         await plugin.observe_message(message)
-        assert message.get_extra("livingemotion:control_request") == "wake"
+        assert message.get_extra("livingemotion:control_request") == "admin"
         assert not message.stopped
+    finally:
+        await app.terminate()
+
+
+async def test_registered_manual_wake_requires_authenticated_admin(tmp_path, hooks):
+    app, host, _ = await application(tmp_path, {"night_block_chat": True})
+    plugin = plugin_for(app, host, hooks)
+    message = HostMessage(admin=False)
+    try:
+        await sleeping(app, plugin, message)
+        assert [result async for result in plugin.wake(message)] == []
+        assert message.get_extra("livingemotion:control_request") != "admin"
+        assert host.sends == 0
+    finally:
+        await app.terminate()
+
+async def test_streaming_is_buffered_before_host_request_stage(tmp_path, hooks):
+    app, host, native = await application(tmp_path)
+    plugin = plugin_for(app, host, hooks)
+    try:
+        message = HostMessage()
+        message.set_extra("enable_streaming", True)
+        await plugin.observe_message(message)
+        assert message.get_extra("enable_streaming") is False
+        native["enabled"] = False
+        await app.refresh_config()
+        untouched = HostMessage(identifier="disabled")
+        untouched.set_extra("enable_streaming", True)
+        await plugin.observe_message(untouched)
+        assert untouched.get_extra("enable_streaming") is True
+    finally:
+        await app.terminate()
+
+async def test_last_request_hook_blocks_live_and_restored_streaming(tmp_path, hooks):
+    app, host, _ = await application(tmp_path)
+    plugin = plugin_for(app, host, hooks)
+    try:
+        message = HostMessage()
+        await plugin.observe_message(message)
+        message.set_extra("enable_streaming", True)
+        await plugin.buffer_final_request(message, SimpleNamespace())
+        assert message.get_extra("enable_streaming") is False and not message.stopped
+        message.set_extra("action_type", "live")
+        await plugin.buffer_final_request(message, SimpleNamespace())
+        assert message.stopped
+        assert message.get_extra("livingemotion:unavailable") == "live_submission_unsupported"
+        assert host.sends == 0
     finally:
         await app.terminate()
 

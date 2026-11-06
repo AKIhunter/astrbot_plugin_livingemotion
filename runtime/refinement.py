@@ -2,6 +2,7 @@
 
 from ..contracts import canonical_json, to_dict
 from ..domain.emotion import apply_emotion, decay_affect
+from .state_scope import source_affect
 
 
 class Refinement:
@@ -16,6 +17,9 @@ class Refinement:
 
     async def refine_emotion(self, event, generation, version, seed):
         context = event.context
+        owner = seed.get("state_owner")
+        inputs = {key: value for key, value in seed.items() if key != "state_owner"}
+        inputs["state"] = source_affect(inputs["state"], context)
 
         async def current():
             if (not self.config.emotion_model_enabled or self.effective_mode(context) != "active"
@@ -23,7 +27,7 @@ class Refinement:
                     or not (await self.legacy_constraints(context, "emotion"))["allowed"]):
                 return False
             record = await self.store.get_state(context, "bot")
-            return bool(record and record.version == version)
+            return bool(record and record.version == version and record.owner == owner)
 
         if not await current():
             return
@@ -38,7 +42,7 @@ class Refinement:
             '"social_need":0},"confidence":0.5}. Each delta must be within -0.12..0.12.'
         )
         data = canonical_json({"persona": source.persona.prompt, "message": event.body,
-                               "bot": to_dict(seed["state"])})
+                               "bot": to_dict(inputs["state"])})
 
         async def generate():
             if not await current():
@@ -58,7 +62,7 @@ class Refinement:
             return
         # Recompute once from the original pre-event snapshot, then replace only
         # that event's Bot projection/trace by CAS. No second event or ledger row.
-        refined = apply_emotion(event=event, model_suggestion=suggestion, **seed)
+        refined = apply_emotion(event=event, model_suggestion=suggestion, **inputs)
         if "model_refined" not in refined["reason_codes"]:
             return
         affect = decay_affect(refined["affect"], now=self.store.clock())
@@ -69,4 +73,5 @@ class Refinement:
             {**to_dict(affect), "_runtime": refined["runtime"]},
             {"kind": "emotion", **refined["trace"], "after": to_dict(affect),
              "reason_codes": refined["reason_codes"]},
+            owner=owner,
         )

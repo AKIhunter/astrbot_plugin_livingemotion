@@ -591,7 +591,12 @@ async def test_live_mode_switch_keeps_core_states_and_sleep(tmp_path, mode):
         assert (await app.api.get_relationship(context))["data"]["score"] > before
         await app.advance_scope(context, action="night.sleep")
         assert (await app.api.get_availability(context))["available"] is False
-        assert app.memory.capabilities().mode == mode
+        # The v2 switch selects external or the local vector interface. Legacy
+        # local_lite records remain readable through that interface.
+        assert app.memory.capabilities().mode == (
+            "external" if mode == "external" else "local_vector"
+        )
+        assert app.config.memory_read is False and app.config.memory_write is False
         assert host.sends == 0
     finally:
         await app.terminate()

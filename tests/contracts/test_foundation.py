@@ -1,4 +1,5 @@
 import ast
+from collections import UserDict
 from dataclasses import fields, replace
 import json
 from pathlib import Path
@@ -7,7 +8,7 @@ import pytest
 
 from astrbot_plugin_livingemotion.config import Config
 from astrbot_plugin_livingemotion.contracts import (
-    BotAffect, Event, HumanObservation, NightState, Relationship, canonical_json, to_dict,
+    ActorRole, BotAffect, Event, HumanObservation, NightState, Relationship, canonical_json, to_dict,
 )
 
 
@@ -63,6 +64,27 @@ def test_identity_revision_does_not_migrate_storage(le_context):
 def test_affect_rejects_nonfinite_and_invalid_dimensions(value):
     with pytest.raises(ValueError):
         BotAffect(pleasure=value)
+
+
+def test_nested_contract_wire_format_preserves_enums_and_custom_mappings():
+    class Text(str):
+        pass
+
+    value = {
+        "role": ActorRole.HUMAN,
+        "nested": UserDict({7: (None, True, 0.1, Text("中文"))}),
+    }
+    assert canonical_json(value) == (
+        '{"nested":{"7":[null,true,0.1,"\\u4e2d\\u6587"]},"role":"human"}'
+    )
+    assert to_dict(value)["nested"]["7"] == [None, True, 0.1, "中文"]
+    assert isinstance(to_dict(value)["nested"]["7"][-1], Text)
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), -float("inf")])
+def test_nested_plain_number_still_rejected_by_canonical_encoder(value):
+    with pytest.raises(ValueError):
+        canonical_json({"runtime": [({"amount": value},)]})
 
 
 def test_role_types_are_separate():

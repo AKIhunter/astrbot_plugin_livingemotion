@@ -5,8 +5,10 @@ import path from "node:path";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const assets = new Map([
-  ...["theme.js", "style.css", "model.mjs", "api.mjs", "app.mjs"].map(name => [`/pages/livingemotion/${name}`, `pages/livingemotion/${name}`]),
-  ...["fixture-bridge.mjs", "fixtures.mjs"].map(name => [`/tests/ui/${name}`, `tests/ui/${name}`]),
+  ...["theme.js", "style.css", "model.mjs", "api.mjs", "app.mjs", "dom.mjs", "settings.mjs",
+    "charts/radar.mjs", "charts/relationships.mjs", "charts/energy.mjs", "vendor/d3-force.mjs"
+  ].map(name => [`/pages/livingemotion/${name}`, `pages/livingemotion/${name}`]),
+  ...["fixture-bridge.mjs", "fixtures.mjs", "native-dto.mjs"].map(name => [`/tests/ui/${name}`, `tests/ui/${name}`]),
 ]);
 export async function startServer(port = 0) {
   const template = await readFile(path.join(root, "pages/livingemotion/index.html"), "utf8");

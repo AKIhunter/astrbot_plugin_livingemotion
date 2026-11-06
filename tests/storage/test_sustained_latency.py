@@ -1,4 +1,5 @@
 """F6 growth regressions and an explicit offline diagnostic, not C51 acceptance."""
+# ruff: noqa: E402 -- the standalone diagnostic resolves its package before imports.
 
 from __future__ import annotations
 
@@ -235,6 +236,73 @@ def test_state_encoding_is_byte_identical_to_contract(le_context):
     ]
     for value in values:
         assert _state_json(value) == canonical_json(value)
+
+
+def test_native_snapshot_conversion_matches_asdict_and_keeps_custom_fallback(le_event):
+    from collections.abc import Mapping
+    from dataclasses import asdict, is_dataclass
+    from enum import Enum
+    from astrbot_plugin_livingemotion.contracts import BotAffect, EvidenceRef, to_dict
+
+    def original(value):
+        if is_dataclass(value) and not isinstance(value, type):
+            return original(asdict(value))
+        if isinstance(value, Enum):
+            return value.value
+        if isinstance(value, Mapping):
+            return {str(key): original(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [original(item) for item in value]
+        return value
+
+    reference = EvidenceRef("synthetic", "source", le_event.context, "human", "bot",
+                            "interaction", le_event.occurred_at)
+    affect = BotAffect(evidence=(reference,))
+    for value in (le_event, affect, reference, le_event.context):
+        assert to_dict(value) == original(value)
+    converted = to_dict(affect)
+    converted["evidence"][0]["context"]["audience"].append("changed")
+    assert "changed" not in le_event.context.audience
+
+    class Custom:
+        def __deepcopy__(self, memo):
+            return "copied-custom-value"
+
+    # Unusual legacy values retain the original deepcopy semantics.
+    custom = replace(affect, labels=(Custom(),))
+    assert to_dict(custom) == original(custom)
+
+
+async def test_pure_projection_runs_off_loop_and_cancellation_drains(le_store, le_event):
+    import threading
+    import pytest
+
+    entered, release = threading.Event(), threading.Event()
+    projector = Projector(le_store, Config)
+    original = projector._calculate
+    worker_threads = []
+
+    def blocked(*args):
+        worker_threads.append(threading.current_thread())
+        entered.set()
+        assert release.wait(2)
+        return original(*args)
+
+    projector._calculate = blocked
+    task = asyncio.create_task(projector(le_event))
+    try:
+        assert await asyncio.to_thread(entered.wait, 2)
+        assert worker_threads[0] is not threading.current_thread()
+        task.cancel()
+        read = asyncio.create_task(le_store.read_projection(le_event.context))
+        await asyncio.sleep(0)
+        assert not task.done() and not read.done()
+    finally:
+        release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    generation, records = await read
+    assert generation == 0 and all(record is None for record in records.values())
 
 
 async def test_stored_state_uses_canonical_bytes_and_keeps_limits(le_store, le_context):

@@ -1,5 +1,14 @@
 # API v1
 
+进程内 v1 门面保持兼容；新版范围筛选、关系覆盖、精力日志和集中设置的管理 DTO
+见 [管理接入契约](internal-console-contract.md)。写操作仍要求 Dashboard 管理员 Bearer，
+全局筛选不创建真实发送路由。新增状态所有者、票据与回复提交端口见
+[状态接入契约](internal-state-contract.md)。
+日记与梦境置顶通过既有 `console/action` 的 `experience.pin`，带真实记录
+`context_id/entry_id/pinned/expected_pinned`、配置版本、原因及显式确认。
+同一认证身份注入、全记录事务比较与审计生效；旧置顶重放409，不调用模型。
+下文保留0.1原始接口参考，不以旧五端点计数代替新版路由集合。
+
 读者：受信插件和管理页面的开发者。本文件依据 `contracts.py`、`api.py`、
 `runtime/console.py` 和 `page_api`，2026-11-05 核对源码。
 维护者在签名、量纲、鉴权或版本变化时同步，每次交付复核。

@@ -83,8 +83,8 @@ async def basic(core, e, root, *, focus=False):
         counts = Counter(t.get_name() for t in tasks())
         e.check(f"C03.single_task_per_kind_{i+1}", bool(counts) and max(counts.values()) == 1,
                 detail=dict(counts))
-        e.check(f"C03.five_routes_{i+1}", sum(
-            r[0].startswith("/" + NAME + "/") for r in core.star_context.registered_web_apis) == 5)
+        e.check(f"C03.ten_routes_{i+1}", sum(
+            r[0].startswith("/" + NAME + "/") for r in core.star_context.registered_web_apis) == 10)
     ev = await seed(core, 12)
     raw = ev.get_extra("livingemotion:context")
     e.check("C05.native_event_resolved", bool(raw), fatal=True)
@@ -221,11 +221,18 @@ async def http_matrix(core, client, token, e, root):
                                                                 secret, algorithm="HS256")},
     }
     methods = {"state": "GET", "records": "GET", "config": "POST",
-               "preview": "POST", "action": "POST"}
+               "preview": "POST", "action": "POST", "scopes": "GET",
+               "relationships": "GET", "relationship": "POST", "energy": "GET",
+               "settings-options": "GET"}
+    actual_context = (await p.application.store.list_contexts())[0]
     for base in bases:
         route = "legacy" if base.startswith("/api/plug/") else "v1"
         for name, method in methods.items():
             current = (await client.get(base + "state", headers=headers)).json()["data"]
+            relations = (await p.application.console_relationships(
+                actual_context.persona_id, platform=actual_context.platform))["items"]
+            target = next((n for n in relations
+                           if n["account_id"] == actual_context.account_id), None)
             payload = {
                 "state": {"context_id": context_id},
                 "records": {"context_id": context_id, "kind": "emotion", "page": 1, "page_size": 10},
@@ -234,6 +241,16 @@ async def http_matrix(core, client, token, e, root):
                 "preview": {"context_id": context_id},
                 "action": {"context_id": context_id, "action": "night.wake", "confirmed": True,
                            "expected_revision": current["revision"], "reason": "synthetic acceptance"},
+                "scopes": {"persona_id": actual_context.persona_id},
+                "relationships": {"persona_id": actual_context.persona_id,
+                                  "platform": actual_context.platform},
+                "relationship": {"persona_id": actual_context.persona_id,
+                                 "platform": actual_context.platform,
+                                 "account_id": actual_context.account_id,
+                                 "expected_version": target["version"] if target else 0,
+                                 "score": 50.1, "reason": "synthetic account acceptance"},
+                "energy": {"persona_id": actual_context.persona_id},
+                "settings-options": {},
             }[name]
             kwargs = {"params" if method == "GET" else "json": payload}
             positive = await client.request(method, base + name, headers=headers, **kwargs)

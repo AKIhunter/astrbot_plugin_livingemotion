@@ -31,9 +31,14 @@ from ..contracts import (
 )
 
 FORMAT = 1
-SCHEMA_VERSION = 2
-# Full sqlite_master (non-internal tables/indexes), inspected on 2026-11-05.
-SCHEMA_HASH = "6a884b7faa9b138fce265e4dbcb18c109ded743e73a8bc97bb65003eb04b1ab6"
+SCHEMA_VERSION = 3
+# Reviewed full sqlite_master fingerprints, not a permissive version range.
+# V2 remains importable offline; opening the runtime then adds V3 transactionally.
+KNOWN_SCHEMAS = {
+    2: "6a884b7faa9b138fce265e4dbcb18c109ded743e73a8bc97bb65003eb04b1ab6",
+    3: "090194c3ce46a42faa4679d22eb4925088b1d3916734ba7c48f67326caa9779a",
+}
+SCHEMA_HASH = KNOWN_SCHEMAS[SCHEMA_VERSION]
 MAX_ROWS = 500
 MAX_WINDOW = 200
 MAX_PAYLOAD = 131072
@@ -196,7 +201,7 @@ def schema_hash(db: sqlite3.Connection) -> str:
 def _target_info(db: sqlite3.Connection) -> dict:
     version = db.execute("PRAGMA user_version").fetchone()[0]
     fingerprint = schema_hash(db)
-    _require(version == SCHEMA_VERSION and fingerprint == SCHEMA_HASH,
+    _require(fingerprint == KNOWN_SCHEMAS.get(version),
              "target_schema_incompatible")
     row = db.execute("SELECT value FROM runtime_meta WHERE key='instance_id'").fetchone()
     _require(row and isinstance(row[0], str) and row[0].strip() and row[0] != "local",

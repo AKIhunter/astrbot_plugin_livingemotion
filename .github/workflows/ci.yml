@@ -61,8 +61,10 @@ jobs:
           assert metadata["name"] == "astrbot_plugin_livingemotion"
           assert metadata["display_name"] == "livingEmotion"
           assert metadata["repo"] == "https://github.com/AKIhunter/astrbot_plugin_livingemotion"
-          assert metadata["astrbot_version"] == "==4.29.4"
-          assert "4.29.4" in SpecifierSet(metadata["astrbot_version"])
+          assert metadata["astrbot_version"] == ">=4.29.1,<=4.29.4"
+          supported = SpecifierSet(metadata["astrbot_version"])
+          assert all(version in supported for version in ("4.29.1", "4.29.2", "4.29.3", "4.29.4"))
+          assert "4.29.0" not in supported and "4.29.5" not in supported
           entry = ast.parse((root / "main.py").read_text())
           versions = [
               ast.literal_eval(decorator.args[3])
@@ -88,6 +90,9 @@ jobs:
               "README.md", "CHANGELOG.md", "THIRD_PARTY_NOTICES.md",
               "docs/architecture.md", "docs/api.md", "docs/compatibility.md",
               "docs/installation.md", "docs/delivery-notes.md", "docs/memory.md", "docs/migration.md",
+              "docs/life-console.md", "docs/internal-state-contract.md",
+              "docs/internal-console-contract.md", "docs/internal-memory-contract.md",
+              "docs/internal-reply-contract.md", "docs/ui.md",
           )]
           links = 0
           for path in docs:
@@ -127,6 +132,12 @@ jobs:
                   "390-light-overview.png", "390-dark-overview.png",
                   "390-light-emotion.png", "390-dark-emotion.png",
                   "390-light-private-reading.png", "390-dark-private-reading.png",
+                  "1280-light-relationships.png", "1280-dark-relationships.png",
+                  "1280-light-night.png", "1280-dark-night.png",
+                  "1280-light-settings.png", "1280-dark-settings.png",
+                  "390-light-relationships.png", "390-dark-relationships.png",
+                  "390-light-night.png", "390-dark-night.png",
+                  "390-light-settings.png", "390-dark-settings.png",
               )),
           }
           personal_path = re.compile(r"(?:/Users/|/home/)[^/\s]+/")
@@ -168,6 +179,8 @@ jobs:
         run: npm ci --prefix tests/ui --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org
       - name: Install matching Chromium and Linux system libraries
         run: tests/ui/node_modules/.bin/playwright install --with-deps chromium
+      - name: Rebuild the pinned local chart module
+        run: npm --prefix tests/ui run build && git diff --exit-code -- pages/livingemotion/vendor/d3-force.mjs
       - name: UI unit tests
         run: npm --prefix tests/ui test
       - name: Remove checked-in evidence before this run
@@ -190,5 +203,17 @@ jobs:
             astrbot_plugin_livingemotion/tests/ui/evidence/390-dark-emotion.png
             astrbot_plugin_livingemotion/tests/ui/evidence/390-light-private-reading.png
             astrbot_plugin_livingemotion/tests/ui/evidence/390-dark-private-reading.png
+            astrbot_plugin_livingemotion/tests/ui/evidence/1280-light-relationships.png
+            astrbot_plugin_livingemotion/tests/ui/evidence/1280-dark-relationships.png
+            astrbot_plugin_livingemotion/tests/ui/evidence/1280-light-night.png
+            astrbot_plugin_livingemotion/tests/ui/evidence/1280-dark-night.png
+            astrbot_plugin_livingemotion/tests/ui/evidence/1280-light-settings.png
+            astrbot_plugin_livingemotion/tests/ui/evidence/1280-dark-settings.png
+            astrbot_plugin_livingemotion/tests/ui/evidence/390-light-relationships.png
+            astrbot_plugin_livingemotion/tests/ui/evidence/390-dark-relationships.png
+            astrbot_plugin_livingemotion/tests/ui/evidence/390-light-night.png
+            astrbot_plugin_livingemotion/tests/ui/evidence/390-dark-night.png
+            astrbot_plugin_livingemotion/tests/ui/evidence/390-light-settings.png
+            astrbot_plugin_livingemotion/tests/ui/evidence/390-dark-settings.png
           if-no-files-found: warn
           retention-days: 7

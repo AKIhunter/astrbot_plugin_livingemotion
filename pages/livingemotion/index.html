@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>livingEmotion · 状态与体验</title>
+  <title>livingEmotion · TA 的生活控制台</title>
   <script src="./theme.js"></script>
   <link rel="stylesheet" href="./style.css">
   <script type="module" src="./app.mjs"></script>
@@ -14,7 +14,7 @@
   <header class="masthead">
     <div class="identity">
       <div class="wordmark" aria-label="livingEmotion">living<span>Emotion</span><i aria-hidden="true"></i></div>
-      <p class="eyebrow">状态与体验 <span aria-hidden="true">/</span> PRIVATE CONSOLE</p>
+      <p class="eyebrow">TA 的生活控制台 <span aria-hidden="true">/</span> PERSONAL TELEMETRY</p>
     </div>
     <div class="theme-control">
       <div class="theme-switch" role="group" aria-label="页面主题">
@@ -25,24 +25,31 @@
     </div>
   </header>
   <div class="scope-bar">
+    <div class="scope-field"><label for="scope-persona">人格</label><select id="scope-persona" disabled><option value="">等待原生人格</option></select></div>
+    <div class="scope-field"><label for="view-scope">查看范围</label><select id="view-scope" disabled><option value="global">全局</option><option value="private">私聊</option><option value="group">群聊</option></select></div>
+    <div class="scope-field context-field">
     <label for="context">当前范围</label>
     <select id="context" disabled><option value="">等待宿主提供范围</option></select>
+    </div>
     <span id="connection" class="micro">正在连接宿主</span>
     <button id="refresh" type="button">刷新状态</button>
   </div>
   <div class="workspace">
     <nav id="navigation" aria-label="管理分区">
-      <button type="button" data-section="overview" aria-current="page"><span>01</span>总览</button>
+      <button type="button" data-section="overview" aria-current="page"><span>01</span>TA</button>
       <button type="button" data-section="persona"><span>02</span>人格</button>
-      <button type="button" data-section="emotion"><span>03</span>情绪与关系</button>
-      <button type="button" data-section="behavior"><span>04</span>主动行为</button>
-      <button type="button" data-section="night"><span>05</span>长夜</button>
-      <button type="button" data-section="experience"><span>06</span>日记与梦境</button>
-      <button type="button" data-section="memory"><span>07</span>记忆接入</button>
+      <button type="button" data-section="emotion"><span>03</span>情绪</button>
+      <button type="button" data-section="relationships"><span>04</span>关系</button>
+      <button type="button" data-section="behavior"><span>05</span>主动行为</button>
+      <button type="button" data-section="night"><span>06</span>长夜</button>
+      <button type="button" data-section="experience"><span>07</span>日记与梦境</button>
+      <button type="button" data-section="memory"><span>08</span>记忆接入</button>
+      <button type="button" data-section="settings"><span>09</span>设置</button>
+      <div class="nav-device" aria-hidden="true"><span>LE / 02</span><div class="tape-reels"><i></i><i></i></div><span>STATE · LIFE · MEMORY</span></div>
     </nav>
     <main id="main" tabindex="-1">
       <div class="section-heading">
-        <div><p id="section-kicker" class="eyebrow">01 / OVERVIEW</p><h1 id="section-title">总览</h1></div>
+        <div><p id="section-kicker" class="eyebrow">01 / TA</p><h1 id="section-title">TA</h1></div>
         <span id="mode" class="status">等待状态</span>
       </div>
       <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
@@ -60,7 +67,7 @@
           <button id="discard" type="button">放弃更改</button>
         </div>
       </section>
-      <footer class="page-footer"><span>livingEmotion</span><span>主观状态不等于真实事实</span></footer>
+      <footer class="page-footer"><span>livingEmotion / 私人生活档案</span><span>主观状态不等于真实事实</span></footer>
     </main>
   </div>
   <dialog id="action-dialog" aria-labelledby="action-title" aria-describedby="action-description">

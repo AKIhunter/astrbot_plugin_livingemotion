@@ -1,8 +1,9 @@
-"""Adapter for the three inspected public LivingMemory event methods only."""
+"""Fail-closed compatibility with the two public LivingMemory event profiles."""
 
 from __future__ import annotations
 
 import asyncio
+import copy
 from collections import OrderedDict
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
@@ -19,6 +20,9 @@ class _Receipt:
     row: object
     identity: IdentitySnapshot
     provider: object
+    query: str
+    limit: int
+    profile: str
 
 
 def _field(row: object, key: str):
@@ -53,11 +57,15 @@ class LivingMemoryAdapter:
                 for method in (
                     "resolve_identity_context",
                     "search_memories_for_event",
-                    "validate_identity_results",
                 )
             )
         except Exception:  # noqa: BLE001 - a half-unloaded provider is unavailable.
             return False
+
+    @staticmethod
+    def _profile(provider):
+        return ("validate" if callable(getattr(provider, "validate_identity_results", None))
+                else "event_requery")
 
     def _current_provider(self) -> object | None:
         try:
@@ -191,7 +199,10 @@ class LivingMemoryAdapter:
                 except (TypeError, ValueError, KeyError):
                     reasons.add("external_provenance_incomplete_or_out_of_scope")
                     continue
-                self._receipts[token] = _Receipt(material, row, identity, provider)
+                self._receipts[token] = _Receipt(
+                    material, copy.deepcopy(row), identity, provider,
+                    request.query, request.limit, self._profile(provider),
+                )
                 accepted.append(material)
             while len(self._receipts) > self.max_receipts:
                 self._receipts.popitem(last=False)
@@ -217,6 +228,9 @@ class LivingMemoryAdapter:
                 or receipt.material != material
                 or receipt.provider is not provider
                 or receipt.identity.context != request.context
+                or receipt.query != request.query
+                or receipt.limit != request.limit
+                or receipt.profile != self._profile(provider)
             ):
                 return False
             receipts.append(receipt)
@@ -224,22 +238,42 @@ class LivingMemoryAdapter:
             if not await self.identity.validate(receipt.identity, event=event):
                 return False
         try:
-            rows = await asyncio.wait_for(
-                provider.validate_identity_results([receipt.row for receipt in receipts]),
-                self.timeout,
-            )
+            if receipts[0].profile == "validate":
+                rows = await asyncio.wait_for(
+                    provider.validate_identity_results(
+                        [copy.deepcopy(receipt.row) for receipt in receipts]
+                    ),
+                    self.timeout,
+                )
+            else:
+                rows = await asyncio.wait_for(
+                    provider.search_memories_for_event(
+                        receipts[0].query, event,
+                        persona_id=request.context.persona_id, k=receipts[0].limit,
+                    ),
+                    self.timeout,
+                )
             if (
                 self._current_provider() is not provider
                 or not isinstance(rows, list)
-                or len(rows) != len(receipts)
             ):
                 return False
-            # A revision check alone cannot authorize changed text or metadata.
-            for receipt, row in zip(receipts, rows):
-                material = self._material(
-                    row, request, receipt.identity, receipt.material.evidence.authorization
-                )
-                if material != receipt.material:
+            # Never authorize by revision or ID alone; compare body and provenance.
+            for receipt in receipts:
+                matched = False
+                for row in rows[:request.limit]:
+                    try:
+                        material = self._material(
+                            row, request, receipt.identity,
+                            receipt.material.evidence.authorization,
+                        )
+                    except (TypeError, ValueError, KeyError):
+                        continue
+                    if (material == receipt.material
+                            and _field(row, "metadata") == _field(receipt.row, "metadata")):
+                        matched = True
+                        break
+                if not matched:
                     return False
             return all(
                 [

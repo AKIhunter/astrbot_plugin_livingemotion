@@ -25,6 +25,25 @@ from ..domain.emotion import apply_emotion, decay_affect
 from ..domain.night import apply_interaction
 from ..domain.relationship import RelationshipPolicy, apply_relationship
 from ..storage import SQLiteStore
+from ..storage.sqlite import _ProjectionPayload
+from .state_scope import source_affect
+
+_NIGHT_V1_FIELDS = (
+    "phase", "energy", "updated_at", "sleep_started_at", "wake_at", "transition_deadline",
+    "sleep_stage", "awaiting_reply_id", "unread_watermark", "reason_codes",
+)
+_NIGHT_FIELDS = tuple(item.name for item in fields(NightState))
+
+
+def night_payload(state):
+    """Night contains only scalar fields and reason codes; no deep-copy walk."""
+    names = _NIGHT_V1_FIELDS if state.policy_version == 1 else _NIGHT_FIELDS
+    value = {name: getattr(state, name) for name in names}
+    value["phase"] = state.phase.value
+    if "display_state" in value:
+        value["display_state"] = state.display_state.value if state.display_state else None
+    value["reason_codes"] = list(state.reason_codes)
+    return value
 
 
 class _ProjectionContext(Context):
@@ -95,8 +114,20 @@ class Projector:
         context, now = event.context, self.store.clock()
         config: Config = (self.config_for_context(context) if self.config_for_context
                           else self.config())
-        generation, records = await self.store.read_projection(context)
+        # Keep the bounded, pure transition next to JSON decoding. Moving the
+        # mature guard between the loop and worker repeatedly causes GIL waits.
+        return await self.store.project_snapshot(
+            context, lambda generation, records: self._calculate(
+                event, now, config, generation, records,
+            ),
+        )
+
+    def _calculate(self, event, now, config, generation, records):
+        context = event.context
+        owner = getattr(records, "owner", None)
         bot = snapshot(records["bot"], BotAffect)
+        if owner and owner.mode == "shared":
+            bot = source_affect(bot, context)
         relationship = snapshot(records.get("relationship"), Relationship)
         observation = snapshot(records["observation"], HumanObservation) if records.get(
             "observation"
@@ -105,13 +136,25 @@ class Projector:
 
         def runtime(kind):
             record = records.get(kind)
-            return dict(record.value.get("_runtime", {})) if record else {}
+            data = dict(record.value.get("_runtime", {})) if record else {}
+            if owner and owner.mode == "shared" and kind == "bot" and data:
+                data["scope_key"] = context.scope_key
+            return data
 
         night_runtime = runtime("night")
-        night_result = apply_interaction(
-            night, event, context=context, now=now,
-            runtime=night_runtime.get("interaction", {}), enabled=config.night_enabled,
-        )
+        if night.policy_version == 2 or (config.night_policy_version == 2 and config.timezone):
+            # V2 human messages never consume energy. Runtime scheduling and
+            # reply submission own time/reply energy, not archive ingestion.
+            from ..domain.night import life_state
+            night_result = {"night": life_state(night), "runtime": {}, "cost": 0}
+        else:
+            interaction = night_runtime.get("interaction", {})
+            if owner and owner.mode == "shared" and interaction:
+                interaction = {**interaction, "scope_key": context.scope_key}
+            night_result = apply_interaction(
+                night, event, context=context, now=now, runtime=interaction,
+                enabled=config.night_enabled,
+            )
         emotion = apply_emotion(
             bot, event, now=now, observation=observation, relationship=relationship,
             night=night_result["night"], runtime=runtime("bot"),
@@ -130,15 +173,17 @@ class Projector:
             # mutable output trees without converting the same dataclass again.
             payload = to_dict(value) if serialized is None else deepcopy(serialized)
             writes.append(StateWrite(
-                kind, {**payload, "_runtime": metadata},
+                kind, _ProjectionPayload({**payload, "_runtime": metadata}),
                 record.version if record else 0,
                 context.account_id if kind in ("relationship", "observation") else "",
+                owner,
             ))
 
         write("bot", emotion["affect"], emotion["runtime"],
               serialized=emotion["trace"]["after"])
         write("night", night_result["night"],
-              {**night_runtime, "interaction": night_result["runtime"]})
+              {**night_runtime, "interaction": night_result["runtime"]},
+              serialized=night_payload(night_result["night"]))
         if emotion["observation"] is not None and context.account_id:
             write("observation", emotion["observation"], {})
         if relation is not None:
@@ -146,11 +191,13 @@ class Projector:
                   serialized=relation["trace"]["after"])
         return Projection(
             tuple(writes), tuple(relation["contributions"]) if relation else (),
-            ({"kind": "emotion", **emotion["trace"],
-              "reason_codes": emotion["reason_codes"]},)
-            + (({"kind": "relationship", **relation["trace"]},) if relation else ()),
+            (_ProjectionPayload({"kind": "emotion", **emotion["trace"],
+                                 "reason_codes": emotion["reason_codes"]}),)
+            + ((_ProjectionPayload({"kind": "relationship", **relation["trace"]}),)
+               if relation else ()),
             {"state": bot, "observation": observation, "relationship": relationship,
-             "night": night_result["night"], "runtime": runtime("bot"), "now": now}
+             "night": night_result["night"], "runtime": runtime("bot"), "now": now,
+             "state_owner": owner}
             if config.emotion_model_enabled and config.mode == "active" else None,
             generation,
         )

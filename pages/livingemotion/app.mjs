@@ -1,8 +1,12 @@
 import { createApi, pageError, PageError } from "./api.mjs";
 import {
   PAGE_SIZE, SECTIONS, DIMENSIONS, ACTIONS, object, list, text, unit, percent, yesno,
-  reasons, hasRevision, date, expired, normalizeState, normalizeRecords, fieldValue,
+  reasons, hasRevision, date, expired, normalizeState, normalizeRecords, baselineDimensions, scopeParams, NIGHT_STATES,
 } from "./model.mjs";
+import { radar } from "./charts/radar.mjs";
+import { mountRelationships } from "./charts/relationships.mjs";
+import { mountEnergy } from "./charts/energy.mjs";
+import { renderSettings as settingsView } from "./settings.mjs";
 
 const $ = id => document.getElementById(id);
 const api = createApi(() => window.AstrBotPluginView || window.AstrBotPluginPage);
@@ -13,11 +17,13 @@ const state = {
   draft: Object.create(null), baseRevision: null, conflict: false, stale: true,
   loading: false, writing: false, generation: 0, recordGeneration: 0, preview: null,
   pendingAction: null, uncertain: new Set(), invalidFields: new Map(),
+  selection: {}, scopes: null, options: {}, dispose: null,
 };
 try {
   const saved = object(JSON.parse(sessionStorage.getItem(uiKey) || "{}"));
   if (Object.hasOwn(SECTIONS, saved.section)) state.section = saved.section;
   if (typeof saved.contextId === "string") state.contextId = saved.contextId;
+  if (object(saved.selection).persona_id) state.selection = scopeParams(saved.selection);
   if (saved.kind === "diary" || saved.kind === "dream") state.kind = saved.kind;
   for (const kind of Object.keys(state.filters)) {
     const filter = object(object(saved.filters)[kind]);
@@ -31,7 +37,7 @@ try {
 function remember() {
   try {
     sessionStorage.setItem(uiKey, JSON.stringify({
-      section: state.section, contextId: state.contextId, filters: state.filters, kind: state.kind,
+      section: state.section, contextId: state.contextId, selection: state.selection, filters: state.filters, kind: state.kind,
     }));
   } catch (_) { /* No business data or drafts are persisted by this page. */ }
 }
@@ -75,13 +81,15 @@ function notify(message, type = "") {
   $("notice").hidden = !message;
 }
 function canWrite() {
-  return !!state.data?.context_id && !state.loading && !state.writing && !state.stale;
+  return !!(state.data?.context_id || state.data?.scope_selection?.persona_id) && !state.loading && !state.writing && !state.stale;
 }
+function selectedScope() { return Object.keys(state.selection).length ? state.selection : state.contextId; }
 function handleError(error) {
   const failure = pageError(error);
   if (["unauthorized", "forbidden", "bridge_error"].includes(failure.code)) {
     state.generation++;
     state.recordGeneration++;
+    state.dispose?.(); state.dispose = null;
     state.data = null;
     state.draft = Object.create(null);
     state.invalidFields.clear();
@@ -95,6 +103,8 @@ function handleError(error) {
     $("action-reason").value = "";
     try { sessionStorage.removeItem(uiKey); } catch (_) {}
     $("context").replaceChildren(node("option", "需要宿主认证"));
+    $("scope-persona").replaceChildren(node("option", "需要宿主认证"));
+    $("view-scope").disabled = true; state.scopes = null; state.selection = {};
     $("content").replaceChildren(node("p", "私人内容已清空。请在 AstrBot 宿主重新登录并确认管理权限。", "empty"));
     $("settings").replaceChildren();
     $("records").replaceChildren();
@@ -114,6 +124,8 @@ function handleError(error) {
 function updateControls() {
   const dirty = Object.keys(state.draft).length;
   $("context").disabled = !state.data || state.loading || state.writing || dirty > 0 || state.invalidFields.size > 0;
+  $("scope-persona").disabled = $("view-scope").disabled = !state.scopes || $("context").disabled;
+  if (state.selection.view_scope === "global") $("context").disabled = true;
   $("refresh").disabled = state.loading || state.writing;
   $("content").setAttribute("aria-busy", String(state.loading));
   $("editor").hidden = !dirty && !state.invalidFields.size;
@@ -132,7 +144,12 @@ function updateControls() {
     const id = control.dataset.operation;
     const supported = id === "preview" ? state.data?.capabilities.includes("behavior.preview") :
       state.data?.actions.some(action => action.id === id && action.enabled === true) && hasRevision(state.data?.revision);
-    control.disabled = !canWrite() || !supported || state.uncertain.has(id);
+    control.disabled = !canWrite() || !state.data?.context_id || !supported || state.uncertain.has(id);
+  });
+  // History is a sibling of #content; stale/unknown pin controls live here.
+  $("records").querySelectorAll("[data-pin-entry]").forEach(control => {
+    control.disabled = !canWrite() || control.dataset.pinAvailable !== "true" ||
+      state.uncertain.has(`experience.pin:${control.dataset.pinEntry}`);
   });
 }
 function metric(label, value) {
@@ -172,7 +189,7 @@ function botHero() {
   const bot = state.data.bot_state;
   const hero = node("section", undefined, "hero");
   hero.setAttribute("aria-label", "Bot 当前感受");
-  hero.append(node("p", "BOT / 当前感受", "hero-label"),
+  hero.append(node("p", "TA / LIVE EMOTION", "hero-label"), node("p", text(state.data.persona.name, "原生人格未提供"), "ta-identity"),
     node("h2", text(bot.label, "尚无 Bot 状态"), "hero-value"),
     node("p", text(bot.reason, "等待有来源的互动与状态评估。不会以对方情绪替代 Bot 感受。")));
   if (expired(bot.expires_at)) hero.append(badge("状态已过期", "warn"));
@@ -191,15 +208,6 @@ function observationBlock() {
   if (expired(value.expires_at)) section.append(badge("观察已过期，不作为当前依据", "warn"));
   return section;
 }
-function relationshipBlock() {
-  const value = state.data.relationship;
-  return block("关系", pairs([
-    ["当前阶段", text(value.stage)], ["原始分值", text(value.raw)], ["原量纲", text(value.scale)],
-    ["归一值", percent(value.normalized)], ["变化原因", text(value.reason)],
-  ]), details("证据与身份投影", pairs([
-    ["来源完整度", text(value.source_completeness)], ["身份修订号", text(value.identity_revision)],
-  ])));
-}
 function healthBlock() {
   const section = block("依赖健康");
   if (!state.data.health.length) section.append(node("p", "宿主尚未提供依赖健康。", "hint"));
@@ -213,22 +221,25 @@ function healthBlock() {
   return section;
 }
 function renderOverview(container) {
-  container.append(botHero());
-  const columns = node("div", undefined, "columns");
-  columns.append(block("Bot 状态维度", dimensions(state.data.bot_state.dimensions), sourceDetails(state.data.bot_state)),
-    observationBlock());
+  const layout = node("div", undefined, "ta-layout");
+  layout.append(botHero(), radar(object(state.data.bot_state.dimensions), baselineDimensions(state.data)));
+  container.append(layout);
   const stats = node("dl", undefined, "stat-line");
   for (const [key, value] of [
     ["精力 · 来自长夜", percent(state.data.night.energy)],
-    ["当前作息", text(state.data.night.state)],
-    ["关系阶段", text(state.data.relationship.stage)],
+    ["当前作息", NIGHT_STATES[state.data.night.display_state] || text(state.data.night.state)],
+    ["状态归属", { persona: "同一人格共享", shared: "同一人格共享", scene: "真实会话独立" }[state.data.state_mode] || "由宿主解析"],
   ]) {
     const group = node("div"); group.append(node("dt", key), node("dd", value)); stats.append(group);
   }
-  container.append(columns, stats,
-    block("当前可用性", pairs([["状态", state.data.availability.available === true ? "可用" :
+  container.append(stats,
+    details("可用性与来源", pairs([["状态", state.data.availability.available === true ? "可用" :
       state.data.availability.available === false ? "暂不可用" : "未提供"],
-    ["原因", reasons(state.data.availability.reasons)]])), healthBlock());
+    ["原因", reasons(state.data.availability.reasons)], ["来源", text(state.data.bot_state.source)],
+    ["更新时间", date(state.data.bot_state.updated_at)]])), details("依赖健康", healthBlock()));
+  if (state.selection.view_scope === "global" && state.data.state_mode === "scene") {
+    container.append(node("p", `当前为真实会话独立模式。全局数值来自最近代表会话 ${text(state.data.representative_context_id)}，不是共享状态或多会话平均值。`, "hint"));
+  }
 }
 function renderPersona(container) {
   const value = state.data.persona;
@@ -236,11 +247,27 @@ function renderPersona(container) {
     ["名称", text(value.name)], ["来源", text(value.source)], ["人格 ID", text(value.id)],
     ["修订号", text(value.revision)],
   ]), details("人格说明", node("p", text(value.description)))),
-  node("p", "人格由 AstrBot 当前范围解析。切换页面主题不会切换人格；模型提供者也不代表 Bot 身份。", "hint"));
+  node("p", "人格由 AstrBot 当前范围解析。切换页面主题不会切换人格；模型提供者也不代表 Bot 身份。", "hint"),
+  button("前往设置修改人格", () => navigate("settings")));
 }
 function renderEmotion(container) {
-  container.append(botHero(), block("Bot 状态维度", dimensions(state.data.bot_state.dimensions)),
-    observationBlock(), relationshipBlock());
+  const columns = node("div", undefined, "columns");
+  columns.append(radar(object(state.data.bot_state.dimensions), baselineDimensions(state.data)), observationBlock());
+  container.append(botHero(), block("四维状态分析", columns),
+    node("p", text(state.data.bot_state.decay_explanation ?? state.data.emotion_policy?.explanation,
+      "实线与基准在同一归一坐标。情绪随时间恢复；刺激变化以实际记录为依据，不为打开页面调用模型。"), "hint"),
+    sourceDetails(state.data.bot_state));
+}
+function renderRelationships(container) {
+  if (!state.selection.persona_id) {
+    container.append(node("p", "没有已授权人格，不能查询关系。请刷新宿主范围。", "empty")); return;
+  }
+  const panel = node("div"); panel.id = "relationship-body"; container.append(panel);
+  state.dispose = mountRelationships(panel, {
+    api, selection: { ...scopeParams(selectedScope()), platforms: state.scopes?.platforms },
+    persona: state.data.persona, canWrite: () => canWrite() && state.data.capabilities.includes("relationship.write"),
+    onError: handleError, uncertain: state.uncertain,
+  });
 }
 function clientList(items, renderItem, emptyMessage) {
   const root = node("div");
@@ -332,103 +359,55 @@ function renderNight(container) {
   const value = state.data.night;
   const catchUp = object(value.catch_up);
   container.append(block("长夜", pairs([
-    ["作息状态", text(value.state)], ["睡眠阶段", text(value.stage)],
+    ["作息状态", NIGHT_STATES[value.display_state] || text(value.state)], ["梦境内部阶段", text(value.stage)],
     ["入睡时间", date(value.sleep_at)], ["预计醒来", date(value.wake_at)], ["变化原因", text(value.reason)],
   ])), block("精力", metric("当前精力", value.energy)),
   block("醒后补课", pairs([
     ["已处理", text(catchUp.completed)], ["本次有界窗口", text(catchUp.total)], ["进度说明", text(catchUp.reason)],
   ])), details("手动作息操作", actionControls(["night.sleep", "night.wake"])));
+  const stages = node("div", undefined, "sub-tabs"); stages.setAttribute("aria-label", "五档作息");
+  for (const [key, label] of Object.entries(NIGHT_STATES)) stages.append(badge(label, value.display_state === key ? "good" : ""));
+  container.prepend(stages);
+  const energy = block("精力日志"); container.append(energy);
+  if (state.selection.persona_id) state.dispose = mountEnergy(energy, { api, selection: selectedScope(), onError: handleError });
+  else energy.append(node("p", "没有已授权人格，不能查询精力历史。", "empty"));
 }
 function renderExperience(container) {
   const value = state.data.experience;
   container.append(block("私人体验", node("p", "日记记录主观体会；梦境始终是想象。正文与来源仅在已认证管理页阅读。", "hint"),
     pairs([["日记", yesno(value.diary_enabled)], ["梦境", yesno(value.dream_enabled)], ["生成状态", text(value.reason)]])),
   details("手动生成 · 可能消耗模型额度", actionControls(["diary.generate", "dream.generate"])));
+  const tabs = node("div", undefined, "sub-tabs"); tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "私人体验类型");
+  for (const [key, label] of [["diary", "日记"], ["dream", "梦境 · 想象"]]) {
+    const tab = button(label, () => { state.kind = key; remember(); render(); });
+    tab.dataset.recordKind = key; tab.setAttribute("role", "tab"); tab.setAttribute("aria-selected", String(state.kind === key)); tabs.append(tab);
+  }
+  tabs.addEventListener("keydown", event => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault(); state.kind = event.key === "Home" ? "diary" : event.key === "End" ? "dream" : state.kind === "diary" ? "dream" : "diary";
+    remember(); render(); container.querySelector(`[data-record-kind="${state.kind}"]`)?.focus();
+  });
+  container.append(tabs);
 }
 function renderMemory(container) {
   const value = state.data.memory;
-  const mode = { none: "关闭长期记忆", local_lite: "内置轻量记忆", external: "外部记忆后端" }[value.mode];
+  const mode = { none: "本地向量 · 待配置", local_lite: "本地轻量记录", local_vector: "本地向量记忆", external: "LivingMemory" }[value.mode];
   container.append(block("记忆接入", pairs([
     ["当前模式", mode || "未提供"], ["提供者", text(value.provider)], ["允许检索", yesno(value.can_read)],
     ["允许导出", yesno(value.can_write)], ["降级原因", text(value.reason)],
   ])), block("实际能力", value.capabilities?.length ? node("p", reasons(value.capabilities)) :
     node("p", "尚未声明可用记忆能力。", "hint")),
-  node("p", "关闭长期记忆不关闭情绪、关系与作息。外部模式不重复抽取事实；检索与导出分别控制。", "hint"));
+  node("p", "关闭 LivingMemory 后使用本地向量模式；未配置原生 embedding 时显示待配置，不伪装成已有向量库。开启外部后端后停止本地自动收录。", "hint"),
+  button("前往设置管理记忆", () => navigate("settings")));
 }
 const renderers = {
   overview: renderOverview, persona: renderPersona, emotion: renderEmotion, behavior: renderBehavior,
-  night: renderNight, experience: renderExperience, memory: renderMemory,
+  night: renderNight, experience: renderExperience, memory: renderMemory, relationships: renderRelationships,
+  settings: container => container.append(node("p", "按任务完成配置，所有更改统一保存。", "hint")),
 };
 
 function renderSettings() {
-  const root = $("settings"); root.replaceChildren();
-  const fields = state.data.config.fields.filter(field => field.section === state.section);
-  root.hidden = state.section === "overview";
-  if (root.hidden) return;
-  const body = node("div");
-  body.append(node("p", `配置来源：${text(state.data.config.source)} · 版本 ${text(state.data.config.revision)}`, "hint"));
-  if (!state.data.capabilities.includes("config.write")) body.append(node("p", "宿主未开放配置写入，本页只读。", "hint"));
-  if (state.invalidFields.size) body.append(node("p", "存在未通过校验的输入。请返回对应分区修正，或放弃更改。", "error-text"));
-  if (!fields.length) body.append(node("p", "宿主未提供本区可编辑字段，请在 AstrBot 原生配置检查。", "hint"));
-  fields.forEach((field, index) => {
-    const value = Object.hasOwn(state.draft, field.key) ? state.draft[field.key] : state.data.config.values[field.key];
-    const id = `config-field-${index}`;
-    const wrapper = node("div", undefined, "field");
-    const description = node("div");
-    const label = node("label", text(field.label, field.key)); label.htmlFor = id;
-    const help = node("p", text(field.help, field.key), "hint"); help.id = `${id}-help`;
-    description.append(label, help);
-    let input;
-    if (field.type === "enum") {
-      input = node("select");
-      for (const option of list(field.options)) {
-        if (!option || !["string", "number", "boolean"].includes(typeof option.value)) continue;
-        const element = node("option", text(option.label, String(option.value)));
-        element.value = String(option.value); input.append(element);
-      }
-      if (!list(field.options).some(option => option?.value === value)) {
-        const unknown = node("option", `当前值：${text(value)}`); unknown.value = ""; unknown.disabled = true;
-        input.prepend(unknown); input.value = "";
-      } else input.value = String(value);
-    } else {
-      input = node("input");
-      input.type = field.type === "boolean" ? "checkbox" : ["number", "integer"].includes(field.type) ? "number" : "text";
-      if (field.type === "boolean") input.checked = value === true;
-      else input.value = text(value, "");
-      input.maxLength = 2000;
-      if (input.type === "number") {
-        if (Number.isFinite(field.min)) input.min = String(field.min);
-        if (Number.isFinite(field.max)) input.max = String(field.max);
-        input.step = field.type === "integer" ? "1" : Number.isFinite(field.step) ? String(field.step) : "any";
-      }
-    }
-    input.id = id; input.dataset.key = field.key;
-    if (state.invalidFields.has(field.key)) {
-      const invalid = state.invalidFields.get(field.key);
-      input.value = invalid.value; input.setCustomValidity(invalid.message);
-    }
-    input.setAttribute("aria-describedby", help.id);
-    input.dataset.editable = String(!field.readonly && state.data.capabilities.includes("config.write") &&
-      ["boolean", "enum", "number", "integer", "string"].includes(field.type) &&
-      Object.hasOwn(state.data.config.values, field.key));
-    input.addEventListener("input", () => {
-      input.setCustomValidity("");
-      try {
-        const next = fieldValue(field, input);
-        state.invalidFields.delete(field.key);
-        if (!Object.keys(state.draft).length) state.baseRevision = state.data.config.revision;
-        if (next === state.data.config.values[field.key]) delete state.draft[field.key];
-        else state.draft[field.key] = next;
-        if (!Object.keys(state.draft).length) state.conflict = false;
-        updateControls();
-      } catch (error) {
-        state.invalidFields.set(field.key, { value: input.value, message: error.message });
-        input.setCustomValidity(error.message); input.reportValidity(); updateControls();
-      }
-    });
-    wrapper.append(description, input); body.append(wrapper);
-  });
-  root.append(details("配置 · 与 AstrBot 原生配置共用", body));
+  settingsView($("settings"), state, state.options, updateControls);
 }
 function render() {
   const [number, name, title] = SECTIONS[state.section];
@@ -441,6 +420,7 @@ function render() {
   if (!state.data) { updateControls(); return; }
   $("mode").textContent = { active: "运行中", observe_only: "仅观察 · 不自主发送", disabled: "已停用" }[state.data.mode] || "模式未提供";
   $("mode").className = `status ${state.data.mode === "active" ? "good" : "warn"}`;
+  state.dispose?.(); state.dispose = null;
   const container = $("content"); container.replaceChildren();
   renderers[state.section](container);
   renderSettings();
@@ -458,16 +438,6 @@ function renderRecordsShell() {
   root.hidden = !kind;
   if (!kind) return;
   const form = node("form", undefined, "record-toolbar");
-  if (state.section === "experience") {
-    const field = node("div"); const label = node("label", "阅读类型"); label.htmlFor = "record-kind";
-    const select = node("select"); select.id = "record-kind";
-    for (const [key, title] of [["diary", "日记"], ["dream", "梦境 · 想象"]]) {
-      const option = node("option", title); option.value = key; select.append(option);
-    }
-    select.value = state.kind;
-    select.addEventListener("change", () => { state.kind = select.value; remember(); renderRecordsShell(); });
-    field.append(label, select); form.append(field);
-  }
   const field = node("div", undefined, "search-field");
   const label = node("label", "筛选记录"); label.htmlFor = "record-query";
   const search = node("input"); search.id = "record-query"; search.type = "search"; search.maxLength = 200;
@@ -531,6 +501,10 @@ function recordView(item, kind, index) {
   heading.append(title, node("span", date(item.created_at), "micro")); article.append(heading);
   if (kind === "dream") article.append(badge("梦境 · 想象，不是现实事实", "warn"));
   if (kind === "diary") article.append(badge("私人日记 · 主观内容"));
+  if (kind === "diary") {
+    const weather = object(item.weather), header = object(item.header);
+    article.append(node("p", `${text(item.date ?? header.date, date(item.created_at))} · ${text(item.city ?? header.city, "住所未提供")} · ${text(weather.summary ?? header.weather, "天气未获取")}`, "micro"));
+  }
   article.append(node("p", text(item.reason), "record-reason"));
   if (kind === "emotion") {
     article.append(emotionTable(item),
@@ -544,7 +518,14 @@ function recordView(item, kind, index) {
   } else {
     const body = node("div");
     body.append(node("p", text(item.body, "正文未提供。"), "body"));
-    if (kind === "dream") body.append(pairs([["清晰度", percent(item.clarity)], ["置顶", yesno(item.pinned)]]));
+    body.append(pairs([...(kind === "dream" ? [["清晰度", percent(item.clarity)]] : []), ["置顶", yesno(item.pinned)]]));
+    const pin = button(item.pinned ? "取消置顶" : "置顶", () => openAction("experience.pin", item));
+    pin.dataset.pinEntry = text(item.id, "");
+    pin.dataset.pinAvailable = String(item.pin_available === true &&
+      typeof item.context_id === "string" && !!item.context_id && typeof item.pinned === "boolean");
+    pin.disabled = !canWrite() || pin.dataset.pinAvailable !== "true" ||
+      state.uncertain.has(`experience.pin:${item.id}`);
+    body.append(pin);
     article.append(details("阅读私人正文", body));
     article.append(details("素材来源与角色", clientList(list(item.sources), source => {
       const entry = node("div", undefined, "record");
@@ -562,7 +543,7 @@ function recordView(item, kind, index) {
 async function loadRecords() {
   const kind = selectedKind(), root = $("record-body");
   if (!kind || !root) return;
-  if (!state.data?.context_id) {
+  if (!state.data?.context_id && !state.data?.scope_selection?.persona_id) {
     root.replaceChildren(node("p", "当前没有已授权范围，不能查询记录。", "empty"));
     root.setAttribute("aria-busy", "false");
     return;
@@ -574,7 +555,7 @@ async function loadRecords() {
   root.replaceChildren(node("p", "正在读取记录…", "empty"));
   try {
     const response = normalizeRecords(await api.records({
-      context_id: state.contextId, kind, page: filter.page, page_size: PAGE_SIZE, query: filter.query,
+      ...scopeParams(selectedScope()), kind, page: filter.page, page_size: PAGE_SIZE, query: filter.query,
     }), filter.page);
     if (sequence !== state.recordGeneration || generation !== state.generation) return;
     root.replaceChildren();
@@ -607,6 +588,7 @@ function applyData(raw, rebase = false) {
     notify("原生配置版本已变化。草稿保留，但需读取最新配置并复核后才能保存。", "warning");
   }
   state.data = data; state.contextId = data.context_id; state.stale = false;
+  if (data.scope_selection.persona_id) state.selection = scopeParams(data.scope_selection);
   if (!dirty || rebase) {
     state.baseRevision = data.config.revision; state.conflict = false;
     const allowed = new Set(data.config.fields.filter(field => !field.readonly).map(field => field.key));
@@ -619,8 +601,36 @@ function applyData(raw, rebase = false) {
   data.contexts.forEach(item => { const option = node("option", item.label); option.value = item.id; $("context").append(option); });
   if (!data.contexts.length) $("context").append(node("option", "没有已授权范围"));
   $("context").value = data.context_id;
+  renderScopeControls();
   $("connection").textContent = `更新于 ${date(data.updated_at)}`;
   remember(); render();
+}
+function renderScopeControls() {
+  const scopes = state.scopes;
+  if (!scopes) return;
+  const personaSelect = $("scope-persona"); personaSelect.replaceChildren();
+  for (const item of list(scopes.personas)) {
+    const option = node("option", text(item.name ?? item.label, item.id)); option.value = text(item.id, ""); personaSelect.append(option);
+  }
+  personaSelect.value = state.selection.persona_id || state.data?.persona.id || "";
+  $("view-scope").value = state.selection.view_scope || "global";
+  const scenes = list(scopes.contexts ?? scopes.scenes).filter(item =>
+    (!item.persona_id || item.persona_id === personaSelect.value) &&
+    (!state.selection.view_scope || state.selection.view_scope === "global" || (item.view_scope ?? item.scene_kind) === state.selection.view_scope));
+  $("context").replaceChildren();
+  if (scenes.length) {
+    for (const item of scenes) {
+      const option = node("option", text(item.label, `${text(item.platform)} / ${text(item.scene_id)}`)); option.value = text(item.id ?? item.context_id, ""); $("context").append(option);
+    }
+    $("context").value = state.selection.context_id || "";
+  } else { const empty = node("option", "此范围没有已授权会话"); empty.value = ""; $("context").append(empty); }
+  if (state.selection.view_scope === "global") {
+    const global = node("option", "人格全局 · 仅管理查看"); global.value = ""; $("context").prepend(global); $("context").value = "";
+  } else {
+    const aggregate = node("option", `${state.selection.view_scope === "group" ? "群聊" : "私聊"} · 全部已授权会话`);
+    aggregate.value = ""; $("context").prepend(aggregate);
+    $("context").value = state.selection.context_id || "";
+  }
 }
 async function loadState({ rebase = false } = {}) {
   if (state.writing || state.loading) return;
@@ -629,7 +639,23 @@ async function loadState({ rebase = false } = {}) {
   state.loading = true; updateControls();
   notify("");
   try {
-    const data = await api.state(state.contextId);
+    const optional = await Promise.allSettled([api.scopes(), api.settingsOptions()]);
+    if (generation !== state.generation) return;
+    for (const result of optional) {
+      if (result.status === "rejected" && ["unauthorized", "forbidden", "bridge_error"].includes(pageError(result.reason).code)) {
+        handleError(result.reason); return;
+      }
+    }
+    if (optional[0].status === "fulfilled") state.scopes = optional[0].value;
+    if (optional[1].status === "fulfilled") state.options = optional[1].value;
+    if (!state.selection.persona_id && list(state.scopes?.personas).length) {
+      const previous = list(state.scopes.contexts).find(item => item.id === state.contextId);
+      state.selection = previous ? scopeParams(previous) : {
+        persona_id: state.scopes.personas[0].id, view_scope: "global",
+      };
+      if (previous) state.selection.context_id = previous.id;
+    }
+    const data = await api.state(selectedScope());
     if (generation !== state.generation) return;
     applyData(data, rebase);
     if (rebase) notify("已读取最新原生配置，草稿尚未提交。请逐项复核后保存。", "warning");
@@ -649,6 +675,7 @@ async function saveConfig() {
   const reason = $("change-reason").value.trim();
   if (!reason) { notify("请填写修改原因，供管理审计使用。", "warning"); $("change-reason").focus(); return; }
   const generation = state.generation;
+  let saved = false;
   state.writing = true; updateControls();
   try {
     const result = await api.save({
@@ -656,22 +683,35 @@ async function saveConfig() {
     });
     if (generation !== state.generation) return;
     const checked = normalizeState(result);
-    if (checked.context_id !== state.contextId) throw new PageError("invalid_context", "配置回执范围不一致，请核对宿主记录。");
+    if (!hasRevision(checked.config.revision)) throw new PageError("invalid_response", "配置回执缺少版本，请核对宿主记录。");
     state.draft = Object.create(null);
     state.invalidFields.clear();
-    applyData(checked);
+    state.data.config = checked.config; state.baseRevision = checked.config.revision; state.conflict = false;
+    saved = true;
+    // A config receipt uses the legacy context shape; reread the actual view.
+    state.stale = true;
+    applyData(await api.state(selectedScope()));
     $("change-reason").value = "";
     notify("已保存到原生配置。");
   } catch (error) {
     if (generation !== state.generation) return;
     if (["timeout", "bridge_error"].includes(pageError(error).code)) state.uncertain.add("config");
     handleError(error);
+    if (saved && state.data) notify("配置已保存，但当前范围状态未能刷新。请手动刷新核对，不要重复保存。", "warning");
   } finally { state.writing = false; updateControls(); }
 }
-function openAction(id) {
-  if (!canWrite() || state.uncertain.has(id) || !state.data.actions.some(action => action.id === id && action.enabled === true)) return;
-  state.pendingAction = { id, contextId: state.contextId, revision: state.data.revision, generation: state.generation };
-  $("action-title").textContent = ACTIONS[id][0];
+function openAction(id, item) {
+  const pin = id === "experience.pin";
+  const key = pin ? `experience.pin:${item?.id}` : id;
+  if (!canWrite() || state.uncertain.has(key) || (pin
+    ? item?.pin_available !== true || typeof item.context_id !== "string" || !item.context_id || typeof item.pinned !== "boolean"
+    : !state.data.actions.some(action => action.id === id && action.enabled === true))) return;
+  state.pendingAction = {
+    id, key, contextId: pin ? item.context_id : state.contextId,
+    revision: state.data.revision, generation: state.generation,
+    ...(pin ? { entry_id: item.id, pinned: !item.pinned, expected_pinned: item.pinned } : {}),
+  };
+  $("action-title").textContent = pin ? (item.pinned ? "取消置顶" : "置顶") : ACTIONS[id][0];
   $("action-description").textContent = ACTIONS[id][1];
   $("action-reason").value = ""; $("action-error").textContent = "";
   $("confirm-action").disabled = false;
@@ -690,10 +730,13 @@ async function submitAction(event) {
   try {
     const result = await api.action({
       context_id: pending.contextId, action: pending.id, expected_revision: pending.revision, reason, confirmed: true,
+      ...(pending.id === "experience.pin" ? {
+        entry_id: pending.entry_id, pinned: pending.pinned, expected_pinned: pending.expected_pinned,
+      } : {}),
     });
     if (pending.generation !== state.generation) return;
     if (result.api_version !== 1 || typeof result.status !== "string") throw new PageError("invalid_response", "动作回执无效，执行结果不明，请核对记录。");
-    if (result.status === "unknown") state.uncertain.add(pending.id);
+    if (result.status === "unknown") state.uncertain.add(pending.key);
     $("action-dialog").close();
     notify(`操作结果：${result.status}。${text(result.reason, "")}${result.request_id ? ` 请求 ID：${text(result.request_id)}` : ""}`,
       result.status === "unknown" ? "warning" : "");
@@ -702,7 +745,7 @@ async function submitAction(event) {
   } catch (error) {
     if (pending.generation !== state.generation) return;
     const failure = pageError(error);
-    if (["timeout", "invalid_response", "bridge_error"].includes(failure.code)) state.uncertain.add(pending.id);
+    if (["timeout", "invalid_response", "bridge_error"].includes(failure.code)) state.uncertain.add(pending.key);
     $("action-dialog").close(); handleError(error);
   } finally { state.writing = false; state.pendingAction = null; updateControls(); }
 }
@@ -726,11 +769,25 @@ async function boot() {
   });
   $("context").addEventListener("change", () => {
     state.contextId = $("context").value; state.data = null; state.preview = null;
+    if (state.scopes) {
+      const context = list(state.scopes.contexts).find(item => item.id === state.contextId);
+      state.selection = { ...state.selection, context_id: state.contextId, platform: context?.platform || "" };
+    }
+    state.dispose?.(); state.dispose = null;
     state.filters = emptyFilters(); state.invalidFields.clear();
     $("content").replaceChildren(node("p", "正在读取新范围…", "empty"));
     $("records").replaceChildren(); $("settings").replaceChildren();
     remember(); loadState();
   });
+  for (const id of ["scope-persona", "view-scope"]) {
+    $(id).addEventListener("change", () => {
+      state.dispose?.(); state.dispose = null;
+      state.selection = { persona_id: $("scope-persona").value, view_scope: $("view-scope").value };
+      state.contextId = ""; state.data = null; state.preview = null; state.filters = emptyFilters();
+      $("content").replaceChildren(node("p", "正在读取所选人格与范围…", "empty"));
+      $("records").replaceChildren(); $("settings").replaceChildren(); loadState();
+    });
+  }
   $("refresh").addEventListener("click", () => loadState());
   $("save").addEventListener("click", saveConfig);
   $("rebase").addEventListener("click", () => loadState({ rebase: true }));

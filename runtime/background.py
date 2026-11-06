@@ -60,7 +60,9 @@ class BackgroundRuntime:
             return {"status": "rejected", "reason_code": "duplicate_job"}
         enabled = {"emotion": self.config.emotion_model_enabled,
                    "dream": self.config.dream_enabled, "diary": self.config.diary_enabled,
-                   "behavior": self.config.autonomy_enabled}
+                   "behavior": self.config.autonomy_enabled,
+                   "catchup": getattr(self.config, "catchup_enabled", False),
+                   "closing": getattr(self.config, "closing_enabled", False)}
         if model and not enabled.get(purpose, False):
             return {"status": "rejected", "reason_code": "model_disabled"}
         if (type(input_tokens) is not int or type(output_tokens) is not int

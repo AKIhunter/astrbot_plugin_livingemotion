@@ -7,6 +7,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -19,6 +20,7 @@ from astrbot_plugin_livingemotion.contracts import (
     SceneKind,
     canonical_json,
     stable_key,
+    to_dict,
 )
 from astrbot_plugin_livingemotion.storage import SQLiteStore
 from astrbot_plugin_livingemotion.storage import legacy_import as migration
@@ -185,7 +187,7 @@ def test_preview_readonly_hash_privacy_and_actual_instance(sample):
     manifest = plan(sample)
     assert [migration.file_hash(p) for p in (source, target)] == before
     assert manifest["target"]["instance_id"] == context.instance_id != "local"
-    assert manifest["target"]["schema_version"] == 2
+    assert manifest["target"]["schema_version"] == 3
     assert manifest["source"]["user_version"] == 7
     assert manifest["source"]["tables"]["persona_state"]["count"] == 1
     assert manifest["manifest_hash"] == stable_key({
@@ -194,6 +196,39 @@ def test_preview_readonly_hash_privacy_and_actual_instance(sample):
     assert "SYNTHETIC PRIVATE" not in dumps(manifest)
     assert "synthetic reason" not in dumps(manifest)
     assert not execute(target, "SELECT * FROM states")
+
+
+def test_retained_v2_profile_import_verify_and_runtime_upgrade(sample, tmp_path):
+    from astrbot_plugin_livingemotion.storage.schema import MIGRATIONS, migrate
+
+    source, _, selection, context = sample
+    target = tmp_path / "retained-v2.sqlite"
+    db = sqlite3.connect(target)
+    try:
+        migrate(db, MIGRATIONS[:2])
+        db.execute("INSERT INTO runtime_meta VALUES('instance_id',?)", (context.instance_id,))
+        db.execute("INSERT INTO source_contexts VALUES(?,?,?,?)",
+                   (context.account_key, context.scope_key,
+                    dumps(to_dict(replace(context, route=None))), NOW))
+        db.commit()
+    finally:
+        db.close()
+    manifest = migration.preview(source, target, selection, **YES)
+    assert manifest["target"]["schema_version"] == 2
+    assert migration.import_manifest(source, target, manifest, **YES)["inserted"] == len(
+        selection["rows"]
+    )
+    assert migration.verify(source, target, manifest, **YES)["status"] == "verified"
+
+    async def upgrade():
+        store = SQLiteStore(target, clock=lambda: NOW)
+        await store.open()
+        try:
+            assert (await store.health())["schema_version"] == 3
+            assert await store.legacy_baselines()
+        finally:
+            await store.close()
+    asyncio.run(upgrade())
 
 
 def test_import_repeat_zero_and_full_reconciliation(sample):
@@ -343,7 +378,8 @@ def test_live_wal_refused_backup_snapshot_accepted(sample, tmp_path):
 
 
 @pytest.mark.parametrize("sql", [
-    "PRAGMA user_version=3",
+    "PRAGMA user_version=999",
+    "PRAGMA user_version=2",
     "ALTER TABLE states ADD COLUMN unexpected TEXT",
     "CREATE TRIGGER surprise AFTER INSERT ON states BEGIN DELETE FROM states; END",
     "DROP INDEX ledger_source",

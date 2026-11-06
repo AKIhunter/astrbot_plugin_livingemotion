@@ -77,6 +77,38 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = ((
     """CREATE TABLE source_contexts (
         context_id TEXT PRIMARY KEY, scope_key TEXT NOT NULL, context_json TEXT NOT NULL,
         updated_at REAL NOT NULL)""",
+), (
+    """CREATE TABLE state_modes (
+        persona_key TEXT PRIMARY KEY, instance_id TEXT NOT NULL, persona_id TEXT NOT NULL,
+        mode TEXT NOT NULL, revision INTEGER NOT NULL)""",
+    """CREATE TABLE state_members (
+        scope_key TEXT PRIMARY KEY, persona_key TEXT NOT NULL)""",
+    "CREATE INDEX state_members_persona ON state_members(persona_key)",
+    """CREATE TABLE state_owners (
+        owner_key TEXT PRIMARY KEY, persona_key TEXT NOT NULL, mode TEXT NOT NULL,
+        generation INTEGER NOT NULL DEFAULT 0)""",
+    """CREATE TABLE owner_states (
+        owner_key TEXT NOT NULL, kind TEXT NOT NULL, version INTEGER NOT NULL,
+        updated_at REAL NOT NULL, value_json TEXT NOT NULL,
+        PRIMARY KEY(owner_key,kind))""",
+    """CREATE TABLE energy_events (
+        seq INTEGER PRIMARY KEY, event_id TEXT NOT NULL UNIQUE, occurred_at REAL NOT NULL,
+        owner_key TEXT NOT NULL, source_scope_key TEXT NOT NULL, source_id TEXT NOT NULL,
+        category TEXT NOT NULL, before_units INTEGER NOT NULL, after_units INTEGER NOT NULL,
+        delta_units INTEGER NOT NULL, before_state TEXT NOT NULL, after_state TEXT NOT NULL,
+        reason_code TEXT NOT NULL)""",
+    "CREATE INDEX energy_owner_time ON energy_events(owner_key,occurred_at,seq)",
+    "CREATE INDEX energy_retention ON energy_events(occurred_at)",
+    """CREATE TABLE reply_attempts (
+        reply_key TEXT PRIMARY KEY, source_scope_key TEXT NOT NULL, reply_id TEXT NOT NULL,
+        source_generation INTEGER NOT NULL, owner_json TEXT, cycle_id TEXT,
+        wake_session TEXT, started_at REAL NOT NULL, submitted_at REAL,
+        status TEXT NOT NULL, context_json TEXT NOT NULL)""",
+    """CREATE TABLE wake_attempts (
+        event_key TEXT PRIMARY KEY, owner_key TEXT NOT NULL, cycle_id TEXT,
+        occurred_at REAL NOT NULL, accepted INTEGER NOT NULL, reason_code TEXT NOT NULL)""",
+    "ALTER TABLE intents ADD COLUMN state_persona_key TEXT",
+    "ALTER TABLE intents ADD COLUMN state_revision INTEGER",
 ))
 
 

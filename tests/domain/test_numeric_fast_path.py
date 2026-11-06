@@ -53,6 +53,26 @@ def exception_signature(exc):
             exception_signature(exc.__context__), exc.__suppress_context__)
 
 
+def test_contract_finite_keeps_type_range_and_exception_semantics():
+    def original(value, name, low=None, high=None):
+        if isinstance(value, bool) or not isinstance(value, (float, int)):
+            raise ValueError(f"{name}: expected finite number")
+        if not math.isfinite(value) or (low is not None and value < low) or (
+            high is not None and value > high
+        ):
+            raise ValueError(f"{name}: out of range")
+
+    def result(function, value, low, high):
+        try:
+            return function(value, "number", low, high)
+        except Exception as exc:
+            return exception_signature(exc)
+
+    for value in VALUES:
+        for low, high in BOUNDS:
+            assert result(finite, value, low, high) == result(original, value, low, high)
+
+
 def outcome(function, value, low=None, high=None):
     try:
         result = function(value, "numeric-field", low, high)
@@ -133,7 +153,7 @@ def test_subclass_conversion_order_and_exceptions_match_original(base, error_typ
     assert run(emotion._number) == run(original_number)
 
 
-def test_exact_floats_avoid_contract_dispatch_without_skipping_checks(monkeypatch):
+def test_exact_json_numbers_avoid_contract_dispatch_without_skipping_checks(monkeypatch):
     calls = []
 
     def counted(value, name, low=None, high=None):
@@ -147,11 +167,13 @@ def test_exact_floats_avoid_contract_dispatch_without_skipping_checks(monkeypatc
         with pytest.raises(ValueError, match="^amount: out of range$"):
             emotion._number(invalid, "amount", 0, 1)
     assert calls == []
+    assert emotion._number(1, "amount", 0, 1) == 1.0
+    assert calls == []
     for fallback in (1, FloatSubclass(0.5), IntSubclass(1), True, "0.5"):
         assert outcome(emotion._number, fallback, 0, 1) == outcome(
             original_number, fallback, 0, 1,
         )
-    assert len(calls) == 5
+    assert len(calls) == 4
 
 
 def guard_runtime(event):
@@ -178,20 +200,20 @@ def test_guard_checks_every_numeric_value_at_full_capacity(le_event, monkeypatch
     runtime = guard_runtime(le_event)
     before = deepcopy(runtime)
     calls = []
-    number = emotion._number
+    isfinite = math.isfinite
 
-    def counted(value, name, low=None, high=None):
-        calls.append(name)
-        return number(value, name, low, high)
+    def counted(value):
+        calls.append(value)
+        return isfinite(value)
 
-    monkeypatch.setattr(emotion, "_number", counted)
+    monkeypatch.setattr(emotion.math, "isfinite", counted)
     result, reason = prepare(runtime, le_event)
     assert reason == "guard_capacity"
     assert result == before == runtime
     assert result is not runtime and result["seen"][0] is not runtime["seen"][0]
-    assert calls.count("last_event_at") == 1
-    assert calls.count("seen.at") == 192
-    assert calls.count("stimulus.at") == calls.count("stimulus.amount") == 192
+    assert len(calls) == 1 + 192 * 3
+    assert calls.count(le_event.occurred_at) == 1 + 192 * 2
+    assert calls.count(0.0) == 192
     runtime["stimuli"][-1]["amount"] = math.nan
     with pytest.raises(ValueError, match="^stimulus.amount: out of range$"):
         prepare(runtime, le_event)

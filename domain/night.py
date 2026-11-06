@@ -8,7 +8,7 @@ from typing import Any, Mapping
 
 from ..contracts import (
     ActorRole, Availability, Context, Event, IntentStatus, NightPhase, NightState,
-    canonical_json, finite, stable_key,
+    SleepState, canonical_json, finite, stable_key,
 )
 
 RULE_VERSION = "night-1"
@@ -341,3 +341,257 @@ def apply_interaction(
         "runtime": {"scope_key": context.scope_key, "seen": seen, "charges": charges},
         "rule_version": RULE_VERSION,
     }
+
+
+# Version two uses integer tenths and a microsecond remainder. The old pure
+# functions above retain their version-one semantics for existing consumers.
+@dataclass(frozen=True)
+class LifePolicy:
+    reply_cost_units: int = 40
+    fatigue_units_per_minute: int = 8
+    recovery_units_per_minute: int = 15
+    wake_reply_limit: int = 3
+    wake_window_seconds: int = 600
+    wake_mode: str = "chat"
+
+    def __post_init__(self):
+        for name in ("reply_cost_units", "fatigue_units_per_minute", "recovery_units_per_minute"):
+            if type(getattr(self, name)) is not int or not 0 <= getattr(self, name) <= 1000:
+                raise ValueError("invalid fixed energy rate")
+        for name in ("wake_reply_limit", "wake_window_seconds"):
+            if type(getattr(self, name)) is not int or getattr(self, name) < 1:
+                raise ValueError("invalid wake bound")
+        if self.wake_mode not in ("chat", "never", "both"):
+            raise ValueError("invalid wake mode")
+
+
+@dataclass(frozen=True)
+class SleepCycle:
+    cycle_id: str
+    kind: str
+    start: float
+    wake: float
+    deep: float | None = None
+    drowsy: float | None = None
+    base_wake: float | None = None
+    lie_in_minutes: int = 0
+
+    def __post_init__(self):
+        finite(self.start, "cycle start", 0)
+        finite(self.wake, "cycle wake", self.start)
+        if self.kind not in ("night", "nap", "manual") or self.wake <= self.start:
+            raise ValueError("invalid sleep cycle")
+        if self.kind == "night" and not (
+            self.start < self.drowsy < self.deep < (self.base_wake or self.wake)
+        ):
+            raise ValueError("invalid sleep timeline")
+
+
+def life_policy(config):
+    return LifePolicy(
+        int(round(config.energy_reply_cost * 10)),
+        int(round(config.energy_fatigue_per_minute * 10)),
+        int(round(config.energy_recovery_per_minute * 10)),
+        config.wake_reply_limit, config.wake_window_minutes * 60, config.wake_mode,
+    )
+
+
+def life_state(state):
+    if state.policy_version == 2:
+        return state
+    display = {
+        NightPhase.AWAKE: SleepState.AWAKE, NightPhase.DROWSY: SleepState.GROGGY,
+        NightPhase.SETTLING: SleepState.DROWSY, NightPhase.ASLEEP: SleepState.DEEP_SLEEP,
+        NightPhase.WAKING: SleepState.GROGGY,
+    }[state.phase]
+    units = int(round(state.energy * 10))
+    return replace(state, policy_version=2, display_state=display,
+                   energy_units=units, energy=units / 10, energy_remainder=0)
+
+
+def display_phase(display):
+    # v1 retains five old enum values; groggy is communicative, not v1 blocking.
+    return {
+        SleepState.AWAKE: NightPhase.AWAKE, SleepState.GROGGY: NightPhase.DROWSY,
+        SleepState.NAP: NightPhase.ASLEEP, SleepState.DROWSY: NightPhase.ASLEEP,
+        SleepState.DEEP_SLEEP: NightPhase.ASLEEP,
+    }[display]
+
+
+def _display(state, display, reason):
+    return replace(state, display_state=display, phase=display_phase(display),
+                   reason_codes=(reason,),
+                   sleep_started_at=(state.cycle_started_at or state.updated_at)
+                   if display in (SleepState.NAP, SleepState.DROWSY, SleepState.DEEP_SLEEP)
+                   else None,
+                   sleep_stage=None, transition_deadline=None, awaiting_reply_id=None)
+
+
+def _cycle_display(state, at, *, allow_sleep):
+    if not allow_sleep:
+        return SleepState.GROGGY if state.energy < 10 or (
+            state.cycle_kind == "night" and state.cycle_started_at is not None
+            and state.cycle_started_at <= at < (state.wake_at or at)
+        ) else SleepState.AWAKE
+    if state.wake_at is None:
+        return SleepState.DROWSY if state.display_state == SleepState.DROWSY and (
+            state.energy_units < 100
+        ) else SleepState.GROGGY if state.energy_units < 100 else SleepState.AWAKE
+    if at >= state.wake_at:
+        return SleepState.AWAKE
+    if state.deep_sleep_at is not None and at >= state.deep_sleep_at:
+        return SleepState.DEEP_SLEEP
+    if state.wake_session:
+        if state.wake_replies_used >= state.wake_reply_limit or (
+            state.wake_window_deadline is not None and at >= state.wake_window_deadline
+        ):
+            return SleepState.DROWSY
+        return SleepState.GROGGY if state.energy < 10 else SleepState.AWAKE
+    if state.cycle_kind == "nap":
+        return SleepState.NAP
+    if state.cycle_kind == "manual":
+        return SleepState.DROWSY
+    return SleepState.DROWSY if state.drowsy_at is not None and at >= state.drowsy_at else (
+        SleepState.GROGGY
+    )
+
+
+def advance_life(state, *, now, cycle=None, fatigue_windows=(), policy=LifePolicy(),
+                 allow_sleep=True):
+    """Settle all rate boundaries once. Returns state and body-free event deltas."""
+    finite(now, "now", 0)
+    state = life_state(state)
+    if now < state.updated_at:
+        return replace(state, reason_codes=("clock_rollback",)), ()
+    changes = []
+    original = state
+    if cycle is not None and state.cycle_id != cycle.cycle_id and (
+        state.wake_at is None or state.wake_at <= now or (
+            cycle.kind == "night" and state.cycle_kind == "nap"
+        )
+    ):
+        state = replace(
+            state, cycle_id=cycle.cycle_id, cycle_kind=cycle.kind,
+            cycle_started_at=cycle.start, wake_at=cycle.wake, deep_sleep_at=cycle.deep,
+            drowsy_at=cycle.drowsy, base_wake_at=cycle.base_wake,
+            lie_in_minutes=cycle.lie_in_minutes, wake_score=None, wake_failures=0,
+            wake_session=None, wake_replies_used=0, wake_reply_limit=0,
+            first_reply_submitted_at=None, wake_window_deadline=None,
+        )
+    start = state.updated_at
+    boundaries = {start, now}
+    for value in (state.cycle_started_at, state.drowsy_at, state.deep_sleep_at,
+                  state.wake_at, state.wake_window_deadline):
+        if value is not None and start < value < now:
+            boundaries.add(value)
+    for left, right in fatigue_windows:
+        boundaries.update(value for value in (left, right) if start < value < now)
+    points = sorted(boundaries)
+    for left, right in zip(points, points[1:]):
+        at = (left + right) / 2
+        display = _cycle_display(state, at, allow_sleep=allow_sleep) if (
+            state.cycle_started_at is None or state.cycle_started_at <= at
+        ) else (SleepState.GROGGY if state.energy < 10 else SleepState.AWAKE)
+        sleeping = display in (SleepState.NAP, SleepState.DROWSY, SleepState.DEEP_SLEEP)
+        fatigue = any(a <= at < b for a, b in fatigue_windows)
+        draining = fatigue and not sleeping
+        rate = policy.fatigue_units_per_minute if draining else policy.recovery_units_per_minute
+        # A rate-direction boundary discards only the previous sub-tenth residue.
+        previous_direction = state.energy_direction
+        reason = "fatigue" if draining else "recovery"
+        remainder = state.energy_remainder if previous_direction == reason else 0
+        total = int(round((right - left) * 1_000_000)) * rate + remainder
+        units, remainder = divmod(total, 60_000_000)
+        before = state.energy_units
+        after = min(1000, max(0, before + (-units if draining else units)))
+        state = replace(state, energy_units=after, energy=after / 10,
+                        energy_remainder=remainder if 0 < after < 1000 else 0,
+                        energy_direction=reason,
+                        reason_codes=(reason,))
+        if before != after:
+            changes.append({"occurred_at": right, "category": reason, "before_units": before,
+                            "after_units": after, "reason_code": reason})
+    state = replace(state, updated_at=now)
+    display = _cycle_display(state, now, allow_sleep=allow_sleep)
+    state = _display(state, display, state.reason_codes[0] if state.reason_codes else "clock")
+    if display == SleepState.DEEP_SLEEP and state.sleep_started_at is not None:
+        state = replace(state, sleep_stage=sleep_stage(state.sleep_started_at, now=now))
+    if state.wake_at is not None and now >= state.wake_at:
+        state = replace(state, wake_score=None, wake_failures=0, wake_session=None,
+                        wake_replies_used=0, wake_reply_limit=0,
+                        first_reply_submitted_at=None, wake_window_deadline=None)
+    if state.display_state != original.display_state or state.cycle_id != original.cycle_id:
+        changes.append({"occurred_at": now, "category": "sleep" if display in (
+            SleepState.NAP, SleepState.DROWSY, SleepState.DEEP_SLEEP
+        ) else "wake", "before_units": state.energy_units, "after_units": state.energy_units,
+                        "reason_code": "timeline"})
+    return state, tuple(changes)
+
+
+def chat_wake_eligible(state, event, *, policy=LifePolicy()):
+    return (
+        event.actor_role == ActorRole.HUMAN and event.event_type == "message"
+        and event.reliable_source and event.actor_id
+        and event.actor_id == event.context.account_id and policy.wake_mode != "never"
+        and (event.context.scene_kind.value == "private" or (
+            policy.wake_mode == "both" and event.context.scene_kind.value == "group"
+            and "native_bot_mention" in event.signals
+        )) and state.display_state in (SleepState.NAP, SleepState.DROWSY)
+    )
+
+
+def chat_wake(state, event, *, policy=LifePolicy(), dice=(0, 0)):
+    """Caller persists event idempotency. Deep sleep never rolls or increments."""
+    if state.display_state == SleepState.DEEP_SLEEP:
+        return state, False, "deep_sleep_no_chat_wake"
+    if not chat_wake_eligible(state, event, policy=policy):
+        return state, False, "wake_not_eligible"
+    score = state.wake_score
+    if state.energy_units < 100:
+        if score is None:
+            if len(dice) != 2 or any(type(d) is not int or not 0 <= d <= 9 for d in dice):
+                raise ValueError("wake requires two 0..9 dice")
+            score = sum(dice)
+        else:
+            score += 1
+        if score <= 8:
+            return replace(state, wake_score=score, wake_failures=state.wake_failures + 1,
+                           reason_codes=("wake_roll_failed",)), False, "wake_roll_failed"
+    display = SleepState.GROGGY if state.energy_units < 100 else SleepState.AWAKE
+    return replace(
+        _display(state, display, "chat_wake"), wake_score=None, wake_failures=0,
+        wake_session=stable_key(state.cycle_id, event.idempotency_key),
+        wake_replies_used=0, wake_reply_limit=policy.wake_reply_limit,
+        first_reply_submitted_at=None, wake_window_deadline=None,
+    ), True, "chat_wake"
+
+
+def start_life_reply(state, *, policy=LifePolicy()):
+    if state.display_state not in (SleepState.AWAKE, SleepState.GROGGY):
+        return state, False
+    if state.wake_session:
+        if state.wake_replies_used >= state.wake_reply_limit:
+            return _display(state, SleepState.DROWSY, "wake_rounds_exhausted"), False
+        state = replace(state, wake_replies_used=state.wake_replies_used + 1)
+        if state.wake_replies_used >= state.wake_reply_limit:
+            state = _display(state, SleepState.DROWSY, "wake_rounds_exhausted")
+    return state, True
+
+
+def submit_life_reply(state, *, now, policy=LifePolicy(), allow_sleep=True):
+    before = state.energy_units
+    after = max(0, before - policy.reply_cost_units)
+    state = replace(state, energy=after / 10, energy_units=after,
+                    reason_codes=("reply",))
+    if state.wake_session and state.first_reply_submitted_at is None:
+        state = replace(state, first_reply_submitted_at=now,
+                        wake_window_deadline=now + policy.wake_window_seconds)
+    if after < 100 and state.display_state == SleepState.AWAKE:
+        state = _display(state, SleepState.GROGGY, "low_energy")
+    if after < 100 and (state.wake_at is None or state.wake_at <= now):
+        state = replace(state, wake_at=None, cycle_id=None, cycle_kind=None,
+                        cycle_started_at=None, deep_sleep_at=None, drowsy_at=None)
+        state = _display(state, SleepState.DROWSY if allow_sleep else SleepState.GROGGY,
+                         "low_energy_rest")
+    return state, ({"occurred_at": now, "category": "reply", "before_units": before,
+                    "after_units": after, "reason_code": "reply_submitted"},)

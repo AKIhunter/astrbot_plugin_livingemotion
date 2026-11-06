@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import sqlite3
 import time
 import uuid
 from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, TypeVar
@@ -31,6 +33,8 @@ from ..contracts import (
     to_dict,
 )
 from .schema import migrate
+from .state_scope import StateScopeStore
+from .night import NightStore
 
 T = TypeVar("T")
 STATE_KINDS = frozenset(("bot", "observation", "relationship", "night"))
@@ -58,6 +62,10 @@ class _Rejected(Exception):
         self.reason = reason
 
 
+class _ProjectionPayload(dict):
+    """Call-local native JSON produced by the built-in projector, not raw input."""
+
+
 def _state_data(value: Any) -> Any:
     # Persisted guards contain thousands of plain scalars. Avoid contract/typing
     # introspection per scalar, retaining to_dict's key and custom-object semantics.
@@ -80,7 +88,8 @@ def _state_data(value: Any) -> Any:
 
 
 def _state_json(value: Any) -> str:
-    return json.dumps(_state_data(value), ensure_ascii=True, sort_keys=True,
+    native = value if type(value) is _ProjectionPayload else _state_data(value)
+    return json.dumps(native, ensure_ascii=True, sort_keys=True,
                       separators=(",", ":"), allow_nan=False)
 
 
@@ -102,20 +111,33 @@ class _ProjectionLock(asyncio.Lock):
             self._acquiring -= 1
 
 
-class SQLiteStore:
+class SQLiteStore(StateScopeStore, NightStore):
     def __init__(self, path: str | Path, *, config: Config | None = None,
                  clock: Callable[[], float] = time.time):
         self.path = Path(path)
         self.config = config or Config()
         self.clock = clock
         self._connection: sqlite3.Connection | None = None
+        self._executor: ThreadPoolExecutor | None = None
         self._lock = asyncio.Lock()
         self._projection_locks: WeakValueDictionary[str, _ProjectionLock] = WeakValueDictionary()
         self._closing = False
+        self._state_modes = {}
+        self._owner_generations = {}
+        self._state_keys = {}
 
     async def _thread(self, operation: Callable[[], T]) -> T:
         # Cancelling to_thread does not stop SQLite; drain before releasing the lock.
-        task = asyncio.create_task(asyncio.to_thread(operation))
+        # Submit the context-preserving worker directly. A wrapper Task around
+        # to_thread adds an extra event-loop turn to every serialized DB read/write.
+        # One connection already serializes all work. Reuse one worker instead
+        # of migrating the SQLite/cache working set around the host's pool.
+        if self._executor is None:
+            self._executor = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="livingemotion-sqlite",
+            )
+        context = contextvars.copy_context()
+        task = asyncio.get_running_loop().run_in_executor(self._executor, context.run, operation)
         try:
             return await asyncio.shield(task)
         except asyncio.CancelledError:
@@ -146,7 +168,20 @@ class SQLiteStore:
                     connection.execute("PRAGMA synchronous=FULL")
                     connection.execute("PRAGMA foreign_keys=ON")
                     connection.execute("PRAGMA busy_timeout=5000")
+                    # The per-scene guard working set exceeds SQLite's 2 MiB
+                    # default (legacy includes a third 192-entry guard). Bound
+                    # its page cache at 16 MiB; WAL/FULL and the
+                    # retained-record budgets remain unchanged.
+                    connection.execute("PRAGMA cache_size=-16384")
                     migrate(connection)
+                    self._state_modes = {
+                        (row["instance_id"], row["persona_id"]): (row["mode"], row["revision"])
+                        for row in connection.execute("SELECT * FROM state_modes")
+                    }
+                    self._owner_generations = {
+                        row["owner_key"]: row["generation"]
+                        for row in connection.execute("SELECT * FROM state_owners")
+                    }
                     self._connection = connection
                 except BaseException:
                     connection.close()
@@ -154,20 +189,32 @@ class SQLiteStore:
             try:
                 await self._thread(connect)
             except BaseException:
-                if self._connection is not None:
-                    await self._thread(self._connection.close)
-                    self._connection = None
+                try:
+                    if self._connection is not None:
+                        await self._thread(self._connection.close)
+                        self._connection = None
+                finally:
+                    self._close_executor()
                 raise
 
     async def close(self) -> None:
         self._closing = True
         async with self._lock:
-            if self._connection is not None:
-                connection = self._connection
-                try:
-                    await self._thread(connection.close)
-                finally:
-                    self._connection = None
+            try:
+                if self._connection is not None:
+                    connection = self._connection
+                    try:
+                        await self._thread(connection.close)
+                    finally:
+                        self._connection = None
+            finally:
+                self._close_executor()
+
+    def _close_executor(self) -> None:
+        # The lock and cancellation drain guarantee no worker operation remains.
+        executor, self._executor = self._executor, None
+        if executor is not None:
+            executor.shutdown(wait=True)
 
     async def _run(self, operation: Callable[[sqlite3.Connection], T]) -> T:
         if self._closing:
@@ -217,9 +264,23 @@ class SQLiteStore:
                 (scope_key, canonical_json(replace(context, route=None)), expected),
             )
 
-    @staticmethod
-    def _write_states(db: sqlite3.Connection, context: Context, generation: int,
-                      writes: Sequence[StateWrite], now: float) -> dict[str, int]:
+    def _write_states(self, db, context, generation, writes, now, encoded=None):
+        owner = self.state_owner(context)
+        if owner is not None or any(write.owner for write in writes):
+            # Source-account corrections do not change shared Bot state. Legacy
+            # direct scene writes remain compatible until the first mode switch.
+            account = tuple(w for w in writes if w.kind in ("relationship", "observation"))
+            owned = tuple(w for w in writes if w.kind not in ("relationship", "observation"))
+            if (owner and owner.mode == "scene" and owner.revision == 0
+                    and (self.config.night_policy_version == 1 or not self.config.timezone)):
+                owned = tuple(replace(w, owner=owner) if w.owner is None else w for w in owned)
+            versions = self._write_scene_states(db, context, generation, account, now, encoded)
+            versions.update(self._write_owned(db, context, generation, owned, now, encoded))
+            return versions
+        return self._write_scene_states(db, context, generation, writes, now, encoded)
+
+    def _write_scene_states(self, db: sqlite3.Connection, context: Context, generation: int,
+                            writes: Sequence[StateWrite], now: float, encoded=None) -> dict[str, int]:
         versions = {}
         scope_key = context.scope_key
         for write in writes:
@@ -233,25 +294,58 @@ class SQLiteStore:
                 raise ValueError("scene-scoped state requires empty record_key")
             if type(write.expected_version) is not int or write.expected_version < 0:
                 raise ValueError("invalid expected_version")
-            row = db.execute(
-                "SELECT version FROM states WHERE scope_key=? AND kind=? AND record_key=?",
-                (scope_key, write.kind, write.record_key),
-            ).fetchone()
-            version = row[0] if row else 0
-            if version != write.expected_version:
-                raise _Rejected("version_conflict")
-            payload = _state_json(write.value)
+            loggable = write.kind == "night" and (
+                write.value.get("policy_version") == 2 or write.energy_events
+            )
+            row = None
+            version = write.expected_version
+            payload = encoded[id(write.value)] if encoded is not None else None
+            direct_cas = (version > 0 and not loggable and payload is not None
+                          and len(payload) <= 65536)
+            if not direct_cas:
+                row = db.execute(
+                    "SELECT version,value_json FROM states "
+                    "WHERE scope_key=? AND kind=? AND record_key=?",
+                    (scope_key, write.kind, write.record_key),
+                ).fetchone()
+                if (row[0] if row else 0) != version:
+                    raise _Rejected("version_conflict")
+            if payload is None:
+                payload = _state_json(write.value)
             if len(payload) > 65536:
                 raise ValueError("state payload too large")
-            db.execute(
-                """INSERT INTO states VALUES(?,?,?,?,?,?,?)
-                   ON CONFLICT(scope_key,kind,record_key) DO UPDATE SET
-                   generation=excluded.generation, version=excluded.version,
-                   updated_at=excluded.updated_at,value_json=excluded.value_json""",
-                (scope_key, write.kind, write.record_key, generation,
-                 version + 1, now, payload),
-            )
+            if direct_cas:
+                # The CAS belongs in the UPDATE itself. Mature non-loggable
+                # snapshots need no preceding SELECT or UPSERT lookup.
+                cursor = db.execute(
+                    """UPDATE states SET generation=?,version=?,updated_at=?,value_json=?
+                       WHERE scope_key=? AND kind=? AND record_key=? AND version=?""",
+                    (generation, version + 1, now, payload, scope_key,
+                     write.kind, write.record_key, version),
+                )
+            else:
+                cursor = db.execute(
+                    """INSERT INTO states VALUES(?,?,?,?,?,?,?)
+                       ON CONFLICT(scope_key,kind,record_key) DO UPDATE SET
+                       generation=excluded.generation, version=excluded.version,
+                       updated_at=excluded.updated_at,value_json=excluded.value_json
+                       WHERE states.version=?""",
+                    (scope_key, write.kind, write.record_key, generation,
+                     version + 1, now, payload, version),
+                )
+            if cursor.rowcount != 1:
+                raise _Rejected("version_conflict")
             versions[f"{write.kind}:{write.record_key}"] = version + 1
+            if loggable and (write.energy_events or row is None or row["value_json"] != payload):
+                before = self._night_value(json.loads(row["value_json"])) if row else (
+                    self._night_value({})
+                )
+                after = self._night_value(write.value)
+                self._append_energy(
+                    db, context, context.scope_key,
+                    stable_key("night", context.scope_key, generation, version + 1), "",
+                    before, after, write.energy_events,
+                )
         return versions
 
     async def get_generation(self, context: Context) -> int:
@@ -259,7 +353,8 @@ class SQLiteStore:
 
     def projection_lock(self, context: Context) -> _ProjectionLock:
         """Serialize scene projections across facades without retaining idle scopes."""
-        key = context.scope_key
+        owner = self.state_owner(context)
+        key = owner.owner_key if owner and owner.mode == "shared" else context.scope_key
         lock = self._projection_locks.get(key)
         if lock is None:
             lock = _ProjectionLock()
@@ -270,10 +365,26 @@ class SQLiteStore:
         self, context: Context,
     ) -> tuple[int, dict[str, StateRecord | None]]:
         """Read the generation and exact scene/account records in one SQL snapshot."""
+        owner = self.state_owner(context)
+        return await self._run(lambda db: self._projection_snapshot(db, context, owner))
+
+    async def project_snapshot(self, context: Context, calculate: Callable[..., T]) -> T:
+        """Run a pure local calculation with its snapshot on the same worker.
+
+        No model or async callback belongs here. The returned projection still
+        carries the read's original CAS/generation ticket; commit rechecks it.
+        """
+        owner = self.state_owner(context)
+        return await self._run(
+            lambda db: calculate(*self._projection_snapshot(db, context, owner)),
+        )
+
+    def _projection_snapshot(self, db, context, owner):
+        if owner is not None:
+            return self._owned_projection_snapshot(db, context, owner)
         scope_key, account_id = context.scope_key, context.account_id
 
-        def read(db: sqlite3.Connection) -> tuple[int, dict[str, StateRecord | None]]:
-            rows = db.execute(
+        rows = db.execute(
                 """WITH requested(kind,record_key) AS (
                        VALUES ('bot',''),('night',''),('relationship',?),('observation',?)
                    ), current AS (
@@ -286,16 +397,15 @@ class SQLiteStore:
                        AND s.record_key=r.record_key AND s.generation=g.generation
                    WHERE r.kind IN ('bot','night') OR r.record_key<>''""",
                 (account_id, account_id, scope_key, scope_key),
-            ).fetchall()
-            return rows[0]["generation"], {
-                row["kind"]: (
-                    StateRecord(row["kind"], json.loads(row["value_json"]), row["version"],
-                                row["generation"], row["updated_at"], row["record_key"])
-                    if row["version"] is not None else None
-                )
-                for row in rows
-            }
-        return await self._run(read)
+        ).fetchall()
+        return rows[0]["generation"], {
+            row["kind"]: (
+                StateRecord(row["kind"], json.loads(row["value_json"]), row["version"],
+                            row["generation"], row["updated_at"], row["record_key"])
+                if row["version"] is not None else None
+            )
+            for row in rows
+        }
 
     async def get_instance_id(self) -> str:
         def identity(db: sqlite3.Connection) -> str:
@@ -315,6 +425,9 @@ class SQLiteStore:
             not context.account_id or record_key != context.account_id
         ):
             raise ValueError("account-scoped state requires source account record_key")
+        owner = self.state_owner(context)
+        if owner is not None:
+            return await self._run(lambda db: self._owned_record(db, context, kind, owner))
 
         def read(db: sqlite3.Connection) -> StateRecord | None:
             row = db.execute(
@@ -343,18 +456,23 @@ class SQLiteStore:
         # Event history and dedupe outlive the body window, never duplicate its text.
         metadata.pop("body")
         metadata["context"]["route"] = None
-        metadata_json = _state_json(metadata)
+        metadata_json = _state_json(_ProjectionPayload(metadata))
         if len(metadata_json) > 65536:
             return CommitResult("rejected", "event_too_large")
-
         def commit(db: sqlite3.Connection) -> CommitResult:
+            # Encode bounded projections on the connection's worker, before
+            # BEGIN. This avoids GIL contention with decoding/guard calculation
+            # and leaves the event loop responsive; no transaction is widened.
+            encoded = {id(write.value): _state_json(write.value) for write in writes}
+            encoded_traces = tuple(_state_json(trace) for trace in traces)
+
             def mutate() -> CommitResult:
                 self._check_generation(db, context, expected_generation)
                 if db.execute("SELECT 1 FROM event_keys WHERE event_key=?",
                               (event_key,)).fetchone():
                     return CommitResult("duplicate", "duplicate_event", event_key,
                                         expected_generation)
-                versions = self._write_states(db, context, expected_generation, writes, now)
+                versions = self._write_states(db, context, expected_generation, writes, now, encoded)
                 db.execute("INSERT INTO event_keys VALUES(?,?,?,?)",
                            (event_key, scope_key, expected_generation, now))
                 cursor = db.execute(
@@ -368,8 +486,7 @@ class SQLiteStore:
                 if event.actor_role.value == "human":
                     db.execute("UPDATE scopes SET human_watermark=? WHERE scope_key=?",
                                (cursor.lastrowid, scope_key))
-                for trace in traces:
-                    payload = _state_json(trace)
+                for trace, payload in zip(traces, encoded_traces):
                     if len(payload) > 65536 or trace.get("kind") not in (
                         "emotion", "relationship", "night",
                     ):
@@ -421,7 +538,7 @@ class SQLiteStore:
         return await self._run(commit)
 
     async def refine_emotion(self, event: Event, generation: int, version: int,
-                             value: dict, trace: dict) -> CommitResult:
+                             value: dict, trace: dict, *, owner=None) -> CommitResult:
         """Replace a single committed appraisal; do not replay its other effects."""
         payload = canonical_json(trace)
         if len(payload) > 65536 or trace.get("event_key") != event.idempotency_key:
@@ -439,7 +556,7 @@ class SQLiteStore:
                 if not row or row["seq"] != row["human_watermark"]:
                     raise _Rejected("new_human_message")
                 versions = self._write_states(
-                    db, context, generation, (StateWrite("bot", value, version),), now,
+                    db, context, generation, (StateWrite("bot", value, version, owner=owner),), now,
                 )
                 changed = db.execute(
                     """UPDATE event_traces SET value_json=? WHERE event_key=? AND scope_key=?
@@ -534,9 +651,43 @@ class SQLiteStore:
                 generation = expected_generation + 1
                 db.execute("UPDATE scopes SET generation=? WHERE scope_key=?",
                            (generation, context.scope_key))
+                owner = self.state_owner(context)
+                if owner is not None:
+                    self._check_owner(db, context, owner)
+                    db.execute(
+                        """INSERT INTO state_owners VALUES(?,?,?,1)
+                           ON CONFLICT(owner_key) DO UPDATE SET generation=generation+1""",
+                        (owner.owner_key, owner.persona_key, owner.mode),
+                    )
+                    if owner.mode == "shared":
+                        # Keep shared numeric restrictions; remove source evidence
+                        # and invalidate every old owner write/behavior ticket.
+                        db.execute(
+                            """UPDATE owner_states SET value_json=json_set(value_json,
+                               '$.evidence',json('[]'),'$.reason_codes',json('[]')),
+                               version=version+1 WHERE owner_key=? AND kind='bot'""",
+                            (owner.owner_key,),
+                        )
+                    db.execute(
+                        """UPDATE reply_attempts SET status='cancelled' WHERE status='started'
+                           AND source_scope_key IN (
+                               SELECT scope_key FROM state_members WHERE persona_key=?)""",
+                        (owner.persona_key,),
+                    )
+                    if owner.mode == "shared":
+                        db.execute(
+                            """UPDATE intents SET status=CASE WHEN status='sending' THEN 'unknown'
+                               WHEN status IN ('pending','reserved','generating') THEN 'cancelled'
+                               ELSE status END,reason_code='source_cleared',updated_at=?
+                               WHERE scope_key IN (
+                                   SELECT scope_key FROM state_members WHERE persona_key=?)""",
+                            (now, owner.persona_key),
+                        )
                 for table in ("states", "events", "body_window", "relationship_ledger",
                               "experiences", "event_traces"):
                     db.execute(f"DELETE FROM {table} WHERE scope_key=?", (context.scope_key,))
+                db.execute("DELETE FROM energy_events WHERE source_scope_key=?",
+                           (context.scope_key,))
                 # Keep non-body intent tombstones and all quota consumption.
                 db.execute(
                     """UPDATE intents SET status=CASE WHEN status='sending' THEN 'unknown'
@@ -552,7 +703,13 @@ class SQLiteStore:
                            (context.scope_key, generation, reason_code, now, actor_id))
                 return CommitResult("accepted", "cleared", generation=generation)
             try:
-                return self._transaction(db, mutate)
+                result = self._transaction(db, mutate)
+                owner = self.state_owner(context)
+                if owner is not None:
+                    row = db.execute("SELECT generation FROM state_owners WHERE owner_key=?",
+                                     (owner.owner_key,)).fetchone()
+                    self._owner_generations[owner.owner_key] = row[0]
+                return result
             except _Rejected as exc:
                 return CommitResult("rejected", exc.reason,
                                     generation=self._generation(db, context))
@@ -588,8 +745,14 @@ class SQLiteStore:
                             json_extract(value_json,'$.history_expires_at')<=?)""",
                     (now, now),
                 ).rowcount
+                energy = db.execute("DELETE FROM energy_events WHERE occurred_at<=?",
+                                    (now - 7 * 86400,)).rowcount
+                db.execute("DELETE FROM wake_attempts WHERE occurred_at<=?", (now - 7 * 86400,))
+                # IDs remain tombstones after cleanup; no retained route/body.
+                db.execute("UPDATE reply_attempts SET context_json='{}' "
+                           "WHERE started_at<=? AND status<>'started'", (now - 7 * 86400,))
                 return {"events": deleted, "experiences": experiences,
-                        "legacy_histories": histories}
+                        "legacy_histories": histories, "energy_events": energy}
             return self._transaction(db, mutate)
         return await self._run(cleanup)
 
@@ -692,12 +855,16 @@ class SQLiteStore:
         def create(db: sqlite3.Connection) -> dict[str, Any]:
             def mutate() -> dict[str, Any]:
                 self._check_generation(db, intent.context, intent.generation)
+                owner = self.state_owner(intent.context)
+                self._check_owner(db, intent.context, owner)
                 cursor = db.execute(
                     """INSERT OR IGNORE INTO intents(intent_id,scope_key,generation,status,
-                       created_at,expires_at,updated_at,reason_code,value_json)
-                       VALUES(?,?,?,'pending',?,?,?,'created',?)""",
+                       created_at,expires_at,updated_at,reason_code,value_json,
+                       state_persona_key,state_revision)
+                       VALUES(?,?,?,'pending',?,?,?,'created',?,?,?)""",
                     (intent.intent_id, intent.context.scope_key, intent.generation,
-                     intent.created_at, intent.expires_at, self._now(), canonical_json(intent)),
+                     intent.created_at, intent.expires_at, self._now(), canonical_json(intent),
+                     owner.persona_key if owner else None, owner.revision if owner else None),
                 )
                 return {"status": "created" if cursor.rowcount else "duplicate",
                         "reason_code": "intent_created" if cursor.rowcount else "intent_exists"}
@@ -737,6 +904,11 @@ class SQLiteStore:
                     return {"status": "rejected", "reason_code": "intent_missing"}
                 if row["status"] != expected_status:
                     return {"status": "rejected", "reason_code": "intent_conflict"}
+                if row["state_persona_key"] is not None:
+                    mode = db.execute("SELECT revision FROM state_modes WHERE persona_key=?",
+                                      (row["state_persona_key"],)).fetchone()
+                    if mode is None or mode[0] != row["state_revision"]:
+                        return {"status": "rejected", "reason_code": "stale_state_mode"}
                 if status == "reserved":
                     quota = db.execute(
                         """SELECT 1 FROM quota_reservations WHERE reservation_id=?
@@ -794,6 +966,7 @@ class SQLiteStore:
                     """UPDATE quota_reservations SET status='unknown',reason_code='interrupted',
                        finished_at=? WHERE status='reserved'""", (now,),
                 )
+                db.execute("UPDATE reply_attempts SET status='cancelled' WHERE status='started'")
                 return {"unknown": unknown, "cancelled": cancelled}
             return self._transaction(db, mutate)
         return await self._run(recover)

@@ -1,170 +1,177 @@
-# livingEmotion 管理页面
+# livingEmotion 生活控制台 UI
 
-## 接线协议（前端 v1，待主集成者冻结）
+P6/P7 前端冻结时间：2026-11-06 20:40:28 +08:00。
+冻结的是页面实现与本轮浏览器验证，不代表 P2 状态迁移、四版宿主或生产验收完成。
+需求和生活规则见主协调者的 [life-console.md](life-console.md)；API 以
+[internal-console-contract.md](internal-console-contract.md) 的 P5 DT1 为准，
+状态端口以 [internal-state-contract.md](internal-state-contract.md) 为准。
 
-页面为 `pages/livingemotion/index.html`，无运行期依赖、外部字体、图片或 CDN。所有业务数据只来自宿主 bridge。此文档是 T9 给主集成者的接线交接；前端及合成测试已实现，尚不代表真实宿主验证通过。
+## 页面与接线
 
-bridge 脚本明确使用 `/api/plugin/page/bridge-sdk.js`，宿主将其替换为带范围令牌的地址。DOMContentLoaded 后读取 `window.AstrBotPluginView`，兼容别名 `AstrBotPluginPage`，调用 `apiGet(path, params)` / `apiPost(path, body)`。不等待可能阻塞的 `ready()`，不自行读取 token，不使用 fetch 或自行实现 postMessage。具体宿主兼容结论见 `host-contract.md`。
+入口：`pages/livingemotion/index.html`。九区为 TA、人格、情绪、关系、主动行为、
+长夜、日记与梦境、记忆接入、设置。日记与梦境有独立二级页签。
+没有 Node/npm/CDN 运行依赖，不下载外部图片、字体或官方标志。
+关系布局使用已经构建的本地 D3 ESM，仅进入关系页才加载。
 
-**给 foundation / 父集成者的紧急对齐项：**
+业务请求只走 AstrBot 的 `/api/plugin/page/bridge-sdk.js`，读取
+`window.AstrBotPluginView`，兼容 `AstrBotPluginPage`。
+页面不自行获取 Token、不直接 fetch 后端，也不实现第二套 postMessage 协议。
+主题使用独立的 `data-le-theme`，不受 SDK 的通用 `data-theme` 覆盖。
 
-- 已核对固定宿主 `PluginViewPage.vue:122`：父页面把 `console/state` 转为 `/api/v1/plugins/extensions/{pluginName}/console/state`。不要让前端绕过 bridge，也不要认为选 legacy SDK 路径就避开 v1 API 的令牌风险。
-- `host-contract.md` 已确认 v4.29.4 的 asset token 可被 v1 误认为管理身份；所有管理 handler 必须额外拒绝 `plugin_page_asset`，不能把前端按钮禁用当成鉴权。
-- `PluginViewPage.vue:382-401,513` 及 SDK `:176` 会丢弃 HTTP 错误 code，只保留 message。后端拒绝时请将 message 设为 **`[livingemotion:forbidden] 可读说明`**，其他前缀为 `unauthorized/version_conflict/validation_error/unavailable`。前端已解析此白名单；实际 HTTP 仍需返回正确 401/403/409，不能为保留错误码改成成功授权。成功响应原样/单层 data 均支持。
-- 原生认证中间件可能返回没有前缀的文本错误。前端将无法分型的 bridge 错误按失去可信连接处理，隐藏私人快照并锁定可能结果不明的写操作，不凭未分型错误宣称仍有管理权限。已分型 `unavailable` 读取失败可保留明确标注的旧快照，但停用写操作。
-- SDK `applyContext` 会写通用 `data-theme`。页面主题使用独立 `data-le-theme`，保证宿主主题消息不会覆盖系统初始偏好或用户手动选择，不注册任何业务主题回调。
-- `contracts.py` 当前 `BotAffect.pleasure` 为 `[-1,1]`，UI 归一值须显式 `(value+1)/2`；`NightState.energy` 为 `[0,100]`，须 `/100`；其余 Bot 维度为 `[0,1]`。不能凭字段名或数值大小自动猜量纲。关系原值取 score，归一值取 normalized/score÷1000，原量纲标 `0–1000`。
-- `HumanObservation.labels/subject_id/occurred_at` 映射到 observation 的 label/subject/observed_at，**不能**补到 bot_state。`NightState.phase/sleep_stage/sleep_started_at` 分别映射到 state/stage/sleep_at。reason_codes 转为可读 reason/reasons；完整原因码保留于来源详情或记录。
+| UI 请求 | 最终使用的 DTO |
+| --- | --- |
+| `GET console/scopes` | 初次发现人格、平台及已授权真实会话 |
+| `GET console/state` | `persona_id/view_scope/context_id/platform`；消费 `selection`、`state_mode`、真实 baseline 和五档状态 |
+| `GET console/records` | 同一 ScopeSelection；`kind=emotion/behavior/diary/dream`，每页 10 条，服务端筛选 |
+| `GET console/relationships` | 同一 ScopeSelection、平台/账号搜索、每页 10 条、`limit=200`；图与表使用同一返回数据 |
+| `POST console/relationship` | 人格、平台、账号、可选真实会话、`score/frozen/expected_version/reason`；不传 `view_scope` 或客户端 actor |
+| `GET console/energy` | 同一 ScopeSelection、`event_type/page/page_size=10`；真实 24h 时窗、points 与逐事件 items |
+| `GET console/settings-options` | 原生人格、聊天 Provider、embedding Provider、任务组 |
+| `POST console/config` | 仅 `context_id/expected_revision/patch/reason`；一份 patch、一次 POST |
+| `POST console/preview` | 真实 `context_id`；必须回执 `model_calls=0/sends=0` |
+| `POST console/action` | 已声明动作、真实会话、版本、原因和显式确认；全局不提供动作 |
 
-统一响应：
+wire 参数只允许上述四个 ScopeSelection 字段，不把旧内部 `scene_id` 或
+不可信 `actor_id/admin` 混入请求。页面选择只影响管理查看，不创建全局 Context。
+私聊/群聊的聚合项明确显示“全部已授权会话”；选定单个会话后才传其真实 ID。
+场景独立模式下，全局数值注明 `representative_context_id`，不冒称共享状态或平均值。
 
-```json
-{"status":"ok","data":{"api_version":1}}
-```
+## 图表与交互
 
-也接受直接数据对象及 `{ok:true,data:...}`。错误推荐 `{status:"error",code:"forbidden",message:"[livingemotion:forbidden] 说明"}`，码值按上文白名单；不可假设 bridge 保留 code。401/403 清空私人视图、草稿并停用写操作；409 保留草稿但禁止覆盖提交，需重新读取最新配置后再确认。页面不自动重试写请求或不明动作。
+- TA 使用大字号情绪和同坐标 SVG 雷达；baseline 来自后端，不硬编码前端情绪规则。
+  缺少维度/基准时明确未采集，不补值。高于基准有箭头、加粗和较大点；
+  压力使用温和警示色，升高不等于改善。对方观察只在情绪页分开展示。
+- 情绪记录只请求 `kind=emotion`，不查询或显示日记正文。前后值及原因保留来源详情。
+- 关系以人格为中心，平台/账号稳定 ID 不合并同号账号。最多 200 人物节点，
+  显示绘制人数/总人数，未绘制账号仍可搜索。支持拖动、缩放、复位、暂停、
+  节点 Enter/Space、表格键盘选择和好感 0.1 编辑、冻结自动变化。
+  熟悉/信任/边界没有证据时显示未建立，不编造数值或人物间边。
+- 好感写入需要原因和非负整数版本。409 保留草稿，必须读取最新关系人工复核，
+  不自动重试。未知写入锁定该人格/平台/账号，在本页跨分区也不会解除。
+- 长夜显示清醒、小憩、恍惚、困、沉睡五档；当前精力只消费 night 的归一值，
+  固定上限 100。日志按 `owner_key` 分开连线，保留每桶 min/max 竖线，
+  不能把不同会话的精力连成同一块电池。
+  时间轴、图注、事件表统一使用 DTO 的 IANA 时区，事件过滤和表格均为服务端分页。
+  真实端口无事件显示未采集；503 显示读取失败，不伪装成空历史。
+- 日记与梦境有二级键盘导航、私人正文和素材来源折叠；梦始终标为想象。
+  日记展示程序页头的日期/住所/天气，失败显示天气未获取。
+  正文内的置顶操作使用 `experience.pin`，携带记录 ID、相反的预期置顶状态、
+  配置版本和原因；需确认后写入。未授权或过期的记录不提供按钮，冲突刷新复核，
+  结果不明锁定单条记录，不自动重试；取消置顶不改变原创建日期或保留期限。
+- 集中设置以原生 `config.fields/values/groups/readonly` 为单一来源，
+  支持 `boolean/enum/integer/float/number/string`、中文标签、数字步进和单位。
+  快速开始只引用字段，不复制表单。预算/阈值放高级折叠，普通分区不堆设置。
+  作息预览计算配置的跨午夜顺序与中点，不在前端重抽赖床或推测当前周期实际时间。
 
-| 方法 / 路径 | 请求 | 响应 data |
-| --- | --- | --- |
-| GET `console/state` | `{context_id?:string}`；上下文 ID 仅由上一次已授权响应取得 | 下文 State |
-| GET `console/records` | `{context_id,kind,page,page_size:10,query}`；kind 为 `emotion/behavior/diary/dream`，page 从 1 起 | `{api_version:1,items:[],page:1,page_size:10,total:0}`；过滤后 total，由服务端分页及授权 |
-| POST `console/config` | `{context_id,expected_revision,patch:{字段键:值},reason}` | 完整 State；服务端白名单校验及审计，只更改同一份原生配置，不建立页面专属配置 |
-| POST `console/preview` | `{context_id}` | `{api_version:1,eligible:boolean,reasons:[],candidates:[],model_calls:0,sends:0}`；此路径必须无模型计费、无消息发送 |
-| POST `console/action` | `{context_id,action,expected_revision,reason,confirmed:true}` | `{api_version:1,status,reason,request_id?}`；只允许 State.actions 明确宣告的动作，必须重新鉴权及版本复核 |
+主题键仍为 `livingemotion.theme.v1`。点击位置圆扩散 480ms，优先 View Transition；
+无此能力时使用不承载业务 DOM、不拦截交互的纯色圆形覆盖层。
+连续点击合并到最终主题；减少动态效果立即切换。系统首帧、禁存储、
+页签同步和宿主通用主题覆盖均有浏览器验证。
 
-读取/写入前端超时均为 15 秒；耗时动作应返回 accepted/请求 ID，再由行为记录反映实际执行结果，不让 HTTP 一直等模型。写操作超时标为结果不明且不自动重试；该页锁定对应重复提交入口。前端的确认、版本和按钮状态都不能替代服务端最终复核。
+## 保存与错误
 
-`State` 字段（缺失只显示未提供，绝不补造状态）：
+草稿只在内存中；切换分区/主题和“刷新状态”保留草稿。浏览器整页刷新提示离开，
+丢弃未保存草稿；已保存内容重新从宿主读取。
+`sessionStorage` 只保存查看选择、分区、筛选及页码；不存私人正文、快照或配置草稿。
+测试 fixture 为模拟保存持久性另有 synthetic key，仅测试页面使用。
 
-```text
-api_version: 1
-context_id: string
-contexts: [{id, label}]
-updated_at: ISO时间或Unix秒
-mode: "active" | "observe_only" | "disabled"
-revision: string | number                   # 手动动作版本
-capabilities: ["config.write", "behavior.preview", ...]
-config:
-  revision: string | number
-  source: string                           # 原生配置来源的可读名称
-  values: {字段键:实际值}
-  fields: [{key,label,section,type,help?,options?,min?,max?,step?,readonly?}]
-  # section: persona/emotion/behavior/night/experience/memory
-  # type: boolean/enum/integer/number/string；options:[{value,label}]
-  # 服务端决定可编辑字段，不从 UI 默认值派生配置。
-persona: {name,id,source,revision,description}
-bot_state:
-  label, reason, updated_at, expires_at, source, version
-  dimensions: {pleasure,arousal,stress,social_need} # [0,1]，须由adapter转换领域量纲
-observation:
-  subject, label, confidence, reason, observed_at, expires_at, source
-  # confidence [0,1]；明确属于对方，不能用作 bot_state fallback
-relationship:
-  stage, raw, normalized, scale, source_completeness, identity_revision, reason
-  # normalized [0,1]，raw/scale保留原量纲，不伪造未知维度
-availability: {available, state, reasons:[]}
-health: [{name,status,reason}]               # status: ok/degraded/unavailable
-behavior: {enabled,remaining,cooldown_until,backoff,reason,candidates:[]}
-night: {state,stage,energy,sleep_at,wake_at,reason,catch_up:{completed,total,reason}}
-  # energy [0,1]；精力仅来自night
-experience: {diary_enabled,dream_enabled,reason}
-memory: {mode,provider,can_read,can_write,capabilities:[],reason}
-actions: [{id,enabled,reason?}]
-  # 前端仅识别 night.sleep/night.wake/diary.generate/dream.generate/
-  # behavior.send；后三项可能计费，behavior.send可能真实发消息。
-```
+Config POST 的旧 State 回执不用于替换当前 ScopeSelection；成功后再 GET 当前真实查看范围。
+保存成功但随后读取失败时明确提示“已保存，状态未刷新”，不会重新 POST。
+409 必须读取最新配置复核后再提交；无效输入跨分区也阻止保存。
+所有写入均无自动重试；超时/未分型 bridge 错误按结果不明处理。
+401/403 或无法确认认证的 bridge 错误清空私人视图、草稿和范围。
+按钮禁用、客户端版本和确认不替代后端鉴权、CAS 或最终授权复核。
 
-记录字段：
+所有文本使用 `textContent/value`，不解析为 HTML、Markdown 或可执行 URL。
+图形仅使用已校验有限数值。未配置能力时禁用真实动作，不用 fixture 兜底。
 
-```text
-公共: id, created_at, status, reason, source, request_id, latency_ms, context
-emotion: before:{四维}, after:{四维}, expires_at, label
-behavior: candidate, vetoes:[], result, intent_id
-diary/dream: title, body, visibility, clarity, pinned,
-            sources:[{kind,label,source_id,excerpt}]
-# sources.kind: bot_action/human_action/dream/unknown
-# dream始终标记为想象；缺省visibility显示"私人"，不提供分享/导出捷径。
-```
-
-未声明写能力或动作时禁用并解释；未提供列表接口时显示错误而非声称“没有记录”。主集成者可在 `api.mjs` / `model.mjs` 对接冻结后的名称与 R9 量纲，渲染层不读取私有对象、SQL 或配置文件。
-
-## 页面实现
+## 文件责任
 
 | 文件 | 责任 |
 | --- | --- |
-| `pages/livingemotion/index.html` | 七区语义骨架、跳转链接、文字主题按钮、范围选择、操作确认 dialog |
-| `theme.js` | 样式表之前同步确定主题；系统初始偏好、手动持久化、页签同步和存储失败处理 |
-| `style.css` | 白昼/黑夜语义色、细线编号与自有字标；390/1280 响应式；焦点与减少动效 |
-| `model.mjs` | v1 UI DTO 校验、有限数值、字段白名单与分页校验，不跨类型补状态 |
-| `api.mjs` | 唯一宿主 bridge 接口、错误恢复、超时与零自动写重试 |
-| `app.mjs` | 七区渲染、四类记录、前后值和本地 SVG 曲线、配置草稿、模拟与真实动作 |
+| `index.html/style.css` | 九区、响应式、奶白/奶咖/温润暗主题、自有设备纹理、键盘焦点 |
+| `theme.js` | 独立主题属性、持久化、圆扩散、降级及减少动效 |
+| `app.mjs` | 九区真实渲染、ScopeSelection、四类记录、草稿/保存/错误/手动动作 |
+| `model.mjs/api.mjs/dom.mjs` | DTO 校验、量纲、唯一 bridge、超时和安全 DOM |
+| `settings.mjs` | 原生任务组去重、Provider 选择、float/单位/只读字段、作息预览 |
+| `charts/radar.mjs` | 当前/真实基准 SVG 雷达 |
+| `charts/relationships.mjs` | 二维力图、账号分页、键盘/拖动与关系 CAS |
+| `charts/energy.mjs` | 真实时窗、多 owner 分线、桶极值及逐事件表 |
+| `vendor/d3-force.mjs` | 固定版本的自托管构建结果 |
+| `tests/ui/build.mjs` | esbuild 0.25.10 构建 d3-force 3.0.0，依赖锁定 |
+| `tests/ui/server.mjs` | 页面及所有新模块的显式白名单映射 |
+| `tests/ui/export-native-dto.py` | 用真实 Console、合成宿主和临时 SQLite 生成 DTO，记录后端来源哈希 |
+| `tests/ui/native-dto.mjs` | 导出的 81 个原生字段及真实 DTO 形状，仅测试使用 |
 
-总览把 Bot 感受、四维与对方观察分别呈现；精力只来自长夜。情绪、行为、日记和梦境的服务端列表固定每页 10 条，来源与耗时默认 details 折叠，长列表候选和素材来源也按 10 条分页。梦境明确标为想象；私人全文默认折叠，没有直接向聊天分享的入口。
+第三方 D3 代码及传递依赖的 ISC 许可见 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。
+CI workflow 和截图 allowlist 由主协调者更新，本专项没有修改 workflow。
 
-配置仅使用服务端返回的 fields/values，不保存第二套业务配置或默认值。页面刷新按钮保留草稿，切换分区和主题保留草稿；409 需明确重新读取最新配置并复核，不能盲目覆盖。非法输入跨分区仍阻止保存。浏览器整页刷新丢弃未保存草稿并提示离开；已经保存的配置从服务端重新读取。分区、筛选和页码记在 sessionStorage，主题记在 localStorage；私人正文、完整快照与配置草稿不进入浏览器存储。
+## 本轮证据
 
-所有接口文本经 `textContent` / 输入控件 `value` 展示，不解析为 HTML、Markdown 或可执行 URL。图形路径只由已校验有限数值生成。未配置模型、无真实路由或未声明动作时禁用相关按钮，不能使用测试数据降级。没有 bridge 时只显示宿主连接错误。
+机器证据：[browser-results.json](../tests/ui/evidence/browser-results.json)。
+报告记录页面 12 个文件、fixture/锁文件哈希、DTO 生成时间和后端来源哈希。
+UI 运行前后 `source_sha256` 一致，`ui_source_stable=true`。
 
-## 实测证据
-
-日期：2026-11-05。macOS Darwin 24.6.0 / arm64，Node v25.6.0，Playwright 1.64.1，Chrome 156.0.8078.80。页面自身六个文件约 69 KB（未压缩，不含宿主 SDK），没有构建步骤或生产 npm 依赖；机器证据记录本次实际测试文件的 SHA-256。
-
-- 单元测试：`node --test tests/ui/model.test.mjs`，**7/7 通过**。
-- 合成浏览器：`tests/ui/browser.test.mjs`，**12/12 场景通过**；页面异常 0，非回环请求 0。
-- 尺寸矩阵：390 × 844 与 1280 × 900，双主题 × 七区共 **28 组**，没有整页横向溢出或无文字按钮，主要按钮高度至少 44px。
-- 可访问性：跳转链接、导航方向键 + Enter、原生 details、dialog Escape/焦点返回、分页焦点保留已实际操作；不以颜色独立表达状态。
-- 首帧：同步 theme 脚本在 CSS 前；浏览器检查 DOMContentLoaded 时正确跟随系统。手动刷新保留、跨页签同步、系统变化、两种 storage 抛异常、宿主覆盖通用 `data-theme` 均已测试。
-- 安全与交互：注入字符串未生成 img/script；401/403 与 message-only 拒绝清空私人视图；纯模拟仅访问 preview；unknown 动作没有再次发起；配置只发 patch/版本/原因；缺失数据和失败响应不显示合成兜底。
-- 对比度：浏览器计算样式按 WCAG 相对亮度公式测量，共 **44 组**，覆盖默认七区、展开配置/保存区、私人正文/来源、dialog、加载、空记录、拒绝及错误反馈。
+- 单元测试 9/9；构建通过。
+- 最终浏览器 24/24；页面异常 0、外联 0。
+- 390x844 / 1280x900，双主题 x 九区，共 36 组布局，无整页横向溢出。
+- 52 组对比度，包含常用/展开配置、私人正文、dialog、加载、空态和错误态。
+- 关系 200 节点在 1 秒内可交互，布局在 2 秒内停止；隐藏停止、卸载清理、
+  拖动/缩放/暂停、键盘、搜索、0.1/CAS/409/unknown 均实操。
+- 圆扩散实测 480ms，两条实现路径、点击中心、连续点击、reduced 已验证。
+- 收尾等待浏览器 `transition.finished` 并释放填充动画；受控延迟反例验证
+  完成标记不会早于原生完成，随后普通导航点击正常。
+- 新预览 `http://127.0.0.1:59888/tests/ui/fixture.html` 的九区及按需 D3 真正加载通过。
+- 主协调者已视觉复核 1280 白昼 TA/关系、390 黑夜 TA、390 白昼设置。
+  本执行者补看移动关系、黑夜设置与长夜等截图，没有发现明显布局问题。
 
 | 主题 | 正文最小值 | 控件边界最小值 | 焦点最小值 |
 | --- | --- | --- | --- |
-| 白昼 | 5.84:1 | 3.40:1 | 4.91:1 |
-| 黑夜 | 6.88:1 | 3.76:1 | 6.34:1 |
+| 白昼 | 5.15:1 | 3.26:1 | 5.61:1 |
+| 黑夜 | 5.77:1 | 3.68:1 | 5.61:1 |
 
-机器证据：[`tests/ui/evidence/browser-results.json`](../tests/ui/evidence/browser-results.json)。截图均含合成范围标识，不包含真实账号或私人内容：
+截图总计 20 张：保留原 allowlist 的 8 个文件名，内容为新版；新增关系/长夜/设置
+共 12 张。`settings` 截图为首屏，其余为完整实际页面，未拼接重复视口。
 
-- [1280 白昼总览](../tests/ui/evidence/1280-light-overview.png)
-- [1280 黑夜总览](../tests/ui/evidence/1280-dark-overview.png)
-- [390 白昼总览](../tests/ui/evidence/390-light-overview.png)
-- [390 黑夜总览](../tests/ui/evidence/390-dark-overview.png)
-- [390 情绪与前后值](../tests/ui/evidence/390-dark-emotion.png)
-- [390 私人阅读与来源](../tests/ui/evidence/390-dark-private-reading.png)
+| 宽度/主题 | 新截图 |
+| --- | --- |
+| 1280 白昼 | `1280-light-relationships.png` / `1280-light-night.png` / `1280-light-settings.png` |
+| 1280 黑夜 | `1280-dark-relationships.png` / `1280-dark-night.png` / `1280-dark-settings.png` |
+| 390 白昼 | `390-light-relationships.png` / `390-light-night.png` / `390-light-settings.png` |
+| 390 黑夜 | `390-dark-relationships.png` / `390-dark-night.png` / `390-dark-settings.png` |
 
-## 复跑
+以上全部是合成 fixture 浏览器结果，不证明后端 save_config、状态切换、真实消息发送、
+宿主鉴权或生产领域行为通过。真实 Console 导出只证明消费形状，不替代后端测试。
 
-在插件根目录执行，无需安装插件到生产宿主：
-
-```bash
-node --test tests/ui/model.test.mjs
-npm install --prefix tests/ui
-CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-  node tests/ui/browser.test.mjs
-```
-
-没有本地 Chrome 时可用 `tests/ui/node_modules/.bin/playwright install chromium` 安装测试浏览器，然后不设置 CHROME_PATH。本次复用了已有 Playwright：
+## 复跑与最终冻结
 
 ```bash
-PLAYWRIGHT_MODULE=/tmp/at-guard-ui-tools/node_modules/playwright \
-CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-node tests/ui/browser.test.mjs
+npm ci --prefix tests/ui
+npm run build --prefix tests/ui
+npm run fixture:native --prefix tests/ui
+npm test --prefix tests/ui
+UI_PREVIEW_URL=http://127.0.0.1:59888/tests/ui/fixture.html \
+  npm run test:browser --prefix tests/ui
 ```
 
-测试程序只监听临时回环端口，结束后关闭浏览器和服务。可选手动预览：
+`fixture:native` 默认使用插件 `.venv`；其他环境可直接用对应 Python 执行
+`tests/ui/export-native-dto.py`。测试独立临时回环端口会在结束时关闭。
+未设置 `UI_PREVIEW_URL` 时只能验证临时测试服务，不证明现有预览映射。
+若没有本地 Chromium，先按环境安装 Playwright 测试浏览器；不在生产宿主安装。
 
-```bash
-node tests/ui/server.mjs
-```
+首轮20:39:57导出期间 `storage/state_scope.py` 来源变化，原 `dto_source_stable=false`
+属于历史结果。本轮性能修复后重新导出81字段及只读energy_max，
+单元9/9、浏览器24/24，`dto_source_stable=true`、`ui_source_stable=true`。
+置顶操作成功后禁用旧快照按钮，刷新可取消置顶；冲突保持单次请求，不自动重试。
+首次新增置顶用例失败因控件位于 `#records` 而刷新逻辑只查 `#content`；
+修复了容器选择并完整复验，失败报告仍保留本地。
 
-打开终端返回的 `.../tests/ui/fixture.html`。测试服务只允许页面资源白名单；SDK 路径返回空测试脚本，fixture-bridge 只在测试 HTML 注入；不是生产认证服务，也不声称复刻真实父窗口。部署文件不得引用 tests。
+## 未完成边界
 
-## 尚未验收
+1. 初轮 P5 DT1 没有日记/梦境置顶写入入口；后续已补齐认证 action、
+   服务端全记录 CAS、actor 审计与页面操作，最终浏览器复验结果另记。
+2. P2 legacy/schema 兼容与完整状态行为仍由状态 agent/主协调者验证。
+3. 真实 Dashboard/iframe、四版宿主和配置双向持久化、后端审计/最终闸门
+   仍使用主协调者独立证据；本专项没有生产部署、收费调用或真实发送。
 
-以下仍需主集成者完成；不勾选 T9 整体完成，不以本测试替代：
-
-1. 按上文 State/Records/Config/Preview/Action 冻结并接好真实 `page_api`；确认量纲、原因码与原生人格字段映射。
-2. 对真实宿主的 legacy/v1 管理 GET/POST 验证额外令牌类型保护，拒绝 asset token、未登录、无权限与 `admin=true` 伪造参数。`host-contract.md` 的两项失败尚不能据此视为修复。
-3. 在真实 Dashboard 外壳中确认带令牌的 SDK、iframe 父窗口握手、按钮数据返回、刷新与原生配置双向一致；当前通过的是无真实宿主的浏览器 fixture。
-4. 后端审计、配置原子版本检查、各业务服务真实状态以及手动生成/发送的最终闸门。UI 只能按能力显示或禁用，不替代其实现。
-
-本专项只写了页面、`tests/ui/` 与本文档。未修改入口/API/存储、其他代理文件或规格复选框，未 git commit、未部署、未调用生产模型或发送真实消息。
+本专项没有修改后端、README/life-console 或其他仓库，没有 git commit/push。

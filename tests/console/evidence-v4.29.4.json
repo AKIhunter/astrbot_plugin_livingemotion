@@ -1,6 +1,6 @@
 {
   "suite": "real_host_ASGI_and_request_binding_with_synthetic_application",
-  "executed_at": "2026-11-05T21:00:36.771023+00:00",
+  "executed_at": "2026-11-06T12:35:01.706177+00:00",
   "python": "3.12.16",
   "platform": "Darwin 24.6.0/arm64",
   "host_version": "4.29.4",
@@ -11,7 +11,7 @@
     "httpx": "0.28.1",
     "starlette": "1.10.0"
   },
-  "tests_run": 30,
+  "tests_run": 34,
   "failures": 0,
   "errors": 0,
   "skipped": 0,
@@ -204,6 +204,31 @@
       "subtest": true
     },
     {
+      "name": "test_console.ConsoleTests.test_missing_and_query_cookie_apikey_credentials_denied (route='/api/plug/astrbot_plugin_livingemotion', operation='scopes')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_missing_and_query_cookie_apikey_credentials_denied (route='/api/plug/astrbot_plugin_livingemotion', operation='relationships')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_missing_and_query_cookie_apikey_credentials_denied (route='/api/plug/astrbot_plugin_livingemotion', operation='relationship')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_missing_and_query_cookie_apikey_credentials_denied (route='/api/plug/astrbot_plugin_livingemotion', operation='energy')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_missing_and_query_cookie_apikey_credentials_denied (route='/api/plug/astrbot_plugin_livingemotion', operation='settings-options')",
+      "passed": true,
+      "subtest": true
+    },
+    {
       "name": "test_console.ConsoleTests.test_missing_and_query_cookie_apikey_credentials_denied (route='/api/plug/astrbot_plugin_livingemotion', credentials=[])",
       "passed": true,
       "subtest": true
@@ -245,6 +270,31 @@
     },
     {
       "name": "test_console.ConsoleTests.test_missing_and_query_cookie_apikey_credentials_denied (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='action')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_missing_and_query_cookie_apikey_credentials_denied (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='scopes')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_missing_and_query_cookie_apikey_credentials_denied (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationships')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_missing_and_query_cookie_apikey_credentials_denied (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationship')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_missing_and_query_cookie_apikey_credentials_denied (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='energy')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_missing_and_query_cookie_apikey_credentials_denied (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='settings-options')",
       "passed": true,
       "subtest": true
     },
@@ -298,6 +348,31 @@
       "subtest": true
     },
     {
+      "name": "test_console.ConsoleTests.test_native_asset_token_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='scopes')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_native_asset_token_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationships')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_native_asset_token_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationship')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_native_asset_token_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='energy')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_native_asset_token_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='settings-options')",
+      "passed": true,
+      "subtest": true
+    },
+    {
       "name": "test_console.ConsoleTests.test_native_asset_token_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='state')",
       "passed": true,
       "subtest": true
@@ -323,65 +398,148 @@
       "subtest": true
     },
     {
+      "name": "test_console.ConsoleTests.test_native_asset_token_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='scopes')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_native_asset_token_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationships')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_native_asset_token_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationship')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_native_asset_token_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='energy')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_native_asset_token_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='settings-options')",
+      "passed": true,
+      "subtest": true
+    },
+    {
       "name": "test_console.ConsoleTests.test_native_asset_token_denied_all_private_routes",
       "passed": true
     },
     {
-      "name": "test_console.ConsoleTests.test_native_dashboard_all_five_routes_legacy_and_v1 (route='/api/plug/astrbot_plugin_livingemotion', operation='state')",
+      "name": "test_console.ConsoleTests.test_native_dashboard_all_ten_routes_legacy_and_v1 (route='/api/plug/astrbot_plugin_livingemotion', operation='state')",
       "passed": true,
       "subtest": true
     },
     {
-      "name": "test_console.ConsoleTests.test_native_dashboard_all_five_routes_legacy_and_v1 (route='/api/plug/astrbot_plugin_livingemotion', operation='records')",
+      "name": "test_console.ConsoleTests.test_native_dashboard_all_ten_routes_legacy_and_v1 (route='/api/plug/astrbot_plugin_livingemotion', operation='records')",
       "passed": true,
       "subtest": true
     },
     {
-      "name": "test_console.ConsoleTests.test_native_dashboard_all_five_routes_legacy_and_v1 (route='/api/plug/astrbot_plugin_livingemotion', operation='config')",
+      "name": "test_console.ConsoleTests.test_native_dashboard_all_ten_routes_legacy_and_v1 (route='/api/plug/astrbot_plugin_livingemotion', operation='config')",
       "passed": true,
       "subtest": true
     },
     {
-      "name": "test_console.ConsoleTests.test_native_dashboard_all_five_routes_legacy_and_v1 (route='/api/plug/astrbot_plugin_livingemotion', operation='preview')",
+      "name": "test_console.ConsoleTests.test_native_dashboard_all_ten_routes_legacy_and_v1 (route='/api/plug/astrbot_plugin_livingemotion', operation='preview')",
       "passed": true,
       "subtest": true
     },
     {
-      "name": "test_console.ConsoleTests.test_native_dashboard_all_five_routes_legacy_and_v1 (route='/api/plug/astrbot_plugin_livingemotion', operation='action')",
+      "name": "test_console.ConsoleTests.test_native_dashboard_all_ten_routes_legacy_and_v1 (route='/api/plug/astrbot_plugin_livingemotion', operation='action')",
       "passed": true,
       "subtest": true
     },
     {
-      "name": "test_console.ConsoleTests.test_native_dashboard_all_five_routes_legacy_and_v1 (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='state')",
+      "name": "test_console.ConsoleTests.test_native_dashboard_all_ten_routes_legacy_and_v1 (route='/api/plug/astrbot_plugin_livingemotion', operation='scopes')",
       "passed": true,
       "subtest": true
     },
     {
-      "name": "test_console.ConsoleTests.test_native_dashboard_all_five_routes_legacy_and_v1 (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='records')",
+      "name": "test_console.ConsoleTests.test_native_dashboard_all_ten_routes_legacy_and_v1 (route='/api/plug/astrbot_plugin_livingemotion', operation='relationships')",
       "passed": true,
       "subtest": true
     },
     {
-      "name": "test_console.ConsoleTests.test_native_dashboard_all_five_routes_legacy_and_v1 (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='config')",
+      "name": "test_console.ConsoleTests.test_native_dashboard_all_ten_routes_legacy_and_v1 (route='/api/plug/astrbot_plugin_livingemotion', operation='relationship')",
       "passed": true,
       "subtest": true
     },
     {
-      "name": "test_console.ConsoleTests.test_native_dashboard_all_five_routes_legacy_and_v1 (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='preview')",
+      "name": "test_console.ConsoleTests.test_native_dashboard_all_ten_routes_legacy_and_v1 (route='/api/plug/astrbot_plugin_livingemotion', operation='energy')",
       "passed": true,
       "subtest": true
     },
     {
-      "name": "test_console.ConsoleTests.test_native_dashboard_all_five_routes_legacy_and_v1 (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='action')",
+      "name": "test_console.ConsoleTests.test_native_dashboard_all_ten_routes_legacy_and_v1 (route='/api/plug/astrbot_plugin_livingemotion', operation='settings-options')",
       "passed": true,
       "subtest": true
     },
     {
-      "name": "test_console.ConsoleTests.test_native_dashboard_all_five_routes_legacy_and_v1",
+      "name": "test_console.ConsoleTests.test_native_dashboard_all_ten_routes_legacy_and_v1 (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='state')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_native_dashboard_all_ten_routes_legacy_and_v1 (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='records')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_native_dashboard_all_ten_routes_legacy_and_v1 (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='config')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_native_dashboard_all_ten_routes_legacy_and_v1 (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='preview')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_native_dashboard_all_ten_routes_legacy_and_v1 (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='action')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_native_dashboard_all_ten_routes_legacy_and_v1 (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='scopes')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_native_dashboard_all_ten_routes_legacy_and_v1 (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationships')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_native_dashboard_all_ten_routes_legacy_and_v1 (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationship')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_native_dashboard_all_ten_routes_legacy_and_v1 (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='energy')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_native_dashboard_all_ten_routes_legacy_and_v1 (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='settings-options')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_native_dashboard_all_ten_routes_legacy_and_v1",
       "passed": true
     },
     {
-      "name": "test_console.ConsoleTests.test_native_desktop_dashboard_all_five_routes",
+      "name": "test_console.ConsoleTests.test_native_desktop_dashboard_all_ten_routes",
+      "passed": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_new_relationship_actor_schema_version_and_no_retry",
+      "passed": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_new_relationship_guard_rechecks_after_body_yield",
       "passed": true
     },
     {
@@ -410,6 +568,31 @@
       "subtest": true
     },
     {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='scopes', claim=['token_type'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationships', claim=['token_type'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationship', claim=['token_type'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='energy', claim=['token_type'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='settings-options', claim=['token_type'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
       "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='state', claim=['token_type'])",
       "passed": true,
       "subtest": true
@@ -431,6 +614,31 @@
     },
     {
       "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='action', claim=['token_type'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='scopes', claim=['token_type'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationships', claim=['token_type'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationship', claim=['token_type'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='energy', claim=['token_type'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='settings-options', claim=['token_type'])",
       "passed": true,
       "subtest": true
     },
@@ -465,6 +673,31 @@
       "subtest": true
     },
     {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='scopes', claim=['scope'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationships', claim=['scope'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationship', claim=['scope'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='energy', claim=['scope'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='settings-options', claim=['scope'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
       "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='state', claim=['scope'])",
       "passed": true,
       "subtest": true
@@ -486,6 +719,31 @@
     },
     {
       "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='action', claim=['scope'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='scopes', claim=['scope'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationships', claim=['scope'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationship', claim=['scope'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='energy', claim=['scope'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='settings-options', claim=['scope'])",
       "passed": true,
       "subtest": true
     },
@@ -520,6 +778,31 @@
       "subtest": true
     },
     {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='scopes', claim=['sub'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationships', claim=['sub'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationship', claim=['sub'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='energy', claim=['sub'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='settings-options', claim=['sub'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
       "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='state', claim=['sub'])",
       "passed": true,
       "subtest": true
@@ -541,6 +824,31 @@
     },
     {
       "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='action', claim=['sub'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='scopes', claim=['sub'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationships', claim=['sub'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationship', claim=['sub'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='energy', claim=['sub'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='settings-options', claim=['sub'])",
       "passed": true,
       "subtest": true
     },
@@ -575,6 +883,31 @@
       "subtest": true
     },
     {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='scopes', claim=['auth_source'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationships', claim=['auth_source'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationship', claim=['auth_source'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='energy', claim=['auth_source'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='settings-options', claim=['auth_source'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
       "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='state', claim=['auth_source'])",
       "passed": true,
       "subtest": true
@@ -596,6 +929,31 @@
     },
     {
       "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='action', claim=['auth_source'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='scopes', claim=['auth_source'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationships', claim=['auth_source'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationship', claim=['auth_source'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='energy', claim=['auth_source'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='settings-options', claim=['auth_source'])",
       "passed": true,
       "subtest": true
     },
@@ -630,6 +988,31 @@
       "subtest": true
     },
     {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='scopes', claim=['aud'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationships', claim=['aud'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationship', claim=['aud'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='energy', claim=['aud'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='settings-options', claim=['aud'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
       "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='state', claim=['aud'])",
       "passed": true,
       "subtest": true
@@ -651,6 +1034,31 @@
     },
     {
       "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='action', claim=['aud'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='scopes', claim=['aud'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationships', claim=['aud'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationship', claim=['aud'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='energy', claim=['aud'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='settings-options', claim=['aud'])",
       "passed": true,
       "subtest": true
     },
@@ -685,6 +1093,31 @@
       "subtest": true
     },
     {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='scopes', claim=['iss'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationships', claim=['iss'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationship', claim=['iss'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='energy', claim=['iss'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='settings-options', claim=['iss'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
       "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='state', claim=['iss'])",
       "passed": true,
       "subtest": true
@@ -706,6 +1139,31 @@
     },
     {
       "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='action', claim=['iss'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='scopes', claim=['iss'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationships', claim=['iss'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationship', claim=['iss'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='energy', claim=['iss'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='settings-options', claim=['iss'])",
       "passed": true,
       "subtest": true
     },
@@ -740,6 +1198,31 @@
       "subtest": true
     },
     {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='scopes', claim=['client_id'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationships', claim=['client_id'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationship', claim=['client_id'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='energy', claim=['client_id'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='settings-options', claim=['client_id'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
       "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='state', claim=['client_id'])",
       "passed": true,
       "subtest": true
@@ -761,6 +1244,31 @@
     },
     {
       "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='action', claim=['client_id'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='scopes', claim=['client_id'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationships', claim=['client_id'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationship', claim=['client_id'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='energy', claim=['client_id'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='settings-options', claim=['client_id'])",
       "passed": true,
       "subtest": true
     },
@@ -795,6 +1303,31 @@
       "subtest": true
     },
     {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='scopes', claim=['admin'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationships', claim=['admin'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationship', claim=['admin'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='energy', claim=['admin'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='settings-options', claim=['admin'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
       "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='state', claim=['admin'])",
       "passed": true,
       "subtest": true
@@ -816,6 +1349,31 @@
     },
     {
       "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='action', claim=['admin'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='scopes', claim=['admin'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationships', claim=['admin'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationship', claim=['admin'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='energy', claim=['admin'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='settings-options', claim=['admin'])",
       "passed": true,
       "subtest": true
     },
@@ -850,6 +1408,31 @@
       "subtest": true
     },
     {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='scopes', claim=['iat'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationships', claim=['iat'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationship', claim=['iat'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='energy', claim=['iat'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='settings-options', claim=['iat'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
       "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='state', claim=['iat'])",
       "passed": true,
       "subtest": true
@@ -871,6 +1454,31 @@
     },
     {
       "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='action', claim=['iat'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='scopes', claim=['iat'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationships', claim=['iat'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationship', claim=['iat'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='energy', claim=['iat'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='settings-options', claim=['iat'])",
       "passed": true,
       "subtest": true
     },
@@ -905,6 +1513,31 @@
       "subtest": true
     },
     {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='scopes', claim=['token_type'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationships', claim=['token_type'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationship', claim=['token_type'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='energy', claim=['token_type'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='settings-options', claim=['token_type'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
       "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='state', claim=['token_type'])",
       "passed": true,
       "subtest": true
@@ -926,6 +1559,31 @@
     },
     {
       "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='action', claim=['token_type'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='scopes', claim=['token_type'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationships', claim=['token_type'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationship', claim=['token_type'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='energy', claim=['token_type'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='settings-options', claim=['token_type'])",
       "passed": true,
       "subtest": true
     },
@@ -960,6 +1618,31 @@
       "subtest": true
     },
     {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='scopes', claim=['auth_source'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationships', claim=['auth_source'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationship', claim=['auth_source'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='energy', claim=['auth_source'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='settings-options', claim=['auth_source'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
       "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='state', claim=['auth_source'])",
       "passed": true,
       "subtest": true
@@ -985,12 +1668,41 @@
       "subtest": true
     },
     {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='scopes', claim=['auth_source'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationships', claim=['auth_source'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationship', claim=['auth_source'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='energy', claim=['auth_source'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='settings-options', claim=['auth_source'])",
+      "passed": true,
+      "subtest": true
+    },
+    {
       "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes (claim=['auth_source'])",
       "passed": true,
       "subtest": true
     },
     {
       "name": "test_console.ConsoleTests.test_oauth_and_unknown_claims_denied_all_private_routes",
+      "passed": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_ordinary_emotion_records_never_return_diary_body",
       "passed": true
     },
     {
@@ -1019,6 +1731,31 @@
       "subtest": true
     },
     {
+      "name": "test_console.ConsoleTests.test_other_signed_user_is_not_an_administrator (route='/api/plug/astrbot_plugin_livingemotion', operation='scopes')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_other_signed_user_is_not_an_administrator (route='/api/plug/astrbot_plugin_livingemotion', operation='relationships')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_other_signed_user_is_not_an_administrator (route='/api/plug/astrbot_plugin_livingemotion', operation='relationship')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_other_signed_user_is_not_an_administrator (route='/api/plug/astrbot_plugin_livingemotion', operation='energy')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_other_signed_user_is_not_an_administrator (route='/api/plug/astrbot_plugin_livingemotion', operation='settings-options')",
+      "passed": true,
+      "subtest": true
+    },
+    {
       "name": "test_console.ConsoleTests.test_other_signed_user_is_not_an_administrator (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='state')",
       "passed": true,
       "subtest": true
@@ -1040,6 +1777,31 @@
     },
     {
       "name": "test_console.ConsoleTests.test_other_signed_user_is_not_an_administrator (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='action')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_other_signed_user_is_not_an_administrator (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='scopes')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_other_signed_user_is_not_an_administrator (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationships')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_other_signed_user_is_not_an_administrator (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationship')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_other_signed_user_is_not_an_administrator (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='energy')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_other_signed_user_is_not_an_administrator (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='settings-options')",
       "passed": true,
       "subtest": true
     },
@@ -1200,6 +1962,10 @@
       "passed": true
     },
     {
+      "name": "test_console.ConsoleTests.test_scope_query_strictness_and_provider_options",
+      "passed": true
+    },
+    {
       "name": "test_console.ConsoleTests.test_server_pagination_and_query_are_delegated",
       "passed": true
     },
@@ -1229,6 +1995,31 @@
       "subtest": true
     },
     {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='scopes', credential='forged')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationships', credential='forged')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationship', credential='forged')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='energy', credential='forged')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='settings-options', credential='forged')",
+      "passed": true,
+      "subtest": true
+    },
+    {
       "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='state', credential='forged')",
       "passed": true,
       "subtest": true
@@ -1250,6 +2041,31 @@
     },
     {
       "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='action', credential='forged')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='scopes', credential='forged')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationships', credential='forged')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationship', credential='forged')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='energy', credential='forged')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='settings-options', credential='forged')",
       "passed": true,
       "subtest": true
     },
@@ -1284,6 +2100,31 @@
       "subtest": true
     },
     {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='scopes', credential='expired')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationships', credential='expired')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationship', credential='expired')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='energy', credential='expired')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='settings-options', credential='expired')",
+      "passed": true,
+      "subtest": true
+    },
+    {
       "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='state', credential='expired')",
       "passed": true,
       "subtest": true
@@ -1305,6 +2146,31 @@
     },
     {
       "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='action', credential='expired')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='scopes', credential='expired')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationships', credential='expired')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationship', credential='expired')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='energy', credential='expired')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='settings-options', credential='expired')",
       "passed": true,
       "subtest": true
     },
@@ -1339,6 +2205,31 @@
       "subtest": true
     },
     {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='scopes', credential='missing_exp')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationships', credential='missing_exp')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationship', credential='missing_exp')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='energy', credential='missing_exp')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='settings-options', credential='missing_exp')",
+      "passed": true,
+      "subtest": true
+    },
+    {
       "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='state', credential='missing_exp')",
       "passed": true,
       "subtest": true
@@ -1360,6 +2251,31 @@
     },
     {
       "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='action', credential='missing_exp')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='scopes', credential='missing_exp')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationships', credential='missing_exp')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationship', credential='missing_exp')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='energy', credential='missing_exp')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='settings-options', credential='missing_exp')",
       "passed": true,
       "subtest": true
     },
@@ -1394,6 +2310,31 @@
       "subtest": true
     },
     {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='scopes', credential='wrong_algorithm')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationships', credential='wrong_algorithm')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='relationship', credential='wrong_algorithm')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='energy', credential='wrong_algorithm')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/plug/astrbot_plugin_livingemotion', operation='settings-options', credential='wrong_algorithm')",
+      "passed": true,
+      "subtest": true
+    },
+    {
       "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='state', credential='wrong_algorithm')",
       "passed": true,
       "subtest": true
@@ -1415,6 +2356,31 @@
     },
     {
       "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='action', credential='wrong_algorithm')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='scopes', credential='wrong_algorithm')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationships', credential='wrong_algorithm')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='relationship', credential='wrong_algorithm')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='energy', credential='wrong_algorithm')",
+      "passed": true,
+      "subtest": true
+    },
+    {
+      "name": "test_console.ConsoleTests.test_signature_and_expiration_denied_all_private_routes (route='/api/v1/plugins/extensions/astrbot_plugin_livingemotion', operation='settings-options', credential='wrong_algorithm')",
       "passed": true,
       "subtest": true
     },
@@ -1459,11 +2425,15 @@
     "page_api/__init__.py": "607cde1a5606636570c8800925459bf08c6a2816ed3cbf1713b4087340e36bc1",
     "page_api/errors.py": "6d240aa87b001a42bbe1f5df86d133a73ba17dda85ec084ea6a8eb978c38e231",
     "page_api/guard.py": "2cf8835e67b70d557a75b1ed62d56ad4ff4df17bcd9990152f49d92544369e09",
-    "page_api/protocols.py": "b2b29a6918a4df9678258d76d04d496c7d08b89f3f8d180d14aa86b9559eb01b",
-    "page_api/routes.py": "18c7771bbde02d59a7868f1d18d2b832a5a6484161cc634ed0f1ce7b408dc9b1",
-    "page_api/validation.py": "a2965976832249cf429d0f72e7764d498e74880a7fc22b36ca34c0574de62981",
-    "tests/console/run_host_asgi.py": "3e8e6345131f4067f6ee9a7288f22e5abb61db0136cfc3823701b731c5e22066",
-    "tests/console/test_console.py": "2678156f3bc5e02030b19a34763d4e995844fb169aea19f612b5f665648a02b8"
+    "page_api/protocols.py": "0a3229c6d62a18f834a49e9e86cf73b9bf13f1e1b0641ba77a04b466136b27bc",
+    "page_api/routes.py": "9f3f431a9a38a2483186b5c98f728c46582766441ddd6187db6d7fa6eed07d53",
+    "page_api/validation.py": "7cd3eee07e63717b5c2f2983fe6bf627ed20e5182858417165b79171ead3495a",
+    "tests/console/run_host_asgi.py": "acc94369ceee821cb01985cfd1fdb3346a6af873beca7638ee28cb471b11d0bf",
+    "tests/console/test_console.py": "ca6a47b028e6eabe234ac7510b71350448e30e0641a506a0c0f25418c0f29aa3",
+    "tests/console/test_management_dto.py": "1e17d417c63267fac3ab150c0f0e01e5931c7f8efd1a42583f2814bad91a203a",
+    "runtime/console.py": "214801380f6c5529447d669cfb6b7fea2b906a6fb7bab49bc8bbd1f16bf9a9e3",
+    "storage/console_data.py": "eae99b274aa2f9b588d1b51ea038a95dd86abb22d180f862691849db588d5452",
+    "domain/emotion.py": "370370ec205f36081bf5dc4c21307e47e03b02049720d0115e52f21b59e9536f"
   },
   "limitations": [
     "No final plugin Application/lifecycle integration or browser iframe.",

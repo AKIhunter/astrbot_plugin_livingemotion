@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import asyncio
+import json
 from typing import Any, Mapping, Sequence
+from weakref import WeakValueDictionary
 
 from ..contracts import (
     ActorRole, BehaviorIntent, ContentKind, Context, Event, EvidenceRef, NightPhase,
@@ -250,3 +253,236 @@ def catchup_intent(
         human_watermark=summary.high_watermark, evidence=(ref, *summary.sources),
         reason_codes=("bounded_local_catchup",),
     )
+
+
+@dataclass(frozen=True)
+class FullCatchupResult:
+    summaries: tuple[str, ...] = ()
+    read_count: int = 0
+    has_more: bool = False
+    blocked: bool = False
+    reason: str = ""
+
+
+def split_full_chunks(rows, *, size=45, hard_cap=80, window_seconds=3600):
+    """Migrated count/time/cap boundary; every row retains its complete body."""
+    chunks, current = [], []
+    for row in rows:
+        if current and (len(current) >= min(size, hard_cap)
+                        or row["occurred_at"] - current[0]["occurred_at"] >= window_seconds):
+            chunks.append(current)
+            current = []
+        current.append(row)
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def transcript_parts(rows, *, byte_budget=2048):
+    """Split long messages into identified fragments, without discarding tails."""
+    if byte_budget < 256:
+        raise ValueError("catchup_input_budget_too_small")
+    parts, part, used = [], [], 0
+    for row in rows:
+        prefix = f"[seq={row['seq']}][source={row['source_id']}]\n"
+        # Host source IDs are data; canonical JSON on the model boundary prevents
+        # these labels from being interpreted as instructions.
+        available = byte_budget - len(prefix.encode("utf-8")) - 32
+        if available < 128:
+            raise ValueError("catchup_source_identifier_too_large")
+        body, offset = row["body"], 0
+        while offset < len(body):
+            end, consumed = offset, 0
+            while end < len(body):
+                width = len(body[end].encode("utf-8"))
+                if consumed + width > available:
+                    break
+                consumed += width
+                end += 1
+            fragment = prefix + f"[offset={offset}]\n" + body[offset:end]
+            width = len(fragment.encode("utf-8"))
+            if part and used + width + 1 > byte_budget:
+                parts.append("\n".join(part))
+                part, used = [], 0
+            part.append(fragment)
+            used += width + 1
+            offset = end
+    if part:
+        parts.append("\n".join(part))
+    return parts
+
+
+def parse_reading(value):
+    if isinstance(value, dict):
+        data = value
+    elif isinstance(value, str):
+        decoder = json.JSONDecoder()
+        data = None
+        for offset, char in enumerate(value):
+            if char == "{":
+                try:
+                    candidate, _ = decoder.raw_decode(value[offset:])
+                except ValueError:
+                    continue
+                if isinstance(candidate, dict):
+                    data = candidate
+                    break
+    else:
+        data = None
+    if not isinstance(data, dict) or not isinstance(data.get("summary"), str):
+        raise ValueError("catchup_reading_failed")
+    if not data["summary"].strip():
+        raise ValueError("catchup_reading_empty")
+    return {"summary": data["summary"][:2000],
+            "items": data.get("items", []) if isinstance(data.get("items", []), list) else []}
+
+
+class FullCatchupService:
+    """Persistent full reading and optional historical replies on one source lane.
+
+    Summary I/O is injected and shares the application's generation budget. The
+    sender is the same guarded behavior executor; an unknown result blocks replay.
+    """
+
+    def __init__(self, archive, *, read_model, reply_model, send, guard,
+                 input_byte_budget=2048, reply_enabled=False, max_replies=3):
+        self.archive = archive
+        self.read_model, self.reply_model = read_model, reply_model
+        self.send, self.guard = send, guard
+        self.input_byte_budget = input_byte_budget
+        self.reply_enabled, self.max_replies = reply_enabled, min(3, max_replies)
+        self._locks = WeakValueDictionary()
+
+    async def prepare(self, context, *, exclude_source_id, wake_key, revision):
+        lock = self._locks.setdefault(context.scope_key, asyncio.Lock())
+        async with lock:
+            generation = await self.archive.store.get_generation(context)
+            batch = await self.archive.begin(
+                context, generation, exclude_source_id=exclude_source_id,
+                wake_key=wake_key, revision=revision,
+            )
+            if batch["status"] in ("sending", "unknown"):
+                return FullCatchupResult(blocked=True, reason="historical_send_unknown")
+            if batch["status"] == "done":
+                return FullCatchupResult(reason="already_read")
+            if batch["status"] == "limited":
+                return FullCatchupResult(has_more=True, reason="historical_reply_limit")
+            # An unfinished batch keeps its source bound, but never reuses a
+            # previously generated reply across a persona/configuration revision.
+            if batch["revision"] != revision:
+                batch["revision"] = revision
+            summaries, read_seqs, candidates = [], [], {}
+            after = 0
+            while True:
+                if not await self.guard(context, generation, revision):
+                    return FullCatchupResult(has_more=True, reason="context_changed")
+                rows = await self.archive.rows(context, batch, after=after)
+                if not rows:
+                    break
+                for chunk in split_full_chunks(rows):
+                    valid = []
+                    for row in chunk:
+                        event = Event.from_dict({**row["metadata_json"], "body": row["body"]})
+                        if (event.idempotency_key != row["event_key"]
+                                or event.context.scope_key != context.scope_key
+                                or event.context.persona_revision != context.persona_revision
+                                or set(event.context.audience) != set(context.audience)
+                                or (event.context.account_id == context.account_id
+                                    and event.context.identity_revision != context.identity_revision)
+                                or not event.reliable_source
+                                or event.actor_role != ActorRole.HUMAN
+                                or event.actor_id != event.context.account_id
+                                or event.event_type != "message"
+                                or event.occurred_at > self.archive.store.clock()
+                                or any(ref.kind != ContentKind.INTERACTION
+                                       or (ref.expires_at is not None
+                                           and ref.expires_at <= self.archive.store.clock())
+                                       for ref in event.evidence)):
+                            # Unknown material remains unread. It is never silently
+                            # counted as successful reading or inserted in a prompt.
+                            continue
+                        valid.append(row)
+                    if not valid:
+                        after = chunk[-1]["seq"]
+                        continue
+                    fingerprint = stable_key(tuple(
+                        (row["seq"], row["event_key"], row["body"]) for row in valid
+                    ))
+                    chunk_id = stable_key(batch["batch_id"], fingerprint)
+                    cached = await self.archive.chunk(chunk_id)
+                    if cached is None:
+                        readings = []
+                        for index, part in enumerate(transcript_parts(
+                                valid, byte_budget=self.input_byte_budget)):
+                            if not await self.guard(context, generation, revision):
+                                return FullCatchupResult(tuple(summaries), has_more=True,
+                                                         reason="context_changed")
+                            raw = await self.read_model(
+                                context, part, stable_key(chunk_id, index, revision),
+                                self.reply_enabled,
+                            )
+                            readings.append(parse_reading(raw))
+                        cached = {"summary": "\n".join(r["summary"] for r in readings),
+                                  "items": [item for r in readings for item in r["items"]]}
+                        if not await self.guard(context, generation, revision):
+                            return FullCatchupResult(has_more=True, reason="context_changed")
+                        await self.archive.save_chunk(context, batch, valid, cached)
+                    summaries.append(cached["summary"])
+                    sources = {row["source_id"]: row for row in valid}
+                    if self.reply_enabled:
+                        for item in cached["items"]:
+                            if not isinstance(item, dict):
+                                continue
+                            source_id = item.get("source_id", item.get("msg_id"))
+                            if (source_id in sources and item.get("targets_me") is True
+                                    and item.get("answered") is False
+                                    and item.get("expired") is False):
+                                candidates.setdefault(source_id, sources[source_id])
+                    read_seqs.extend(row["seq"] for row in valid)
+                    after = chunk[-1]["seq"]
+                # Progress is persisted as chunk receipts. There is no max-batch
+                # cursor jump; model failure leaves all remaining messages unread.
+                if len(rows) < 80:
+                    break
+            if not await self.guard(context, generation, revision):
+                return FullCatchupResult(has_more=True, reason="context_changed")
+            batch["value"] = {"read_seqs": read_seqs, "summaries": summaries[-8:],
+                              "replies": batch["value"].get("replies", [])}
+            pending = {row["seq"] for row in candidates.values()}
+            for row in candidates.values():
+                source_key = stable_key("historical-reply", batch["batch_id"], row["event_key"])
+                if source_key in batch["value"]["replies"]:
+                    pending.discard(row["seq"])
+                    continue
+                key = await self.archive.reserve_reply(
+                    context, generation, wake_key, source_key, self.max_replies,
+                )
+                if key is None:
+                    break
+                text = await self.reply_model(context, row["body"], key)
+                if not await self.guard(context, generation, revision):
+                    return FullCatchupResult(has_more=True, reason="context_changed")
+                batch["status"] = "sending"
+                await self.archive.save_batch(context, batch)
+                try:
+                    result = await self.send(context, text, key, generation, revision)
+                except BaseException:
+                    batch["status"] = "unknown"
+                    await asyncio.shield(self.archive.save_batch(context, batch))
+                    raise
+                if result != "confirmed":
+                    batch["status"] = "unknown" if result in ("unknown", "submitted") else "submitted"
+                    await self.archive.save_batch(context, batch)
+                    return FullCatchupResult(tuple(summaries[-8:]), blocked=True,
+                                             reason="historical_send_" + result)
+                batch["value"]["replies"].append(source_key)
+                pending.discard(row["seq"])
+                batch["status"] = "submitted"
+                await self.archive.save_batch(context, batch)
+            handled = [seq for seq in read_seqs if seq not in pending]
+            batch["status"] = "limited" if pending else "done"
+            await self.archive.save_batch(context, batch, handled=handled)
+            return FullCatchupResult(
+                tuple(summaries[-8:]), len(handled), has_more=bool(pending),
+                reason="historical_reply_limit" if pending else "full_reading_complete",
+            )

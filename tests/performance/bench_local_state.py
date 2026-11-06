@@ -170,6 +170,7 @@ async def snapshot_counts(store):
             "SELECT kind,SUM(version) FROM states GROUP BY kind"))
         result["pragmas"] = {key: db.execute(f"PRAGMA {key}").fetchone()[0] for key in (
             "journal_mode", "synchronous", "busy_timeout", "page_size", "wal_autocheckpoint",
+            "cache_size",
         )}
         result["database_bytes"] = db.execute(
             "PRAGMA page_count").fetchone()[0] * result["pragmas"]["page_size"]

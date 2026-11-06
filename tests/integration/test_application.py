@@ -82,6 +82,66 @@ async def application(tmp_path, config=None):
 
 
 @pytest.mark.asyncio
+async def test_failed_application_initialize_closes_started_workers_and_store(tmp_path, monkeypatch):
+    app = Application(Host(), NativeConfig({}), tmp_path, bridge_factory=TestBridge)
+
+    async def fail_services():
+        raise RuntimeError("synthetic startup failure")
+
+    monkeypatch.setattr(app, "_build_services", fail_services)
+    with pytest.raises(RuntimeError, match="synthetic startup failure"):
+        await app.initialize()
+    assert app.closed and app.lifecycle.store is None and app.lifecycle.runtime is None
+    assert not app.api._active
+    assert not [task for task in asyncio.all_tasks()
+                if task.get_name().startswith("livingemotion-") and not task.done()]
+
+
+@pytest.mark.asyncio
+async def test_console_pin_uses_real_record_cas_and_never_calls_model(tmp_path, monkeypatch):
+    app, host, _ = await application(tmp_path)
+    try:
+        message = Message(identifier="pin-source")
+        await app.on_message(message)
+        context = Context.from_dict(message.extra["livingemotion:context"])
+        now = app.store.clock()
+        entry = Experience("console-pin", context, "diary", "2026-11-06", now,
+                           "A synthetic private diary.", expires_at=now + 60)
+        generation = await app.store.get_generation(context)
+        assert (await app.store.save_experience_guarded(
+            entry, ((context, generation),)))["status"] == "created"
+
+        async def no_model(*args, **kwargs):
+            raise AssertionError("pinning must not select a model")
+
+        monkeypatch.setattr(app, "model_binding", no_model)
+        records = await app.console_records(context.account_key, "diary")
+        assert records["items"][0]["context_id"] == context.account_key
+        assert records["items"][0]["pin_available"]
+        parameters = dict(expected_revision=app.revision, actor_id="dashboard-admin",
+                          reason="retain", confirmed=True, entry_id=entry.experience_id,
+                          pinned=True, expected_pinned=False)
+        result = await app.console_action(context.account_key, "experience.pin", **parameters)
+        assert result["status"] == "updated" and result["model_calls"] == result["sends"] == 0
+        stored, _ = await app.store.load_experience(entry.experience_id)
+        assert stored.pinned and stored.created_at == now and stored.expires_at == now + 60
+        with pytest.raises(ApplicationError) as stale:
+            await app.console_action(context.account_key, "experience.pin", **parameters)
+        assert stale.value.code == "version_conflict"
+        audit = await app.store.audit_records(context)
+        assert len(audit) == 1 and audit[0]["actor_id"] == "dashboard-admin"
+        assert host.sends == 0
+        app.store.clock = lambda: now + 61
+        await app.console_action(context.account_key, "experience.pin",
+                                 **{**parameters, "pinned": False, "expected_pinned": True})
+        with pytest.raises(ApplicationError) as expired:
+            await app.console_action(context.account_key, "experience.pin", **parameters)
+        assert expired.value.code == "forbidden"
+    finally:
+        await app.terminate()
+
+
+@pytest.mark.asyncio
 async def test_default_chat_without_model_and_unique_suffix(tmp_path):
     app, host, native = await application(tmp_path)
     try:
@@ -376,7 +436,8 @@ async def test_diary_shared_worker_persistent_pin_and_duplicate(tmp_path):
         await asyncio.wait_for(app.runtime.join(), 2)
         assert service.outcome(queued["job_id"])["status"] == "created"
         entry, _ = await app.store.load_experience(queued["experience_id"])
-        assert entry.evidence and entry.body == "A quiet synthetic day."
+        assert entry.evidence and entry.body.endswith("A quiet synthetic day.")
+        assert entry.body.startswith("日期：2026-11-05（UTC）\n城市：未配置\n天气：未获取\n")
         pinned = await app.pin_experience(context.account_key, entry.experience_id,
                                           pinned=True, actor_id="verified", reason="retain")
         assert pinned["status"] == "updated"

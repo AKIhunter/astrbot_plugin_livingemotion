@@ -78,5 +78,17 @@ screenshot*.png
 !/tests/ui/evidence/390-dark-emotion.png
 !/tests/ui/evidence/390-light-private-reading.png
 !/tests/ui/evidence/390-dark-private-reading.png
+!/tests/ui/evidence/1280-light-relationships.png
+!/tests/ui/evidence/1280-dark-relationships.png
+!/tests/ui/evidence/1280-light-night.png
+!/tests/ui/evidence/1280-dark-night.png
+!/tests/ui/evidence/1280-light-settings.png
+!/tests/ui/evidence/1280-dark-settings.png
+!/tests/ui/evidence/390-light-relationships.png
+!/tests/ui/evidence/390-dark-relationships.png
+!/tests/ui/evidence/390-light-night.png
+!/tests/ui/evidence/390-dark-night.png
+!/tests/ui/evidence/390-light-settings.png
+!/tests/ui/evidence/390-dark-settings.png
 
 .DS_Store

@@ -1,5 +1,12 @@
 # T7 私人体验实现与交接
 
+当前日记/梦境二级页面、各用途模型、程序生成的日期与住所天气页头见
+[生活控制台](life-console.md#日记梦境和记忆) 与 [P4 契约](internal-memory-contract.md)。
+模型正文围绕 Bot 第一人称的授权素材发挥，天气不单独构成经历。
+下文保留0.1原始体验服务参考，其旧页头与页面布局不是新版展示契约。
+新版已将置顶接入原管理 `console/action`：使用真实记录来源、预期置顶状态和
+事务比较更新，冲突不重试。取消置顶不刷新原日期或期限；模型调用与发送均为0。
+
 状态：体验服务及合成专项测试已实现。尚未接入宿主页面、定时器、真实模型或发送器。
 仅新增 `services/experience.py`、`tests/experience/test_experience.py` 和本文档；
 没有修改 storage、contracts、main、api、schema、配置或规格，没有 Git 提交。

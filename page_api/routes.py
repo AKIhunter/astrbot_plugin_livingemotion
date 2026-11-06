@@ -10,6 +10,8 @@ RESPONSE_HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 ROUTES = (
     ("state", "GET"), ("records", "GET"), ("config", "POST"),
     ("preview", "POST"), ("action", "POST"),
+    ("scopes", "GET"), ("relationships", "GET"), ("relationship", "POST"),
+    ("energy", "GET"), ("settings-options", "GET"),
 )
 
 
@@ -25,7 +27,7 @@ class PageAPI:
         for operation, method in ROUTES:
             self._host.register_web_api(
                 f"/{PLUGIN_NAME}/console/{operation}",
-                getattr(self, operation), [method],
+                getattr(self, operation.replace("-", "_")), [method],
                 f"livingEmotion authenticated console {operation}",
             )
 
@@ -47,6 +49,21 @@ class PageAPI:
     async def action(self):
         return await self._dispatch("action")
 
+    async def scopes(self):
+        return await self._dispatch("scopes")
+
+    async def relationships(self):
+        return await self._dispatch("relationships")
+
+    async def relationship(self):
+        return await self._dispatch("relationship")
+
+    async def energy(self):
+        return await self._dispatch("energy")
+
+    async def settings_options(self):
+        return await self._dispatch("settings-options")
+
     async def _dispatch(self, operation: str):
         from astrbot.api.web import json_response, request
 
@@ -54,25 +71,30 @@ class PageAPI:
             actor_id = require_dashboard_user(self._host, request)
             if self._closed:
                 raise ConsoleError("unavailable")
-            expected_method = "GET" if operation in ("state", "records") else "POST"
+            expected_method = dict(ROUTES)[operation]
             if request.method != expected_method:
                 raise ConsoleError("validation_error")
             if expected_method == "GET":
                 parameters = query_parameters(operation, request.query)
             else:
                 parameters = await body_parameters(operation, request)
-            if operation in ("config", "action"):
+            if operation in ("config", "action", "relationship"):
                 parameters["actor_id"] = actor_id
             # Parsing may yield; never start business work on a stopped instance.
             if self._closed:
                 raise ConsoleError("unavailable")
             if require_dashboard_user(self._host, request) != actor_id:
                 raise ConsoleError("forbidden")
-            method = "update_config" if operation == "config" else f"console_{operation}"
-            result = await getattr(self._application, method)(**parameters)
+            method = ("update_config" if operation == "config"
+                      else f"console_{operation.replace('-', '_')}")
+            handler = getattr(self._application, method, None)
+            if not callable(handler):
+                raise ConsoleError("unavailable")
+            result = await handler(**parameters)
             if self._closed:
                 raise ConsoleError("unavailable")
-            require_dashboard_user(self._host, request)
+            if require_dashboard_user(self._host, request) != actor_id:
+                raise ConsoleError("forbidden")
             self._validate_result(operation, result, parameters)
             return json_response({"status": "ok", "data": result}, headers=RESPONSE_HEADERS)
         except Exception as exc:
@@ -92,11 +114,22 @@ class PageAPI:
         if operation == "preview":
             if result.get("model_calls") != 0 or result.get("sends") != 0:
                 raise ConsoleError("unavailable")
-        if operation == "records":
+        if operation in ("records", "relationships", "energy"):
             items, total = result.get("items"), result.get("total")
             if (
                 not isinstance(items, list) or len(items) > 10
                 or type(total) is not int or total < len(items)
                 or result.get("page") != parameters["page"] or result.get("page_size") != 10
             ):
+                raise ConsoleError("unavailable")
+            if parameters.get("kind") == "emotion" and any(
+                    not isinstance(item, dict) or "body" in item for item in items):
+                raise ConsoleError("unavailable")
+        if operation == "relationships":
+            nodes = result.get("nodes")
+            if (not isinstance(nodes, list) or len(nodes) > parameters["limit"]
+                    or result.get("displayed") != len(nodes)
+                    or len(nodes) > result["total"]
+                    or not isinstance(result.get("edges"), list)
+                    or len(result["edges"]) != len(nodes)):
                 raise ConsoleError("unavailable")

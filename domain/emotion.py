@@ -56,13 +56,15 @@ _NON_EVENTS = {"dream", "diary", "summary", "fact", "legacy_unknown", "observati
 def _number(value: Any, name: str, low: float | None = None,
             high: float | None = None) -> float:
     try:
-        # JSON guard floats need every check, but no generic dispatch/conversion.
-        if type(value) is float:
+        # JSON guard scalars need every check, but no generic dispatch. Zero
+        # budget rows decode as ints too; bool/subclasses retain the old path.
+        kind = type(value)
+        if kind is float or kind is int:
             if not math.isfinite(value) or (low is not None and value < low) or (
                 high is not None and value > high
             ):
                 raise ValueError(f"{name}: out of range")
-            return value
+            return value if kind is float else float(value)
         finite(value, name, low, high)
     except (OverflowError, TypeError) as exc:
         raise ValueError(f"{name}: expected finite number") from exc
@@ -88,6 +90,10 @@ class EmotionPolicy:
     similar_budget: float = 0.30
     max_events: int = 192
     sensitivity: float = 1.0
+
+    @property
+    def baseline(self) -> tuple[float, ...]:
+        return BASELINE
 
     def __post_init__(self) -> None:
         for name in ("observation_ttl", "event_ttl", "similar_window"):
@@ -164,16 +170,37 @@ def _prepare_guard(runtime: Mapping[str, Any] | None, *, scope_key: str,
         raise ValueError("runtime_scope_or_version_mismatch")
     last = _number(raw.get("last_event_at", updated_at), "last_event_at", 0)
     seen = []
+    duplicate = False
+    event_key = event.idempotency_key
     for item in raw.get("seen", ()):
-        at = _number(item["at"], "seen.at", 0)
+        at = item["at"]
+        # This full-history loop always has the same lower bound. Inline the
+        # exact JSON-float checks; custom numbers retain _number's semantics.
+        if type(at) is float:
+            if not math.isfinite(at) or at < 0:
+                raise ValueError("seen.at: out of range")
+        else:
+            at = _number(at, "seen.at", 0)
         if not isinstance(item["key"], str):
             raise ValueError("seen.key: expected string")
         if now - at < ttl:
             seen.append({"key": item["key"], "at": at})
+            # Reuse the required validation scan; do not walk the same full
+            # guard again. Even duplicate/expired rows are still validated.
+            duplicate = duplicate or item["key"] == event_key
     stimuli = []
     for item in raw.get("stimuli", ()):
-        at = _number(item["at"], "stimulus.at", 0)
-        amount = _number(item["amount"], "stimulus.amount", 0)
+        at, amount = item["at"], item["amount"]
+        if type(at) is float:
+            if not math.isfinite(at) or at < 0:
+                raise ValueError("stimulus.at: out of range")
+        else:
+            at = _number(at, "stimulus.at", 0)
+        if type(amount) is float:
+            if not math.isfinite(amount) or amount < 0:
+                raise ValueError("stimulus.amount: out of range")
+        else:
+            amount = _number(amount, "stimulus.amount", 0)
         if not isinstance(item["key"], str):
             raise ValueError("stimulus.key: expected string")
         body_key = item.get("body_key")
@@ -186,7 +213,7 @@ def _prepare_guard(runtime: Mapping[str, Any] | None, *, scope_key: str,
               "seen": seen, "stimuli": stimuli}
     if now < updated_at or now < last:
         return result, "clock_before_state"
-    if any(row["key"] == event.idempotency_key for row in seen):
+    if duplicate:
         return result, "duplicate_event"
     if event.occurred_at < last:
         return result, "older_event"
@@ -263,7 +290,7 @@ def decay_affect(state: BotAffect, *, now: float,
     elapsed = now - state.updated_at
     values = tuple(
         baseline + (getattr(state, name) - baseline) * 2 ** (-elapsed / half_life)
-        for name, baseline, half_life in zip(DIMENSIONS, BASELINE, policy.half_lives)
+        for name, baseline, half_life in zip(DIMENSIONS, policy.baseline, policy.half_lives)
     )
     evidence = tuple(ref for ref in state.evidence
                      if ref.expires_at is not None and ref.expires_at > now)

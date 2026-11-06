@@ -6,7 +6,7 @@ Context keys preserve source scopes, never identity-provider projections.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field, is_dataclass
+from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from enum import Enum
 import hashlib
 import json
@@ -14,7 +14,29 @@ import math
 from typing import Any, Mapping
 
 API_VERSION = 1
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+_PLAIN_JSON_SCALARS = frozenset((str, int, float, bool, type(None)))
+_NATIVE_FIELDS: dict[type, tuple[str, ...]] = {}
+
+
+class _GenericConversion(Exception):
+    pass
+
+
+def _native_contract_json(value: Any) -> Any:
+    """One pass for known contract snapshots containing only native values."""
+    kind = type(value)
+    if kind in _PLAIN_JSON_SCALARS:
+        return value
+    names = _NATIVE_FIELDS.get(kind)
+    if names is not None:
+        return {name: _native_contract_json(getattr(value, name)) for name in names}
+    if kind is tuple or kind is list:
+        return [_native_contract_json(item) for item in value]
+    if kind in (SceneKind, ActorRole, ContentKind, NightPhase, SleepState, IntentStatus):
+        return value.value
+    # Custom values keep asdict's deepcopy, mapping and subclass behavior.
+    raise _GenericConversion
 
 
 class SceneKind(str, Enum):
@@ -48,6 +70,14 @@ class NightPhase(str, Enum):
     WAKING = "waking"
 
 
+class SleepState(str, Enum):
+    AWAKE = "awake"
+    NAP = "nap"
+    GROGGY = "groggy"
+    DROWSY = "drowsy"
+    DEEP_SLEEP = "deep_sleep"
+
+
 class IntentStatus(str, Enum):
     PENDING = "pending"
     RESERVED = "reserved"
@@ -61,7 +91,12 @@ class IntentStatus(str, Enum):
 
 def finite(value: float, name: str, low: float | None = None,
            high: float | None = None) -> None:
-    if isinstance(value, bool) or not isinstance(value, (float, int)):
+    # Persisted JSON numbers are exact built-ins; subclasses/bool still use
+    # the original type checks and every value still gets finite/range checks.
+    kind = type(value)
+    if kind is not float and kind is not int and (
+        isinstance(value, bool) or not isinstance(value, (float, int))
+    ):
         raise ValueError(f"{name}: expected finite number")
     if not math.isfinite(value) or (low is not None and value < low) or (
         high is not None and value > high
@@ -78,6 +113,20 @@ def _text(value: str, name: str, *, optional: bool = False) -> None:
 
 def to_dict(value: Any) -> Any:
     """Convert contract values to JSON-compatible data, without host objects."""
+    # Guard snapshots have many plain leaves: avoid dataclass/typing dispatch
+    # for each one, while keeping Enum, subclasses and custom mappings unchanged.
+    kind = type(value)
+    if kind in _PLAIN_JSON_SCALARS:
+        return value
+    if kind is dict:
+        return {str(k): to_dict(v) for k, v in value.items()}
+    if kind is list or kind is tuple:
+        return [to_dict(v) for v in value]
+    if kind in _NATIVE_FIELDS:
+        try:
+            return _native_contract_json(value)
+        except _GenericConversion:
+            pass
     if is_dataclass(value) and not isinstance(value, type):
         return to_dict(asdict(value))
     if isinstance(value, Enum):
@@ -96,6 +145,16 @@ def canonical_json(value: Any) -> str:
 
 def stable_key(*parts: Any) -> str:
     return hashlib.sha256(canonical_json(parts).encode("utf-8")).hexdigest()
+
+
+def state_persona_key(context) -> str:
+    return stable_key("state-persona", context.instance_id, context.persona_id)
+
+
+def state_owner_key(context, shared: bool) -> str:
+    return stable_key("state-shared", context.instance_id, context.persona_id) if shared else (
+        context.scope_key
+    )
 
 
 @dataclass(frozen=True)
@@ -137,6 +196,42 @@ class Context:
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> Context:
         return cls(**dict(value))
+
+
+@dataclass(frozen=True)
+class ScopeSelection:
+    """Authenticated management selector, never a sending context."""
+    persona_id: str
+    view_scope: str = "global"
+    scene_id: str | None = None
+    platform: str | None = None
+
+    def __post_init__(self) -> None:
+        _text(self.persona_id, "persona_id")
+        if self.view_scope not in ("global", "private", "group"):
+            raise ValueError("invalid view scope")
+        for name in ("scene_id", "platform"):
+            if getattr(self, name) is not None:
+                _text(getattr(self, name), name)
+
+
+@dataclass(frozen=True)
+class StateOwner:
+    """Immutable mutation ticket. Source generation remains separate."""
+    owner_key: str
+    persona_key: str
+    mode: str
+    revision: int
+    generation: int = 0
+
+    def __post_init__(self) -> None:
+        _text(self.owner_key, "owner_key")
+        _text(self.persona_key, "persona_key")
+        if self.mode not in ("shared", "scene"):
+            raise ValueError("invalid state mode")
+        for name in ("revision", "generation"):
+            if type(getattr(self, name)) is not int or getattr(self, name) < 0:
+                raise ValueError(f"invalid {name}")
 
 
 @dataclass(frozen=True)
@@ -307,12 +402,54 @@ class NightState:
     awaiting_reply_id: str | None = None
     unread_watermark: int = 0
     reason_codes: tuple[str, ...] = ()
+    display_state: SleepState | None = None
+    policy_version: int = 1
+    energy_units: int | None = None
+    energy_remainder: int = 0
+    energy_direction: str = ""
+    cycle_id: str | None = None
+    cycle_kind: str | None = None
+    cycle_started_at: float | None = None
+    deep_sleep_at: float | None = None
+    drowsy_at: float | None = None
+    base_wake_at: float | None = None
+    lie_in_minutes: int | None = None
+    wake_score: int | None = None
+    wake_failures: int = 0
+    wake_session: str | None = None
+    wake_replies_used: int = 0
+    wake_reply_limit: int = 0
+    first_reply_submitted_at: float | None = None
+    wake_window_deadline: float | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "phase", NightPhase(self.phase))
+        if self.display_state is not None:
+            object.__setattr__(self, "display_state", SleepState(self.display_state))
+        if self.policy_version not in (1, 2):
+            raise ValueError("invalid night policy")
+        if self.energy_units is not None and (
+            type(self.energy_units) is not int or not 0 <= self.energy_units <= 1000
+            or abs(self.energy - self.energy_units / 10) > 1e-9
+        ):
+            raise ValueError("energy units mismatch")
+        for name in ("energy_remainder", "wake_failures", "wake_replies_used",
+                     "wake_reply_limit"):
+            if type(getattr(self, name)) is not int or getattr(self, name) < 0:
+                raise ValueError(f"invalid {name}")
+        if self.energy_remainder >= 60_000_000:
+            raise ValueError("invalid energy remainder")
+        if self.energy_direction not in ("", "fatigue", "recovery"):
+            raise ValueError("invalid energy direction")
+        for name in ("lie_in_minutes", "wake_score"):
+            value = getattr(self, name)
+            if value is not None and (type(value) is not int or value < 0):
+                raise ValueError(f"invalid {name}")
         finite(self.energy, "energy", 0, 100)
         finite(self.updated_at, "updated_at", 0)
-        for name in ("sleep_started_at", "wake_at", "transition_deadline"):
+        for name in ("sleep_started_at", "wake_at", "transition_deadline", "cycle_started_at",
+                     "deep_sleep_at", "drowsy_at", "base_wake_at",
+                     "first_reply_submitted_at", "wake_window_deadline"):
             if getattr(self, name) is not None:
                 finite(getattr(self, name), name, 0)
 
@@ -366,6 +503,8 @@ class StateWrite:
     value: Mapping[str, Any]
     expected_version: int = 0
     record_key: str = ""
+    owner: StateOwner | None = None
+    energy_events: tuple[Mapping[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -376,6 +515,7 @@ class StateRecord:
     generation: int
     updated_at: float
     record_key: str = ""
+    owner: StateOwner | None = None
 
 
 @dataclass(frozen=True)
@@ -410,3 +550,9 @@ class BehaviorPreview:
 DomainEvent = Event
 BotState = BotAffect
 RelationshipState = Relationship
+
+# Limit the single-pass serializer to our stable scalar/tuple contracts.
+_NATIVE_FIELDS.update({
+    cls: tuple(item.name for item in fields(cls))
+    for cls in (Context, Event, EvidenceRef, BotAffect, HumanObservation, Relationship, NightState)
+})

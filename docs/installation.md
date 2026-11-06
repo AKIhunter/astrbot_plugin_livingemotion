@@ -1,5 +1,22 @@
 # 本地安装与使用
 
+## 改版安装入口
+
+使用 Python >=3.12 与 `metadata.yaml` 允许的 AstrBot 版本，通过已授权账号获取
+PRIVATE 仓库源码，放入宿主 `data/plugins/astrbot_plugin_livingemotion/` 并加载。
+保留包、配置 schema 与完整 `pages/livingemotion/`（含本地 vendor），
+不携带开发虚拟环境、node_modules 或运行数据；运行页无需 Node/CDN。
+从插件页面进入“设置 → 快速开始”，按 [生活控制台](life-console.md)配置人格、
+时区、五档作息、模型、城市与记忆。所有设置统一提交到 AstrBot 原生配置。
+
+旧配置缺少新版字段时保留会话独立状态与规则1；
+切换到规则2并设置时区后使用新的唤醒/沉睡规则。兼容与本轮验收见
+[兼容矩阵](compatibility.md)，配置说明以 [生活控制台](life-console.md)为准。
+
+## 0.1 原生安装与 Provider 参考
+
+下文保留规则1的原始配置、固定版本证据与 CLI 参考，不代表新版五档作息。
+
 读者：隔离环境的安装者和管理员。依据：`main.py`、`config.py`、`_conf_schema.json`、
 `runtime/application.py`、`runtime/models.py`。2026-11-05 核对冻结源码及已完成的最终宿主报告。
 维护者在入口/配置/宿主升级时同步本页，每次交付复核；过期标记规则见[交接](delivery-notes.md)。

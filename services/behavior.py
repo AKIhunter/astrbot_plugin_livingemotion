@@ -19,6 +19,7 @@ from ..contracts import (
 )
 from ..ports.memory import Material, MemoryRequest, RecallResult, ValidationResult
 from ..storage import SQLiteStore
+from .output import public_text_allowed
 
 SEND_POOL = "send"
 SEND_PURPOSE = "behavior"
@@ -654,6 +655,8 @@ class BehaviorService:
             )), timeout=policy.model_timeout_seconds)
             if not isinstance(text, str) or not text.strip() or len(text) > policy.max_output_chars:
                 return await self._settle(attempt, "failed", "model_output_invalid")
+            if not public_text_allowed(text):
+                return await self._settle(attempt, "failed", "model_output_unsafe")
             attempt.stage = "final_review"
             reason = await self._review(attempt)
             if reason:
@@ -737,3 +740,131 @@ class BehaviorService:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def execute_control(self, context, *, intent_id, purpose, generate,
+                              authorize, on_submit, generation, revision):
+        """Closing and catchup share this executor, lane and durable send protocol.
+
+        A caller supplies a purpose-specific authorization check. These messages
+        concern an existing conversation and do not require idle autonomy.
+        """
+        if purpose not in ("closing", "catchup") or not context.route:
+            return "rejected"
+        task = asyncio.current_task()
+        self._tasks.add(task)
+        try:
+            async with self._lane.lock:
+                return await self._control(
+                    context, intent_id, purpose, generate, authorize, on_submit,
+                    generation, revision,
+                )
+        finally:
+            self._tasks.discard(task)
+
+    async def _control(self, context, key, purpose, generate, authorize, on_submit,
+                       generation, revision):
+        async def permitted():
+            return (not self._closed and not self._faulted
+                    and await self.validate_identity(context)
+                    and await self.store.get_generation(context) == generation
+                    and await authorize(context, generation, revision))
+
+        if not await permitted():
+            return "rejected"
+        now = self._now()
+        watermark = await self.store.human_watermark(context)
+        intent = BehaviorIntent(key, context, purpose, now, now + 300,
+                                generation, human_watermark=watermark)
+        created = await self.store.create_intent(intent)
+        if created.get("status") != "created":
+            old = await self.store.get_intent(context, key)
+            return "confirmed" if old and old["status"] == "succeeded" else "unknown"
+        current_status, dispatched, reserved = "pending", False, False
+        result = "rejected"
+
+        async def transition(new, reason):
+            nonlocal current_status
+            outcome = await self.store.transition_intent(
+                context, key, generation, expected_status=current_status,
+                status=new, reason_code=reason,
+                reservation_id=key + ":send" if new == "reserved" else None,
+            )
+            if outcome["status"] != "updated":
+                raise ValueError("control_intent_changed")
+            current_status = new
+
+        async def send_guard():
+            return (await permitted()
+                    and await self.store.human_watermark(context) == watermark)
+
+        try:
+            period = self._period(self.policy(), now)
+            if not period:
+                raise ValueError("timezone_required")
+            quota = await self.store.reserve_quota(
+                key + ":send", context, generation, period=period, purpose=purpose,
+                pool="send", limit=self.store.config.behavior_daily_limit,
+                global_limit=self.store.config.behavior_daily_limit,
+            )
+            if quota.get("status") != "reserved":
+                raise ValueError("control_quota_unavailable")
+            reserved = True
+            await transition("reserved", "control_reserved")
+            await transition("generating", "control_generation")
+            text = await generate()
+            if (not isinstance(text, str) or not text.strip()
+                    or len(text) > self.policy().max_output_chars or not await send_guard()):
+                raise ValueError("control_content_changed")
+            # All control outputs pass the same public-text scrubber as proactive
+            # messages. An invalid model result cannot reach a platform.
+            if not public_text_allowed(text):
+                raise ValueError("control_output_unsafe")
+            await transition("sending", "control_submit")
+
+            async def submit_guard():
+                if not await send_guard():
+                    return False
+                # This is submission to the host, not a transport receipt.
+                return await on_submit(context, key, text)
+
+            dispatched = True
+            receipt = await asyncio.wait_for(
+                self.sender(SendRequest(key, context, text, submit_guard)),
+                timeout=self.policy().send_timeout_seconds,
+            )
+            confirmed = (isinstance(receipt, SendReceipt)
+                         and receipt.intent_id == key and receipt.route == context.route
+                         and receipt.status == "confirmed"
+                         and isinstance(receipt.receipt_id, str) and bool(receipt.receipt_id)
+                         and receipt.confirmed_parts == receipt.total_parts
+                         and receipt.total_parts > 0)
+            result = "confirmed" if confirmed else "unknown"
+            if isinstance(receipt, SendReceipt) and receipt.status == "rejected":
+                result = "rejected"
+            await transition("succeeded" if confirmed else
+                             "failed" if result == "rejected" else "unknown",
+                             "send_" + result)
+            return result
+        except BaseException as exc:
+            status = "unknown" if dispatched else (
+                "cancelled" if current_status == "pending" else "failed")
+            if current_status not in TERMINAL:
+                if status not in INTENT_CONTROL_TRANSITIONS.get(current_status, ()):
+                    status = "cancelled"
+                await asyncio.shield(transition(status, "control_interrupted"))
+            if isinstance(exc, asyncio.CancelledError):
+                raise
+            return "unknown" if dispatched else "rejected"
+        finally:
+            if reserved:
+                await asyncio.shield(self.store.finish_quota(
+                    key + ":send", status=("succeeded" if result == "confirmed" else
+                                          "unknown" if dispatched else "failed"),
+                    reason_code="control_" + result,
+                ))
+
+
+INTENT_CONTROL_TRANSITIONS = {
+    "pending": {"cancelled"}, "reserved": {"failed", "cancelled"},
+    "generating": {"failed", "cancelled"}, "sending": {"failed", "unknown"},
+}

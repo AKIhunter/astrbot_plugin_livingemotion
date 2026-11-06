@@ -207,3 +207,6 @@ class MemoryGateway:
         await asyncio.gather(*tasks, return_exceptions=True)
         self._cache.clear()
         self._inflight.clear()
+        close = getattr(self.backend, "close", None)
+        if callable(close):
+            await close()

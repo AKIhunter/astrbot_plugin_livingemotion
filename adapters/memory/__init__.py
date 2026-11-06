@@ -3,5 +3,7 @@
 from .base import MemoryGateway, NoneMemory
 from .livingmemory import LivingMemoryAdapter
 from .local_lite import LocalLiteMemory
+from .local_vector import LocalVectorMemory
 
-__all__ = ["LivingMemoryAdapter", "LocalLiteMemory", "MemoryGateway", "NoneMemory"]
+__all__ = ["LivingMemoryAdapter", "LocalLiteMemory", "LocalVectorMemory",
+           "MemoryGateway", "NoneMemory"]

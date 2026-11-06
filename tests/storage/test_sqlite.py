@@ -335,6 +335,47 @@ async def test_cancelled_thread_is_drained_before_close(le_store):
         await le_store.health()
 
 
+async def test_sqlite_worker_reuses_thread_preserves_context_and_stops(le_store):
+    from contextvars import ContextVar
+
+    marker = ContextVar("synthetic-store-context", default="missing")
+    marker.set("first")
+    worker, value = await le_store._run(
+        lambda db: (threading.current_thread(), marker.get()),
+    )
+    assert value == "first"
+    marker.set("second")
+    other, value = await le_store._run(
+        lambda db: (threading.current_thread(), marker.get()),
+    )
+    assert other is worker and value == "second"
+    await le_store.close()
+    assert not worker.is_alive()
+
+
+async def test_failed_open_releases_worker_and_allows_clean_retry(tmp_path, monkeypatch):
+    from astrbot_plugin_livingemotion.storage import sqlite
+
+    workers = []
+    original = sqlite.migrate
+
+    def broken(db):
+        workers.append(threading.current_thread())
+        raise RuntimeError("synthetic migration failure")
+
+    monkeypatch.setattr(sqlite, "migrate", broken)
+    store = SQLiteStore(tmp_path / "failed-open.sqlite")
+    with pytest.raises(RuntimeError, match="synthetic migration failure"):
+        await store.open()
+    assert workers and not workers[0].is_alive()
+    monkeypatch.setattr(sqlite, "migrate", original)
+    await store.open()
+    try:
+        assert (await store.health())["status"] == "ready"
+    finally:
+        await store.close()
+
+
 async def test_host_instance_changes_isolate_state_and_event_keys(le_store, le_event):
     await le_store.commit_event(le_event, 0, (StateWrite("bot", {"pleasure": 0.2}),))
     other = replace(le_event, context=replace(le_event.context, instance_id="other-host"))

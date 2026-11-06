@@ -122,7 +122,7 @@ async def test_clear_invalidates_queued_event_not_only_active_projection(
     le_store, le_event_factory, monkeypatch,
 ):
     entered, release, queued = asyncio.Event(), asyncio.Event(), asyncio.Event()
-    original_read = le_store.read_projection
+    original_read = le_store.project_snapshot
     original_generation = le_store.get_generation
 
     async def generation(context):
@@ -130,15 +130,15 @@ async def test_clear_invalidates_queued_event_not_only_active_projection(
         queued.set()
         return value
 
-    async def blocked(context):
-        value = await original_read(context)
+    async def blocked(context, calculate):
+        value = await original_read(context, calculate)
         if not entered.is_set():
             entered.set()
             await release.wait()
         return value
 
     monkeypatch.setattr(le_store, "get_generation", generation)
-    monkeypatch.setattr(le_store, "read_projection", blocked)
+    monkeypatch.setattr(le_store, "project_snapshot", blocked)
     api = make_api(le_store)
     active = asyncio.create_task(api.ingest_event(le_event_factory(1)))
     pending = None

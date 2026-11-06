@@ -6,6 +6,7 @@ import asyncio
 import copy
 from contextvars import ContextVar
 
+from ..adapters.weather import OpenMeteoWeather
 from ..contracts import canonical_json, stable_key
 from ..services.experience import ExperiencePolicy, ExperienceService
 from .background import ModelResultUnknown
@@ -107,14 +108,17 @@ class OpenAIBinding:
 
 
 class Generation:
-    async def model_binding(self, context):
+    async def model_binding(self, context, purpose=""):
         if not await self.validate_context(context) or self.effective_mode(context) != "active":
             raise ModelUnavailable("context_changed")
-        candidates = [self.config.provider_id]
+        selected = getattr(self.config, purpose + "_provider_id", "") if purpose in (
+            "diary", "dream", "catchup", "closing",
+        ) else ""
+        candidates = [selected or self.config.provider_id]
         if not candidates[0]:
             try:
                 candidates[0] = await self.host.get_current_chat_provider_id(context.route)
-            except Exception:
+            except Exception:  # noqa: BLE001 - optional native provider discovery.
                 candidates[0] = ""
         if self.config.fallback_provider_id:
             candidates.append(self.config.fallback_provider_id)
@@ -127,6 +131,58 @@ class Generation:
             except (ValueError, AttributeError, ImportError):
                 continue
         raise ModelUnavailable("provider_budget_contract_unavailable")
+
+    async def _purpose_binding(self, context, purpose):
+        # Keep existing one-argument host fixtures and consumers valid by default.
+        if getattr(self.config, purpose + "_provider_id", ""):
+            return await self.model_binding(context, purpose=purpose)
+        return await self.model_binding(context)
+
+    async def purpose_model(self, context, purpose, system, data, job_id, *,
+                            max_output_tokens=None):
+        """One budgeted dispatch. Never call inside another model=True worker."""
+        if purpose not in ("diary", "dream", "catchup", "closing"):
+            raise ModelUnavailable("model_purpose_invalid")
+        if (not isinstance(system, str) or not isinstance(data, str)
+                or not isinstance(job_id, str) or not job_id or len(job_id) > 256):
+            raise ModelUnavailable("model_request_invalid")
+        if not (await self.legacy_constraints(context, purpose))["allowed"]:
+            raise ModelUnavailable("legacy_constraints_unresolved")
+        binding = await self._purpose_binding(context, purpose)
+        tokens = binding.count(system, data)
+        output = self.config.model_output_tokens if max_output_tokens is None else max_output_tokens
+        if (type(tokens) is not int or not 0 < tokens <= self.config.model_input_tokens
+                or type(output) is not int or not 1 <= output <= self.config.model_output_tokens):
+            raise ModelUnavailable("model_token_limit")
+        generation = await self.store.get_generation(context)
+        watermark = await self.store.human_watermark(context)
+        revision = self.revision
+
+        async def generate():
+            current = await self._purpose_binding(context, purpose)
+            if (current.fingerprint != binding.fingerprint or self.revision != revision
+                    or not await self.validate_context(context, generation)
+                    or self.effective_mode(context) != "active"
+                    or not (await self.legacy_constraints(context, purpose))["allowed"]
+                    or await self.store.human_watermark(context) != watermark):
+                raise ModelUnavailable("context_or_provider_changed")
+            text = await binding.generate(system, data, output, self.config.model_timeout_seconds)
+            current = await self._purpose_binding(context, purpose)
+            if (current.fingerprint != binding.fingerprint or self.revision != revision
+                    or not await self.validate_context(context, generation)
+                    or await self.store.human_watermark(context) != watermark):
+                raise ModelUnavailable("context_or_provider_changed")
+            return text
+        return await self.runtime.run_model(
+            "purpose-model:" + stable_key(context, purpose, job_id), context, generation, generate,
+            purpose=purpose, input_tokens=tokens, output_tokens=output,
+        )
+
+    async def close_generation_resources(self):
+        weather = getattr(self, "_weather", None)
+        if weather is not None:
+            await weather.close()
+            self._weather = None
 
     async def behavior_model(self, request):
         context = request.intent.context
@@ -164,10 +220,25 @@ class Generation:
         )
 
     async def experience_service(self, context, *, need_model=True):
-        binding = await self.model_binding(context) if need_model else None
+        bindings = {}
+        if need_model:
+            default = None
+            for purpose in ("diary", "dream"):
+                try:
+                    if getattr(self.config, purpose + "_provider_id", ""):
+                        bindings[purpose] = await self._purpose_binding(context, purpose)
+                    else:
+                        default = default or await self.model_binding(context)
+                        bindings[purpose] = default
+                except ModelUnavailable:
+                    # One unavailable purpose must not disable the other purpose's model.
+                    continue
+            if not bindings:
+                raise ModelUnavailable("provider_budget_contract_unavailable")
+        binding = next(iter(bindings.values()), None)
         # Each closure binds its source/provider; all share the same worker and quota.
         key = stable_key(context, self._revision,
-                         binding.fingerprint if binding else "read_only")
+                         tuple((p, b.fingerprint) for p, b in bindings.items()) or "read_only")
         if key in self._services:
             return self._services[key]
         if len(self._services) >= 64:
@@ -178,17 +249,21 @@ class Generation:
                 raise ModelUnavailable("context_changed")
             if not (await self.legacy_constraints(context, request.purpose))["allowed"]:
                 raise ModelUnavailable("legacy_constraints_unresolved")
-            current = await self.model_binding(context)
-            if current.fingerprint != binding.fingerprint:
+            purpose = request.purpose.removeprefix("share_")
+            selected = bindings.get(purpose)
+            current = await self._purpose_binding(context, purpose)
+            if selected is None or current.fingerprint != selected.fingerprint:
                 raise ModelUnavailable("provider_changed")
             generation = await self.store.get_generation(context)
             watermark = await self.store.human_watermark(context)
-            text = await binding.generate(
+            text = await selected.generate(
                 request.system, request.data, request.max_output_tokens, request.timeout_seconds,
             )
             if (not await self.validate_context(context, generation)
                     or await self.store.human_watermark(context) != watermark):
                 raise ModelUnavailable("context_changed")
+            if (await self._purpose_binding(context, purpose)).fingerprint != selected.fingerprint:
+                raise ModelUnavailable("provider_changed")
             return text
 
         async def guard(source, generation):
@@ -227,12 +302,15 @@ class Generation:
             return await self.store.pin_experience(old, new, generation,
                                                   actor_id=actor[0], reason=actor[1])
 
+        if getattr(self, "_weather", None) is None:
+            self._weather = OpenMeteoWeather(clock=lambda: self.store.clock())
         service = LiveExperienceService(
             self.store, self.runtime, model=model if binding else None,
             count_tokens=binding.count if binding else None,
             guard=guard, authorize=authorize, load=self.store.load_experience,
             write_pin=pin, save_guarded=save, memory=self.memory,
             night_guard=self.night_guard,
+            weather=self._weather,
             policy=ExperiencePolicy(
                 timezone=self.config.timezone or "UTC", diary_at=self.config.diary_at,
                 backfill_yesterday=self.config.diary_backfill_yesterday,
@@ -246,6 +324,7 @@ class Generation:
                 output_tokens=self.config.model_output_tokens,
                 timeout_seconds=self.config.model_timeout_seconds,
                 export_enabled=self.config.memory_export,
+                home_city=getattr(self.config, "home_city", ""),
             ),
         )
         self._services[key] = service
