@@ -84,6 +84,19 @@ export function makeRelationships() {
     source_completeness: "完整（合成）", sources: [], version: 0,
   }));
 }
+export function makePeerEdges(nodes) {
+  const edges = [];
+  for (let i = 0; i < 24; i += 2) {
+    const source = nodes[i], target = nodes[i + 2];
+    if (!source || !target) continue;
+    edges.push({ id: `fixture-peer-${i}`, source: source.id, target: target.id,
+      relation: i % 4 ? "同事" : "朋友", inferred: true,
+      evidence: [{ source_id: `synthetic-message-${i}`, kind: "聊天记录", basis: "本人陈述",
+        at: 1793959200, platform: "qq", view_scope: "group", scene_id: "合成群",
+        excerpt: `我和 @${target.account_id} 是${i % 4 ? "同事" : "朋友"}（合成测试依据）` }] });
+  }
+  return edges;
+}
 export function makeEnergy() {
   const to = 1793959200, from = to - 86400;
   const kinds = ["reply", "fatigue", "recovery", "sleep", "wake", "manual", "config"];

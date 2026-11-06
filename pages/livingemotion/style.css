@@ -162,9 +162,15 @@ dialog h2 { margin: 12px 0 16px; } dialog input { width: 100%; margin-top: 8px; 
 .sub-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 24px; } .sub-tabs [aria-selected="true"] { background: var(--accent-bg); border-color: var(--accent); }
 .graph-device { background: var(--surface); border: 1px solid var(--line); border-radius: 24px; padding: 16px; }
 .relationship-graph { display: block; width: 100%; height: 420px; touch-action: none; }
-.relationship-graph .graph-edge { stroke: var(--control); opacity: .65; }
+.relationship-graph .graph-edge { stroke: var(--control); opacity: .16; }
+.relationship-graph .graph-peer-edge { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 4 5; opacity: .5; }
+.relationship-graph .selected-edge { opacity: .85; stroke: var(--accent); }
+.relationship-graph .graph-hit { fill: transparent; cursor: grab; }
 .relationship-graph .graph-person { fill: var(--accent-bg); stroke: var(--accent); stroke-width: 1.5; cursor: grab; }
-.relationship-graph .graph-person:focus, .relationship-graph .selected { stroke-width: 4; }
+.relationship-graph .graph-person:focus, .relationship-graph .selected { stroke-width: 3; }
+.relationship-graph .person-label { opacity: 0; paint-order: stroke; stroke: var(--bg); stroke-width: 3; }
+.relationship-graph g:hover > .person-label, .relationship-graph g:focus-within > .person-label,
+.relationship-graph g:has(.selected) > .person-label { opacity: 1; }
 .relationship-graph .graph-center { fill: var(--accent); }
 .relationship-graph text { fill: var(--text); font: 11px var(--mono); pointer-events: none; }
 .relationship-graph .center-label { fill: var(--bg); }

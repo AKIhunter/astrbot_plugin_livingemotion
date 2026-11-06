@@ -541,6 +541,60 @@ try {
     assert.match(await page.locator(".graph-detail h2").textContent(), /10109/);
     await context.close();
   });
+  await caseRun("关系中心留白、200小节点分散、双主题手机与拖动禁区", async () => {
+    for (const width of [390, 1280]) for (const theme of ["light", "dark"]) {
+      const { context, page } = await open("normal", { viewport: { width, height: 900 } });
+      await page.locator(`[data-theme-choice="${theme}"]`).click();
+      await section(page, "relationships");
+      const measure = () => page.locator(".relationship-graph").evaluate(svg => {
+        const points = [...svg.querySelectorAll(".graph-person")].map(circle => {
+          const [, x, y] = circle.parentElement.getAttribute("transform").match(/translate\(([^ ]+) ([^)]+)\)/);
+          return { x: Number(x), y: Number(y), r: Number(circle.getAttribute("r")) };
+        });
+        return {
+          gap: Math.min(...points.map(p => Math.hypot(p.x - 360, p.y - 210) - p.r)),
+          spacing: Math.min(...points.flatMap((p, i) => points.slice(i + 1).map(q => Math.hypot(p.x - q.x, p.y - q.y)))),
+          width: Math.max(...points.map(p => p.x)) - Math.min(...points.map(p => p.x)),
+          height: Math.max(...points.map(p => p.y)) - Math.min(...points.map(p => p.y)),
+          radius: Math.max(...points.map(p => p.r)),
+          center: ["cx", "cy"].map(k => Number(svg.querySelector(".graph-center").getAttribute(k))),
+        };
+      });
+      const geometry = await measure();
+      assert.deepEqual(geometry.center, [360, 210]);
+      assert.ok(geometry.gap >= 87.4 && geometry.spacing >= 19.5, JSON.stringify(geometry));
+      assert.ok(geometry.width > 630 && geometry.height > 340 && geometry.radius <= 4.5, JSON.stringify(geometry));
+      assert.equal(await page.locator(".graph-peer-edge").count(), 12);
+      report.performance.push({ width, theme, relationship_geometry: geometry });
+      if (width === 1280 && theme === "light") {
+        const first = page.locator(".graph-person").first();
+        const box = await first.boundingBox(), center = await page.locator(".graph-center").boundingBox();
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down(); await page.mouse.move(center.x + center.width / 2, center.y + center.height / 2, { steps: 5 }); await page.mouse.up();
+        assert.equal(await page.locator(".graph-detail").isVisible(), false, "拖动不打开详情");
+        const dragged = await measure();
+        assert.ok(dragged.gap >= 87.4 && dragged.spacing >= 19.5, JSON.stringify(dragged));
+      }
+      await context.close();
+    }
+  });
+  await caseRun("人物线索与可展开依据、旧响应兼容", async () => {
+    const { context, page } = await open();
+    await section(page, "relationships");
+    await page.locator(".graph-person").first().focus(); await page.keyboard.press("Enter");
+    const evidence = page.locator(".peer-relations details").first();
+    assert.match(await evidence.textContent(), /朋友（推测）/);
+    await evidence.locator("summary").click();
+    assert.equal(await evidence.locator("blockquote").isVisible(), true);
+    assert.match(await evidence.textContent(), /本人陈述.*聊天记录/s);
+    assert.ok(await page.locator(".selected-edge").count() >= 2);
+    await context.close();
+    const legacy = await open("legacy-relationships");
+    await section(legacy.page, "relationships");
+    assert.equal(await legacy.page.locator(".graph-person").count(), 200);
+    assert.equal(await legacy.page.locator(".graph-peer-edge").count(), 0);
+    await legacy.context.close();
+  });
   await caseRun("关系0.1好感与冻结、409草稿复核、同号另一平台不修改", async () => {
     const { context, page } = await open("relationship-conflict");
     await section(page, "relationships");
@@ -717,7 +771,8 @@ try {
   }
   report.dto_source_stable = Object.keys(nativeDTOEvidence.sources_sha256).every(name =>
     report.dto_sources_after[name] === nativeDTOEvidence.sources_sha256[name]);
-  report.passed = report.cases.every(item => item.passed) && !report.pageErrors.length && !report.externalRequests.length && report.ui_source_stable;
+  report.passed = report.cases.every(item => item.passed) && !report.pageErrors.length &&
+    !report.externalRequests.length && report.ui_source_stable && report.dto_source_stable;
   await writeFile(new URL("browser-results.json", evidence), `${JSON.stringify(report, null, 2)}\n`);
   await browser.close();
   await new Promise(resolve => server.close(resolve));

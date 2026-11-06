@@ -3,7 +3,7 @@
     "os": "darwin 24.6.0",
     "arch": "arm64",
     "node": "v25.6.0",
-    "browser": "156.0.8078.80"
+    "browser": "156.0.8078.4"
   },
   "scope": "纯合成 fixture；无生产调用；不证明宿主鉴权与后端业务接线",
   "cases": [
@@ -73,6 +73,14 @@
     },
     {
       "name": "关系200裁剪、平台同号、键盘选择、拖动缩放暂停与搜索表10",
+      "passed": true
+    },
+    {
+      "name": "关系中心留白、200小节点分散、双主题手机与拖动禁区",
+      "passed": true
+    },
+    {
+      "name": "人物线索与可展开依据、旧响应兼容",
       "passed": true
     },
     {
@@ -1058,8 +1066,68 @@
   ],
   "performance": [
     {
+      "width": 390,
+      "theme": "light",
+      "relationship_geometry": {
+        "gap": 90.63760556544506,
+        "spacing": 21.997271407494484,
+        "width": 675.7212693776902,
+        "height": 375.68264011852557,
+        "radius": 4.5,
+        "center": [
+          360,
+          210
+        ]
+      }
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "relationship_geometry": {
+        "gap": 90.63760556544506,
+        "spacing": 21.997271407494484,
+        "width": 675.7212693776902,
+        "height": 375.68264011852557,
+        "radius": 4.5,
+        "center": [
+          360,
+          210
+        ]
+      }
+    },
+    {
+      "width": 1280,
+      "theme": "light",
+      "relationship_geometry": {
+        "gap": 90.63760556544506,
+        "spacing": 21.997271407494484,
+        "width": 675.7212693776902,
+        "height": 375.68264011852557,
+        "radius": 4.5,
+        "center": [
+          360,
+          210
+        ]
+      }
+    },
+    {
+      "width": 1280,
+      "theme": "dark",
+      "relationship_geometry": {
+        "gap": 90.63760556544506,
+        "spacing": 21.997271407494484,
+        "width": 675.7212693776902,
+        "height": 375.68264011852557,
+        "radius": 4.5,
+        "center": [
+          360,
+          210
+        ]
+      }
+    },
+    {
       "nodes": 200,
-      "interactive_ms": 123
+      "interactive_ms": 129
     }
   ],
   "motion": [
@@ -1112,7 +1180,7 @@
   "source_sha256": {
     "index.html": "070a0c2e843ec66173c4b651d2dda05543b124dd9c58c24e5ef2f158fdb0e4f6",
     "theme.js": "19a9da86102b0c7e964cd87d51306f33a354d28250897d96a4c81bd6698c2dd8",
-    "style.css": "91ea6d3b481bc5fd70f38a66556344347d598f0d03bc9973dbbfb028834fb76b",
+    "style.css": "dc948703d9d6623503d35166e3d9127366baeff6f777f1c2ec7e34d8c086a551",
     "app.mjs": "39035858f8299367a90df21735aee5edd6cf0f6657fff6cee269ba5bff9c6f19",
     "api.mjs": "f3bca253d05c425ab2ba1fce4e4e82fd1dfcd6a7039547b4d398981c564af627",
     "model.mjs": "22c8aa26c083d3961e3d3f03edb3220faf12b994966c7e758c2dd6aff7d03f6e",
@@ -1120,40 +1188,42 @@
     "dom.mjs": "a0b58f94f9538ed1896c70fbf18a7db0e00f0b5adf7277c7cc6627a2e2ed9965",
     "charts/radar.mjs": "5b343b39c4a629e410591c95ca98af7ff30b864ac0ea571c90635a5b9d2a00d1",
     "charts/energy.mjs": "ec46f09b2eddd28422f41a6e41412469f1280f67b347408f0de0373061e2321d",
-    "charts/relationships.mjs": "acbc850e2bc5c8616839a761378b9cfca78320239c4472dee7651a556db6421d",
-    "vendor/d3-force.mjs": "75a42cf06bc341243675b9dfc0a47ca160506e3b1852736a9e926f8690d595c0"
+    "charts/relationships.mjs": "ed9e172a466984da320822a0ee95429647263715b6ef60f361130d0b23695be6",
+    "vendor/d3-force.mjs": "ce5f3498070f3dd77305d31b95b7d9b4d81949f02e02ece14a14a4c4c3cf7981"
   },
   "dto_export": {
-    "captured_at": "2026-11-06T13:35:55.630426+00:00",
+    "captured_at": "2026-11-06T14:49:34.937460+00:00",
     "field_count": 81,
     "scope": "real Console DTO / synthetic host / temporary database",
     "sources_sha256": {
       "config.py": "4773b316f75c1d1171d2ff6a058d30ac1a684106994874780cc8ee985b1bec43",
       "contracts.py": "dbc6bc256d6eb58b6fff26a58c652b75a4f6ff1854ad63150ce13a19a1f15696",
-      "runtime/console.py": "11842467ef7ac194cb4ecd75a2ddd97f383fe40fba1cd06a544ea3ac5cfb0a9e",
+      "runtime/console.py": "d31d4f8288dc7d2a2480139650b66b8be448da7bc7daab6f4b55b57c296261a7",
       "storage/schema.py": "2b3d106e881595456a5198f73d10f584ebc0e47dc632e0b3c1a3c814b900e93e",
       "storage/sqlite.py": "2febb2a71165853a53886cfef170ebf8956cb6d8e516a102817badfcf868c07d",
-      "storage/state_scope.py": "cce5716c1ec8d3264c37c6d577b092f8a32a0c9d634595a8ef0f302fb688a2fe"
+      "storage/state_scope.py": "cce5716c1ec8d3264c37c6d577b092f8a32a0c9d634595a8ef0f302fb688a2fe",
+      "storage/console_data.py": "d7ccfd222565b6d00d707c5205c86499253deba1dc6dcb5db3b4ec874eec606d",
+      "domain/relationship_inference.py": "73f329394e7094180b7824a0d329826bc7cda3a524c4f5f64a839284b5ec01e9"
     }
   },
   "fixture_sha256": {
-    "fixtures.mjs": "0549c3c18b0075692ccec16674aa513a0875c2469de2c280e50e616284159b6e",
-    "fixture-bridge.mjs": "fd49ff3029e50f559b24cb4f79b8bf349e2b3036d998440fd4ae9dbbf204f6c8",
-    "native-dto.mjs": "5de2a9a56a4573f8d38f9266fc362b7faf5419230a83eff225162f61342950ce",
-    "export-native-dto.py": "630b2aa8cfb28452135da7b3a3a684c817a1943fc240779800701b1dce221246",
-    "model.test.mjs": "eae04c2baf444ea95371007f338246f2936f4abbb4f5ba712680b7166c189287",
-    "browser.test.mjs": "a501ecc61f83d686d8bba1249a97a1115cb40bdedbf66588a2acfc18d6d581f2",
+    "fixtures.mjs": "419ecac9e526f3d192db00564ea3db6ad360a1e050bca010cefc4fd6b3a5291b",
+    "fixture-bridge.mjs": "9a5a7bda56245f440e9234dc2e21b0d0f1998f163ee09d283509d0d2f689e921",
+    "native-dto.mjs": "34b11b100f51bfce25110f9bc457b6e0571603f20a82ae45beef56e77c0922b4",
+    "export-native-dto.py": "7706a3476e1db5b040f530d933e26c39c205c8edbe3860150eb6f352c776a9a6",
+    "model.test.mjs": "bab194bb999007b19e422ac9072a39e62a9f308e88e4d0e5c3cbcf4862a9d3d4",
+    "browser.test.mjs": "4cdaf4c341a5e45fc229494cd260490f6b79ad905af9ca4b9e8a54641d8ddd3c",
     "server.mjs": "c68c94613091309966ed773520a2f322c49c281ef3e765b391aaa574c634b0b9",
-    "build.mjs": "d5f7a6298767bb0df5367a2008706cf5caa353b31176f104d76619149b0d5e51",
+    "build.mjs": "e6ddce8eb8f4275fd26d60090ec595c80541d8364d8b36e0b1ba72bb81f914eb",
     "package.json": "4f352ff444277f10b19fba9873731bc436ebe1f68828237ce4231f8e06ca1e8b",
     "package-lock.json": "9799954f6ae7c8f2916e717f1f9c03d6c44470c53871f6fd9ee02006f7d5cc50"
   },
-  "completed_at": "2026-11-06T13:51:39.924Z",
-  "preview_url": "http://127.0.0.1:59888/tests/ui/fixture.html",
+  "completed_at": "2026-11-06T14:50:01.367Z",
+  "preview_url": null,
   "source_sha256_after": {
     "index.html": "070a0c2e843ec66173c4b651d2dda05543b124dd9c58c24e5ef2f158fdb0e4f6",
     "theme.js": "19a9da86102b0c7e964cd87d51306f33a354d28250897d96a4c81bd6698c2dd8",
-    "style.css": "91ea6d3b481bc5fd70f38a66556344347d598f0d03bc9973dbbfb028834fb76b",
+    "style.css": "dc948703d9d6623503d35166e3d9127366baeff6f777f1c2ec7e34d8c086a551",
     "app.mjs": "39035858f8299367a90df21735aee5edd6cf0f6657fff6cee269ba5bff9c6f19",
     "api.mjs": "f3bca253d05c425ab2ba1fce4e4e82fd1dfcd6a7039547b4d398981c564af627",
     "model.mjs": "22c8aa26c083d3961e3d3f03edb3220faf12b994966c7e758c2dd6aff7d03f6e",
@@ -1161,17 +1231,19 @@
     "dom.mjs": "a0b58f94f9538ed1896c70fbf18a7db0e00f0b5adf7277c7cc6627a2e2ed9965",
     "charts/radar.mjs": "5b343b39c4a629e410591c95ca98af7ff30b864ac0ea571c90635a5b9d2a00d1",
     "charts/energy.mjs": "ec46f09b2eddd28422f41a6e41412469f1280f67b347408f0de0373061e2321d",
-    "charts/relationships.mjs": "acbc850e2bc5c8616839a761378b9cfca78320239c4472dee7651a556db6421d",
-    "vendor/d3-force.mjs": "75a42cf06bc341243675b9dfc0a47ca160506e3b1852736a9e926f8690d595c0"
+    "charts/relationships.mjs": "ed9e172a466984da320822a0ee95429647263715b6ef60f361130d0b23695be6",
+    "vendor/d3-force.mjs": "ce5f3498070f3dd77305d31b95b7d9b4d81949f02e02ece14a14a4c4c3cf7981"
   },
   "ui_source_stable": true,
   "dto_sources_after": {
     "config.py": "4773b316f75c1d1171d2ff6a058d30ac1a684106994874780cc8ee985b1bec43",
     "contracts.py": "dbc6bc256d6eb58b6fff26a58c652b75a4f6ff1854ad63150ce13a19a1f15696",
-    "runtime/console.py": "11842467ef7ac194cb4ecd75a2ddd97f383fe40fba1cd06a544ea3ac5cfb0a9e",
+    "runtime/console.py": "d31d4f8288dc7d2a2480139650b66b8be448da7bc7daab6f4b55b57c296261a7",
     "storage/schema.py": "2b3d106e881595456a5198f73d10f584ebc0e47dc632e0b3c1a3c814b900e93e",
     "storage/sqlite.py": "2febb2a71165853a53886cfef170ebf8956cb6d8e516a102817badfcf868c07d",
-    "storage/state_scope.py": "cce5716c1ec8d3264c37c6d577b092f8a32a0c9d634595a8ef0f302fb688a2fe"
+    "storage/state_scope.py": "cce5716c1ec8d3264c37c6d577b092f8a32a0c9d634595a8ef0f302fb688a2fe",
+    "storage/console_data.py": "d7ccfd222565b6d00d707c5205c86499253deba1dc6dcb5db3b4ec874eec606d",
+    "domain/relationship_inference.py": "73f329394e7094180b7824a0d329826bc7cda3a524c4f5f64a839284b5ec01e9"
   },
   "dto_source_stable": true,
   "passed": true

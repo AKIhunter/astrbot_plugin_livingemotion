@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { normalizeState, normalizeRecords, percent, unit, fieldValue, safeKey, expired, scopeParams, baselineDimensions, energyValue } from "../../pages/livingemotion/model.mjs";
 import { createApi, unwrap, pageError } from "../../pages/livingemotion/api.mjs";
 import { makeState, nativeDTO, makeRelationships } from "./fixtures.mjs";
-import { graphData, NODE_CAP } from "../../pages/livingemotion/charts/relationships.mjs";
+import { graphData, NODE_CAP, spreadPeople, separatePeople, CENTER_CLEARANCE, PERSON_SPACING } from "../../pages/livingemotion/charts/relationships.mjs";
 import { energyPoints } from "../../pages/livingemotion/charts/energy.mjs";
 import { settingsGroups, schedulePreview } from "../../pages/livingemotion/settings.mjs";
 
@@ -61,6 +61,8 @@ test("实际 Console DTO、float单位、原生任务组单一来源", () => {
 test("关系真实DTO、平台同号隔离与200裁剪；能量不补缺失点", () => {
   const result = graphData(nativeDTO.relationships);
   assert.equal(result.items.length, 10);
+  assert.equal(result.peer_edges.length, 1);
+  assert.equal(result.peer_edges[0].relation, "朋友");
   assert.equal(new Set(result.nodes.map(item => item.id)).size, result.nodes.length);
   const nodes = makeRelationships();
   assert.notEqual(nodes[0].id, nodes[1].id);
@@ -70,6 +72,33 @@ test("关系真实DTO、平台同号隔离与200裁剪；能量不补缺失点",
   assert.equal(empty.collected, false); assert.deepEqual(empty.points, []);
   assert.equal(energyValue(null), null); assert.equal(energyValue(100), 100);
   assert.throws(() => energyPoints({ ...nativeDTO.energy, page_size: 11 }));
+});
+test("200人物自然分散、中心禁区与拖动后间距", () => {
+  const people = spreadPeople(makeRelationships().slice(0, 200));
+  assert.deepEqual(people, spreadPeople(makeRelationships().slice(0, 200)));
+  people[0].x = 360; people[0].y = 210;
+  people[1].x = people[2].x; people[1].y = people[2].y;
+  separatePeople(people, 30);
+  for (let i = 0; i < people.length; i++) {
+    assert.ok(Math.hypot(people[i].x - 360, people[i].y - 210) >= CENTER_CLEARANCE - .01);
+    assert.ok(people[i].x >= 22 && people[i].x <= 698 && people[i].y >= 22 && people[i].y <= 398);
+    for (let j = i + 1; j < people.length; j++) assert.ok(
+      Math.hypot(people[i].x - people[j].x, people[i].y - people[j].y) >= PERSON_SPACING - .1);
+  }
+});
+test("实际本地D3包包含布局所需力函数", async () => {
+  const bundle = await import("../../pages/livingemotion/vendor/d3-force.mjs");
+  for (const name of ["forceSimulation", "forceManyBody", "forceLink", "forceCollide", "forceX", "forceY"]) {
+    assert.equal(typeof bundle[name], "function", name);
+  }
+});
+test("人物连线兼容旧返回，忽略未知端点、自环与缺少依据", () => {
+  const nodes = makeRelationships().slice(0, 10);
+  const raw = { api_version: 1, nodes, items: nodes, total: 10, page_size: 10 };
+  assert.deepEqual(graphData(raw).peer_edges, []);
+  const edge = { source: nodes[0].id, target: nodes[2].id, relation: "朋友", evidence: [{ excerpt: "合成" }] };
+  assert.equal(graphData({ ...raw, peer_edges: [edge, edge, { ...edge, target: "outside" },
+    { ...edge, target: edge.source }, { ...edge, evidence: [] }, { ...edge, evidence: [null] }] }).peer_edges.length, 1);
 });
 test("宿主响应包装、401、403和409保留语义", () => {
   assert.deepEqual(unwrap({ status: "ok", data: { api_version: 1 } }), { api_version: 1 });

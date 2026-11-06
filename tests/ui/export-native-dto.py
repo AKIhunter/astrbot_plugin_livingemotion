@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT.parent))
 
 from astrbot_plugin_livingemotion.config import Config
-from astrbot_plugin_livingemotion.contracts import Context, NightState, SceneKind
+from astrbot_plugin_livingemotion.contracts import Context, Event, NightState, SceneKind
 from astrbot_plugin_livingemotion.domain.emotion import EmotionPolicy
 from astrbot_plugin_livingemotion.runtime.console import Console
 from astrbot_plugin_livingemotion.storage import SQLiteStore
@@ -68,6 +68,10 @@ async def main():
                                     scene_id="synthetic-group"))
             for source in contexts:
                 await store.register_context(source)
+            message = Event("fixture-relationship", "synthetic", "message", context, "human",
+                            1_800_000_000.0, "synthetic-relationship-source",
+                            actor_id=context.account_id, body="我和@10002是朋友")
+            assert (await store.commit_event(message, 0)).accepted
             app = FixtureConsole(store, contexts)
             selection = {"persona_id": context.persona_id, "view_scope": "global"}
             options = await app.console_settings_options()
@@ -83,7 +87,8 @@ async def main():
                 "energy": await app.console_energy(**selection),
             }
             sources = ("config.py", "contracts.py", "runtime/console.py", "storage/schema.py",
-                       "storage/sqlite.py", "storage/state_scope.py")
+                       "storage/sqlite.py", "storage/state_scope.py", "storage/console_data.py",
+                       "domain/relationship_inference.py")
             provenance = {
                 "captured_at": datetime.now(timezone.utc).isoformat(),
                 "field_count": len(state["config"]["fields"]),

@@ -9,8 +9,9 @@ from decimal import Decimal
 import json
 import math
 
-from ..contracts import Context, Relationship, canonical_json, stable_key, to_dict
+from ..contracts import ActorRole, ContentKind, Context, Event, Relationship, canonical_json, stable_key, to_dict
 from ..domain.relationship import relationship_stage
+from ..domain.relationship_inference import RelationshipStatement, infer_relationships
 
 OVERRIDE_PREFIX = "console.relationship.override.v1:"
 
@@ -208,7 +209,8 @@ async def query_relationships(store, instance_id, selection, *, page=1, page_siz
         raise ValueError("invalid relationship query")
     def read(db):
         groups = {}
-        for context in _selected(_contexts(db, instance_id), selection):
+        contexts = _selected(_contexts(db, instance_id), selection)
+        for context in contexts:
             if context.account_id and query.casefold() in context.account_id.casefold():
                 groups.setdefault(relationship_account_key(context), []).append(context)
         nodes = [_relationship_node(db, sources) for sources in groups.values()]
@@ -216,14 +218,71 @@ async def query_relationships(store, instance_id, selection, *, page=1, page_siz
         center = {"id": stable_key(instance_id, selection["persona_id"]),
                   "persona_id": selection["persona_id"]}
         visible = nodes[:limit]
+        statements = _relationship_statements(db, store, contexts)
         return {"center": center, "nodes": visible,
                 "edges": [{"source": center["id"], "target": n["id"], "score": n["score"]}
                           for n in visible],
                 "items": nodes[(page - 1) * page_size:page * page_size],
                 "total": len(nodes), "displayed": len(visible), "page": page,
-                "page_size": page_size}
+                "page_size": page_size,
+                "peer_edges": infer_relationships(visible, statements)}
     return await store._run(read)
 
+
+def _relationship_statements(db, store, contexts):
+    """One bounded snapshot: current generations, exact identities and live bodies."""
+    known = {c.account_key: c for c in contexts}
+    if not known:
+        return []
+    now = store.clock()
+    rows = db.execute(
+        "SELECT e.*,w.body FROM body_window w JOIN events e "
+        "ON e.seq=w.seq AND e.scope_key=w.scope_key AND e.occurred_at=w.occurred_at "
+        "JOIN scopes s ON e.scope_key=s.scope_key AND e.generation=s.generation "
+        "WHERE e.scope_key IN (SELECT value FROM json_each(?)) "
+        "AND e.actor_role='human' AND e.event_type='message' "
+        "AND e.occurred_at>? AND e.occurred_at<=? "
+        "ORDER BY e.occurred_at DESC,e.seq DESC LIMIT 400",
+        (canonical_json(list({c.scope_key for c in contexts})),
+         now - store.config.window_days * 86400, now),
+    )
+    statements = []
+    for row in rows:
+        try:
+            event = Event.from_dict(json.loads(row["metadata_json"]))
+        except (ValueError, TypeError, KeyError):
+            continue
+        if (known.get(event.context.account_key) != event.context
+                or event.actor_role != ActorRole.HUMAN or not event.reliable_source
+                or event.actor_id != event.context.account_id
+                or event.context.account_id != row["account_id"]
+                or event.event_type != "message" or event.idempotency_key != row["event_key"]
+                or event.occurred_at != row["occurred_at"]
+                or any(ref.kind != ContentKind.INTERACTION or replace(ref.context, route=None) != event.context
+                       or ref.occurred_at > now or ref.expires_at is not None and ref.expires_at <= now
+                       for ref in event.evidence)):
+            continue
+        statements.append(RelationshipStatement(
+            event.context, event.source_id, "聊天记录", event.occurred_at, row["body"],
+            event.actor_id,
+        ))
+    return statements
+
+
+async def project_relationship_clues(store, instance_id, selection, nodes, extra=(), *,
+                                     memory_generation=None):
+    """Re-read records after optional I/O so deletion/denial remains authoritative."""
+    def read(db):
+        contexts = _selected(_contexts(db, instance_id), selection)
+        known = {c.account_key: c for c in contexts}
+        current = [n for n in nodes if any(relationship_account_key(c) == n["id"] for c in contexts)]
+        current_generation = (db.execute("SELECT generation FROM scopes WHERE scope_key=?",
+                                        (memory_generation[0],)).fetchone()
+                              if memory_generation else None)
+        valid = not memory_generation or current_generation and current_generation[0] == memory_generation[1]
+        allowed = [s for s in extra if valid and known.get(s.context.account_key) == s.context]
+        return infer_relationships(current, [*_relationship_statements(db, store, contexts), *allowed])
+    return await store._run(read)
 
 async def query_console_records(store, instance_id, selection, kind, *,
                                 page=1, page_size=10, query=""):

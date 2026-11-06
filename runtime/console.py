@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import inspect
 import heapq
-from dataclasses import fields
+from dataclasses import fields, replace
 from uuid import uuid4
 
 from ..config import Config
@@ -13,7 +13,7 @@ from ..contracts import BotAffect, Context, HumanObservation, SceneKind, to_dict
 from ..domain.emotion import DIMENSIONS, EmotionPolicy, decay_affect
 from ..storage.console_data import (
     apply_relationship_override, context_dto, query_console_records, query_relationships,
-    query_scopes, selected_contexts, write_relationship_override,
+    project_relationship_clues, query_scopes, selected_contexts, write_relationship_override,
 )
 from ..services.experience import dream_view
 from .projector import snapshot
@@ -408,14 +408,74 @@ class Console:
     async def console_relationships(self, persona_id, view_scope="global", context_id="",
                                     platform="", page=1, page_size=10, query="", limit=200):
         self._open()
-        selection, _ = await self._selection(persona_id, view_scope, context_id, platform)
+        selection, contexts = await self._selection(persona_id, view_scope, context_id, platform)
         try:
             result = await query_relationships(self.store, self.instance_id, selection,
                                                page=page, page_size=page_size,
                                                query=query, limit=limit)
         except ValueError:
             raise ApplicationError("validation_error", "Invalid relationship query") from None
+        if self.config.memory_read and contexts and result["nodes"]:
+            supplement = await self._relationship_memory(contexts)
+            # Recall can wait for I/O. Refresh local rows even when the supplement fails.
+            result = await query_relationships(self.store, self.instance_id, selection,
+                                              page=page, page_size=page_size, query=query, limit=limit)
+            if supplement and self.config.memory_read:
+                context, generation, statements = supplement
+                result["peer_edges"] = await project_relationship_clues(
+                    self.store, self.instance_id, selection, result["nodes"], statements,
+                    memory_generation=(context.scope_key, generation))
         return {"api_version": 1, "selection": selection, **result}
+
+    async def _relationship_memory(self, contexts):
+        """Optional public memory API; no synthetic event or private store scan."""
+        from ..adapters.memory.base import material_allowed
+        from ..contracts import ContentKind
+        from ..domain.relationship_inference import RelationshipStatement
+        from ..ports.memory import MemoryRequest
+        try:
+            # Find one retained real event; discovery is bounded, recall happens once.
+            context, event = None, None
+            for candidate in contexts[:8]:
+                source = await self.bridge.current(candidate)
+                current_event = source.event() if source else None
+                if current_event is not None:
+                    context, event = candidate, current_event
+                    break
+            if context is None:
+                return
+            generation = await self.store.get_generation(context)
+            if not await self.validate_context(context, generation):
+                return
+            request = MemoryRequest(uuid4().hex, "relationships", context,
+                                    query="朋友 同事 同学 家人 室友 搭档 人物关系", limit=4)
+            recalled = await self.memory.recall(request, event=event)
+            materials = recalled.materials[:4]
+            if not materials:
+                return
+            validated = await self.memory.validate_evidence(request, materials, event=event)
+            if not validated.valid or validated.materials != materials:
+                return
+            statements = []
+            for material in materials:
+                ref = material.evidence
+                if (not material_allowed(material, context, self.store.clock())
+                        or ref.kind not in (ContentKind.INTERACTION, ContentKind.FACT, ContentKind.SUMMARY)
+                        or ref.kind == ContentKind.SUMMARY and not ref.source_ids):
+                    continue
+                statements.append(RelationshipStatement(
+                    replace(ref.context, route=None), ref.source_id, "记忆", ref.occurred_at, material.text,
+                    ref.subject_id if ref.kind == ContentKind.INTERACTION
+                    and ref.subject_id == context.account_id else "",
+                    "记忆摘要" if ref.kind == ContentKind.SUMMARY else "记忆陈述",
+                ))
+            # A deletion or identity change while recalling cannot authorize a stale clue.
+            final = await self.memory.validate_evidence(request, materials, event=event)
+            if (final.valid and final.materials == materials
+                    and await self.validate_context(context, generation) and self.config.memory_read):
+                return context, generation, statements
+        except Exception:  # Optional recall failure preserves the local-record graph.
+            return
 
     async def console_relationship(self, persona_id, platform, account_id, *,
                                    expected_version, actor_id, reason, context_id="",

@@ -1,4 +1,4 @@
-import { makeState, makeRecords, makeScopes, makeRelationships, makeEnergy, nativeDTO, ATTACK } from "./fixtures.mjs";
+import { makeState, makeRecords, makeScopes, makeRelationships, makePeerEdges, makeEnergy, nativeDTO, ATTACK } from "./fixtures.mjs";
 
 const scenario = new URLSearchParams(location.search).get("scenario") || "normal";
 const calls = [];
@@ -64,6 +64,8 @@ const bridge = {
       const nodes = filtered.slice(0, params.limit || 200);
       return { status: "ok", data: { api_version: 1, center: { id: "center", persona_id: params.persona_id },
         nodes: clone(nodes), edges: nodes.map(item => ({ source: "center", target: item.id })),
+        peer_edges: scenario === "legacy-relationships" ? undefined : makePeerEdges(relationships)
+          .filter(edge => nodes.some(n => n.id === edge.source) && nodes.some(n => n.id === edge.target)),
         items: clone(filtered.slice((params.page - 1) * 10, params.page * 10)), total: filtered.length, displayed: nodes.length, page: params.page, page_size: 10 } };
     }
     if (path === "console/energy") {

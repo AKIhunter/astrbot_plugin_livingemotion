@@ -26,7 +26,7 @@ GET scopes 可不带参数，用于首次发现人格；其余新接口必须指
 | GET scopes | 可选 persona_id/view_scope/context_id/platform；personas[{id,name}]、platforms[]、contexts[{id,persona_id,platform,view_scope,scene_id,account_id,label}]、counts{global,private,group} |
 | GET state | 旧 context_id 或 ScopeSelection；原字段＋selection、state_mode、bot_state.baseline（0–1四维）、night.display_state（awake/nap/groggy/drowsy/deep_sleep）、night.energy_percent（0–100） |
 | GET records | 旧参数或 ScopeSelection，kind=emotion/behavior/diary/dream、page、page_size=10、query≤200；items/total/page/page_size。emotion 只查情绪 trace，不查日记 |
-| GET relationships | ScopeSelection、query≤200（账号搜索）、page、page_size=10、limit≤200（默认200）；center{id,persona_id}、nodes[]、edges[]、items[]、total、displayed、page/page_size |
+| GET relationships | ScopeSelection、query≤200（账号搜索）、page、page_size=10、limit≤200（默认200）；center{id,persona_id}、nodes[]、edges[]、可选peer_edges[]、items[]、total、displayed、page/page_size |
 | POST relationship | persona_id、platform、account_id、可选真实 context_id、score（展示0–100，步进0.1）和/或 frozen（bool）、expected_version（非负整数）、reason；返回 node 与 version |
 | GET energy | ScopeSelection、page、page_size=10、可选 event_type；window_start/window_end、timezone、collected、reason、points[]、items[]、total/page/page_size；默认24小时，无旧历史则 collected=false，不伪造点 |
 | GET settings-options | 无参数；personas[]、chat_providers[]、embedding_providers[]、groups[]；每个选项仅 value/label，不输出密钥或配置对象 |
@@ -35,8 +35,15 @@ GET scopes 可不带参数，用于首次发现人格；其余新接口必须指
 account_id（原样）、label、score（0–100）、raw（0–1000）、normalized（0–1）、
 stage、trust/familiarity/boundary（缺失为null）、frozen、source_completeness、
 sources[{context_id,platform,view_scope,scene_id}]、version、updated_at。
-图 nodes 与表 items 来自同一次查询的同一数据集；edges 仅 center→node，
-不创建人物之间的边。total 是筛选后的完整数量，displayed 是 nodes 数量。
+图 nodes 与表 items 来自同一次查询的同一数据集；edges 仅 center→node。
+可选 peer_edges[{id,source,target,relation,inferred:true,evidence[]}] 连接已绘制人物。
+evidence 包含 source_id、kind、at、context_id、platform、view_scope、scene_id、basis、excerpt。
+只推导明确的关系陈述，最新否定撤销旧陈述；不修改好感，不跨平台合并同号，
+不输出猜测概率。记录最多读取400条有效期内的当前代际正文，排除机器人及日梦材料。
+memory_read 开启后，最多检查8个当前来源以找到一个真实事件，经现有公开接口读取
+最多4条记忆并最终校验；异常保留记录图，等待期间的删除会重读记录并检查代际。
+不迁移数据库，不持久化推测或复制外部记忆。total 是筛选后的完整数量，
+displayed 是 nodes 数量。规则有意保守，不覆盖所有别名、隐喻或跨条目综合。
 版本指账号覆盖版本（无覆盖为0），不冒充单会话 state 版本。
 
 ## 设置单一来源

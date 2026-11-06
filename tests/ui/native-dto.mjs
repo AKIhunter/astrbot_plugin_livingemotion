@@ -3925,7 +3925,29 @@ export const nativeDTO = {
     "total": 24,
     "displayed": 24,
     "page": 1,
-    "page_size": 10
+    "page_size": 10,
+    "peer_edges": [
+      {
+        "id": "00733abfc39a938702b7b5cc4ebf416d537541ac939c2203a9fa0e9288549550",
+        "source": "8b66532908389711e30d79b3917511c025d649e0226170c95b6ebc9329086a90",
+        "target": "c867fc2832983b115f4466680aa31ae1d6c9f4361f64f285c0ab0734fe072d9d",
+        "relation": "朋友",
+        "inferred": true,
+        "evidence": [
+          {
+            "source_id": "synthetic-relationship-source",
+            "kind": "聊天记录",
+            "at": 1800000000.0,
+            "context_id": "af4c64efe2bd84af88a5b125e64520e83d16c8bb664e2c9544f66edd5c0eca8c",
+            "platform": "qq",
+            "view_scope": "private",
+            "scene_id": "synthetic-chat",
+            "basis": "本人陈述",
+            "excerpt": "我和@10002是朋友"
+          }
+        ]
+      }
+    ]
   },
   "energy": {
     "api_version": 1,
@@ -3950,15 +3972,17 @@ export const nativeDTO = {
   }
 };
 export const nativeDTOEvidence = {
-  "captured_at": "2026-11-06T13:35:55.630426+00:00",
+  "captured_at": "2026-11-06T14:49:34.937460+00:00",
   "field_count": 81,
   "scope": "real Console DTO / synthetic host / temporary database",
   "sources_sha256": {
     "config.py": "4773b316f75c1d1171d2ff6a058d30ac1a684106994874780cc8ee985b1bec43",
     "contracts.py": "dbc6bc256d6eb58b6fff26a58c652b75a4f6ff1854ad63150ce13a19a1f15696",
-    "runtime/console.py": "11842467ef7ac194cb4ecd75a2ddd97f383fe40fba1cd06a544ea3ac5cfb0a9e",
+    "runtime/console.py": "d31d4f8288dc7d2a2480139650b66b8be448da7bc7daab6f4b55b57c296261a7",
     "storage/schema.py": "2b3d106e881595456a5198f73d10f584ebc0e47dc632e0b3c1a3c814b900e93e",
     "storage/sqlite.py": "2febb2a71165853a53886cfef170ebf8956cb6d8e516a102817badfcf868c07d",
-    "storage/state_scope.py": "cce5716c1ec8d3264c37c6d577b092f8a32a0c9d634595a8ef0f302fb688a2fe"
+    "storage/state_scope.py": "cce5716c1ec8d3264c37c6d577b092f8a32a0c9d634595a8ef0f302fb688a2fe",
+    "storage/console_data.py": "d7ccfd222565b6d00d707c5205c86499253deba1dc6dcb5db3b4ec874eec606d",
+    "domain/relationship_inference.py": "73f329394e7094180b7824a0d329826bc7cda3a524c4f5f64a839284b5ec01e9"
   }
 };
