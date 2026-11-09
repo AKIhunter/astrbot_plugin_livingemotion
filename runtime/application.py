@@ -492,10 +492,28 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             self._host_submissions.popitem(last=False)
         return True
 
+    async def _native_freshness_valid(self, event, context, lease):
+        watermark = await self.store.human_watermark(context)
+        # 群聊发送由 LivingHello 复核撤回、黑名单与有效期；新群消息本身
+        # 不撤销已生成的回复。私聊、未接管的事件仍使用严格水位保护。
+        policy = event.get_extra("_livinghello_policy_send_check")
+        freshness = event.get_extra("_at_guard_send_check")
+        if (context.scene_kind == SceneKind.GROUP
+                and callable(policy) and callable(freshness)
+                and callable(getattr(event, "get_group_id", None))
+                and str(event.get_group_id()) == context.scene_id):
+            if event.get_extra("_at_guard_delivery_blocked"):
+                return False
+            try:
+                return policy() in ("", None) and freshness() in ("", None)
+            except Exception:
+                return False
+        return watermark == lease["watermark"]
+
     async def _native_reply_valid(self, event, context, lease, *, memory=True):
         if (lease["revision"] != self.revision
                 or not await self.validate_context(context, lease["generation"])
-                or await self.store.human_watermark(context) != lease["watermark"]):
+                or not await self._native_freshness_valid(event, context, lease)):
             return False
         memory_lease = event.get_extra("livingemotion:memory_lease")
         if memory and memory_lease:
@@ -503,7 +521,9 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             validated = await self.memory.validate_evidence(request, materials, event=event)
             if not validated.valid or validated.materials != materials:
                 return False
-        return lease["revision"] == self.revision and self.effective_mode(context) == "active"
+        return (lease["revision"] == self.revision and self.effective_mode(context) == "active"
+                and await self.validate_context(context, lease["generation"])
+                and await self._native_freshness_valid(event, context, lease))
 
     async def _inject_recalled_memory(self, event, request, context):
         event.set_extra("livingemotion:memory_lease", None)
@@ -709,7 +729,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                 ticket = self._reply_tickets[lease["attempt_id"]]
                 if (ticket and lease["revision"] == self.revision
                         and lease["generation"] == await self.store.get_generation(context)
-                        and lease["watermark"] == await self.store.human_watermark(context)
+                        and await self._native_freshness_valid(event, context, lease)
                         and (night.display_state or night.phase).value != "deep_sleep"
                         and (night.wake_window_deadline is None
                              or self.store.clock() < night.wake_window_deadline)):
