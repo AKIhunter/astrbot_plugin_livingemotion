@@ -17,7 +17,10 @@
       control.setAttribute("aria-pressed", String(control.dataset.themeChoice === theme));
     });
     const status = document.getElementById("theme-status");
-    if (status) status.textContent = !stored ? "仅本次页面有效" : manual ? "已记住偏好" : "跟随系统";
+    if (status) {
+      const label = !stored ? "仅本次页面有效" : manual ? "已记住偏好" : "跟随系统";
+      status.textContent = window.livingEmotionTranslate ? window.livingEmotionTranslate(label) : label;
+    }
   }
   function finish(token) {
     if (active !== token) return;
@@ -69,6 +72,7 @@
     token.animation.finished.catch(() => {}).finally(() => { paint(pending || reduced.matches ? desired() : theme); cover.remove(); finish(token); });
   }
   paint();
+  window.addEventListener("livingemotion:locale", () => paint());
   document.addEventListener("DOMContentLoaded", () => paint(), { once: true });
   document.addEventListener("click", event => {
     const control = event.target.closest("[data-theme-choice]");

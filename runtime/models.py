@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import inspect
+import json
+from datetime import datetime
 from contextvars import ContextVar
+from zoneinfo import ZoneInfo
 
 from ..adapters.weather import OpenMeteoWeather
 from ..contracts import canonical_json, stable_key
-from ..services.experience import ExperiencePolicy, ExperienceService
+from ..services.experience import LENIENT_SAVE, ExperiencePolicy, ExperienceService
 from ..domain.proactivity import motive_for
 from ..storage.proactivity import record_topic_use
 from .background import ModelResultUnknown
@@ -113,26 +117,88 @@ class Generation:
     async def model_binding(self, context, purpose=""):
         if not await self.validate_context(context) or self.effective_mode(context) != "active":
             raise ModelUnavailable("context_changed")
+        return await self._select_model_binding(purpose, context.route)
+
+    async def manual_model_binding(self, purpose):
+        if self.closed or purpose not in ("diary", "dream"):
+            raise ModelUnavailable("executor_stopped")
+        # Only an already saved real route may ask the host for its current model.
+        route = next((c.route for c in reversed(tuple(self._contexts.values()))
+                      if c.route and c.persona_id == self.config.persona_id), None)
+        return await self._select_model_binding(purpose, route)
+
+    async def _select_model_binding(self, purpose, route=None):
         selected = getattr(self.config, purpose + "_provider_id", "") if purpose in (
             "diary", "dream", "catchup", "closing", "behavior",
         ) else ""
-        candidates = [selected or self.config.provider_id]
-        if not candidates[0]:
+        candidates = [selected, self.config.provider_id]
+        if not any(candidates) and route:
             try:
-                candidates[0] = await self.host.get_current_chat_provider_id(context.route)
+                candidates.append(await self.host.get_current_chat_provider_id(route))
             except Exception:  # noqa: BLE001 - optional native provider discovery.
-                candidates[0] = ""
+                pass
         if self.config.fallback_provider_id:
             candidates.append(self.config.fallback_provider_id)
+        failure = "model_unavailable"
         for pid in dict.fromkeys(candidates):
             if not pid:
                 continue
             try:
-                provider = await self.host.provider_manager.get_provider_by_id(pid)
+                provider = self.host.provider_manager.get_provider_by_id(pid)
+                # Host managers and existing asynchronous fixtures both occur.
+                if inspect.isawaitable(provider):
+                    provider = await provider
                 return OpenAIBinding(provider)
-            except (ValueError, AttributeError, ImportError):
+            except ModelUnavailable as exc:
+                failure = (str(exc) if str(exc) in (
+                    "provider_budget_contract_unsupported", "model_unavailable")
+                    else "model_unavailable")
+            except (ValueError, AttributeError, ImportError, TypeError):
                 continue
-        raise ModelUnavailable("provider_budget_contract_unavailable")
+        raise ModelUnavailable(failure)
+
+    async def model_preflight(self, context, purpose=""):
+        """Validate selection without generating text or exposing provider secrets."""
+        try:
+            await self.model_binding(context, purpose=purpose)
+            return {"available": True, "reason_code": "ready"}
+        except ModelUnavailable as exc:
+            code = str(exc)
+            return {"available": False, "reason_code": code if code in (
+                "context_changed", "model_unavailable", "provider_budget_contract_unsupported",
+            ) else "model_unavailable"}
+        except Exception:
+            return {"available": False, "reason_code": "model_unavailable"}
+
+    async def experience_guard(self, source, generation=None):
+        """日记/梦境的最终授权：身份 + 模式 + 来源；生成期间的水位由调用方另查。
+
+        手动生成（管理员显式指令）不要求「此刻有实时消息」：会话安静很久时
+        bridge.current 已经解析不出 source，但素材还在库里。授权退到
+        validate_manual（实例/配置/来源类型），素材范围仍逐条校验。
+        """
+        allowed = await self.validate_context(source, generation)
+        if not allowed and LENIENT_SAVE.get():
+            allowed = await self.validate_manual(source)
+        if not allowed:
+            return False
+        # 已封存窗口（手动补写过去的某天 / 手动做梦）：授权/模式仍然校验，
+        # 但不再要求生成期间没有新消息——那些新消息属于今天，不属于这一天。
+        if LENIENT_SAVE.get():
+            return self.effective_mode(source) == "active" and (
+                await self.legacy_constraints(source, _generation_purpose.get()))["allowed"]
+        lease = _generation_sources.get()
+        if lease:
+            if self.effective_mode(source) != "active":
+                return False
+            if not (await self.legacy_constraints(
+                    source, _generation_purpose.get()))["allowed"]:
+                return False
+            for original, gen, watermark in lease:
+                if (not await self.validate_context(original, gen)
+                        or await self.store.human_watermark(original) != watermark):
+                    return False
+        return True
 
     async def _purpose_binding(self, context, purpose):
         # Keep existing one-argument host fixtures and consumers valid by default.
@@ -202,6 +268,9 @@ class Generation:
                           for m in request.materials],
         })
         if request.intent.purpose.startswith("proactive:"):
+            from ..domain.relationship import relationship_behavior
+            from ..storage.console_data import read_relationship_override
+            override = await read_relationship_override(self.store, context)
             _, label, guidance = motive_for(request.intent.purpose)
             system += (
                 " You are initiating a natural conversation, not answering a request. "
@@ -215,6 +284,8 @@ class Generation:
                 "motive": label, "guidance": guidance,
                 "scene": context.scene_kind.value,
                 "relationship": {
+                    **relationship_behavior(request.snapshot.relationship.score, self.config,
+                                             note=(override or {}).get("note", "")),
                     "closeness": request.snapshot.relationship.normalized,
                     "trust": request.snapshot.relationship.trust,
                     "boundary": request.snapshot.relationship.boundary,
@@ -310,33 +381,45 @@ class Generation:
             return text
 
         async def guard(source, generation):
-            if not await self.validate_context(source, generation):
-                return False
-            lease = _generation_sources.get()
-            if lease:
-                if self.effective_mode(source) != "active":
-                    return False
-                if not (await self.legacy_constraints(
-                        source, _generation_purpose.get()))["allowed"]:
-                    return False
-                for original, gen, watermark in lease:
-                    if (not await self.validate_context(original, gen)
-                            or await self.store.human_watermark(original) != watermark):
-                        return False
-            return True
+            return await self.experience_guard(source, generation)
 
         async def authorize(credential, operation, source):
             return (credential is self._admin and operation in ("private_read", "pin")
                     and not self.closed and source.instance_id == self.instance_id)
 
         async def save(experience, generations):
+            if LENIENT_SAVE.get():
+                # 写入瞬间取最新版本号：仍然做一次 CAS（避免与 clear/重置竞态），
+                # 但基准是"现在"，不是"开始生成时"，因此活跃会话也能落库。
+                try:
+                    fresh = tuple((source, await self.store.get_generation(source))
+                                  for source, _generation in generations)
+                except Exception:
+                    return {"status": "rejected", "reason_code": "context_changed"}
+                if not fresh or not all([await guard(source, gen) for source, gen in fresh]):
+                    return {"status": "rejected", "reason_code": "context_changed"}
+                # 手动（relaxed）重写同一天：覆盖旧内容，而不是留下第一条。
+                result = await self.store.save_experience_guarded(
+                    experience, fresh, replace_existing=LENIENT_SAVE.get())
+                auto_memory = getattr(self, "auto_memory", None)
+                if result.get("status") in ("created", "duplicate") and auto_memory is not None:
+                    await auto_memory.ingest_experience(experience, generations=fresh)
+                return result
             if not all([await guard(source, gen) for source, gen in generations]):
                 return {"status": "rejected", "reason_code": "context_changed"}
-            return await self.store.save_experience_guarded(
+            day = (experience.period if experience.kind.value == "diary" else
+                   datetime.fromtimestamp(experience.created_at, ZoneInfo(
+                       self.config.timezone or "Asia/Shanghai")).date().isoformat())
+            result = await self.store.save_auto_daily(
                 experience, generations,
+                timezone=self.config.timezone or "Asia/Shanghai", day=day,
                 watermarks=tuple((source, watermark) for source, _, watermark
                                  in _generation_sources.get()),
             )
+            auto_memory = getattr(self, "auto_memory", None)
+            if result.get("status") in ("created", "duplicate") and auto_memory is not None:
+                await auto_memory.ingest_experience(experience, generations=generations)
+            return result
 
         async def pin(old, new, generation):
             actor = _pin_actor.get()
@@ -368,6 +451,9 @@ class Generation:
                 timeout_seconds=self.config.model_timeout_seconds,
                 export_enabled=self.config.memory_export,
                 home_city=getattr(self.config, "home_city", ""),
+                dream_theme_pool=json.loads(self.config.dream_theme_pool),
+                dream_owner_notify=self.config.dream_owner_notify,
+                dream_owner_qq=self.config.dream_owner_qq,
             ),
         )
         self._services[key] = service

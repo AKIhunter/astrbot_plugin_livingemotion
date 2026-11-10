@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping
 from zoneinfo import ZoneInfo
 
+import json
+
 from ..contracts import (
     ActorRole, Context, Event, Relationship, RelationshipContribution, SceneKind,
     stable_key, to_dict,
@@ -22,8 +24,20 @@ from .emotion import (
     _stimulus_allowance, event_signals, resolve_mode,
 )
 
-RULE_VERSION = "relationship-1"
+RELATIONSHIP_STAGE_NAMES = (
+    "反感", "陌生", "友好", "亲近", "独特",
+)
+RELATIONSHIP_STAGE_DESCRIPTIONS = (
+    "反感：保持距离，可以冷淡或表达不满，不羞辱、威胁或攻击对方；正经任务仍可靠。",
+    "陌生：礼貌、谨慎，先了解对方，避免擅自亲密。",
+    "友好：自然友善，肯定对方的善意、合理批评和教导。",
+    "亲近：更主动关心、温柔陪伴，关怀程度加倍，尊重对方边界。",
+)
+RELATIONSHIP_DEFAULT_SCORE = 200.0
+
+RULE_VERSION = "relationship-2"
 SCORE_RULES = {
+    "insult": -6.0, "praise": 2.0, "constructive_criticism": 3.0, "teaching": 3.0,
     "interaction": 0.5, "sadness": 0.5, "anxiety": 0.5, "joy": 1.0,
     "care": 3.0, "gratitude": 2.0, "conflict": -5.0, "apology": 2.0,
     "boundary_respected": 3.0, "boundary_violated": -5.0,
@@ -77,14 +91,46 @@ def _day(at: float, policy: RelationshipPolicy) -> str:
 
 
 def relationship_stage(score: float) -> str:
+    """显示分数raw/10；连续小数按下一档下界划分，100为管理员独特档。"""
     _number(score, "score", 0, 1000)
-    for ceiling, label in (
-        (100, "unestablished"), (300, "acquainted"),
-        (600, "familiar"), (850, "close"),
-    ):
-        if score < ceiling:
-            return label
-    return "trusted"
+    return f"stage_{sum(score >= threshold for threshold in (110, 250, 450, 1000))}"
+
+
+def stage_names(names):
+    """Accept the old 11 names and preserve the administrator's special name."""
+    return [names[i] for i in (0, 2, 5, 6, 10)] if len(names) == 11 else list(names)
+
+
+def initial_relationship() -> Relationship:
+    """仅用于不存在的关系；默认值不是可跨来源累加的真实证据。"""
+    return Relationship(score=RELATIONSHIP_DEFAULT_SCORE,
+                        stage=relationship_stage(RELATIONSHIP_DEFAULT_SCORE),
+                        evidence_complete=False, reason_codes=("initial_relationship_default",))
+
+
+def relationship_stage_dto(score: float, config=None) -> dict[str, Any]:
+    key = relationship_stage(score)
+    index = int(key.rsplit("_", 1)[1])
+    names = (json.loads(config.relationship_stage_names) if config is not None
+             else RELATIONSHIP_STAGE_NAMES)
+    names = stage_names(names)
+    name = names[index].strip() or RELATIONSHIP_STAGE_NAMES[index]
+    return {"stage": key, "stage_key": key, "stage_index": index, "stage_name": name,
+            "stage_type": RELATIONSHIP_STAGE_NAMES[index]}
+
+
+def relationship_behavior(score, config=None, *, note=""):
+    stage = relationship_stage_dto(score, config)
+    index = stage["stage_index"]
+    custom = json.loads(getattr(config, "relationship_stage_descriptions", '["","","",""]'))
+    descriptions = (
+        *(value.strip() or default for value, default in zip(custom, RELATIONSHIP_STAGE_DESCRIPTIONS)),
+        note or (getattr(config, "relationship_special_description", "") if config else "")
+        or "独特：遵循管理员定义的特殊关系，自然关心并尊重边界。",
+    )
+    return {**stage, "score": round(score / 10, 2), "raw_score": score,
+            "care_multiplier": 2 if index >= 3 else 1,
+            "description": descriptions[index], "ordinary_max": 99}
 
 
 def _budgets(runtime: Mapping[str, Any] | None, *, now: float,
@@ -159,6 +205,10 @@ def apply_relationship(
         window=policy.similar_window, max_events=policy.max_events,
     )
     guard["days"] = _budgets(runtime, now=now, policy=policy)
+    # 重复/乱序/冻结的早退也必须保留负向预算，不能靠重放恢复扣分额度。
+    if (runtime or {}).get("negative_days"):
+        guard["negative_days"] = _budgets(
+            {"days": runtime["negative_days"]}, now=now, policy=policy)
     result["runtime"] = guard
     if problem:
         result["reason_codes"] = (problem,)
@@ -167,8 +217,18 @@ def apply_relationship(
         _record_guard(guard, event, 0)
         result["reason_codes"] = ("relationship_frozen",)
         return result
+    if state.score == 1000 and "manual_correction" in state.reason_codes:
+        _record_guard(guard, event, 0)
+        result["reason_codes"] = ("administrator_special_relationship",)
+        return result
     day = _day(event.occurred_at, policy)
-    available = max(0.0, policy.daily_budget - guard["days"].get(day, 0.0))
+    signals = event_signals(event)
+    negative = any(SCORE_RULES.get(s, 0) < 0 for s in signals)
+    if negative or (runtime or {}).get("negative_days"):
+        guard["negative_days"] = _budgets(
+            {"days": (runtime or {}).get("negative_days", {})}, now=now, policy=policy)
+    bucket = guard["negative_days"] if negative else guard["days"]
+    available = max(0.0, policy.daily_budget - bucket.get(day, 0.0))
     similar = _stimulus_allowance(guard, event, limit=policy.similar_limit,
                                   budget=policy.similar_budget)
     limit = min(policy.event_cap, available, similar)
@@ -179,7 +239,9 @@ def apply_relationship(
             else "similar_stimulus_limited" if similar <= 0
             else "event_budget_disabled",)
         return result
-    signals = event_signals(event)
+    # 恶语优先：同一条消息里的夸奖/教导不能抵消辱骂；刷赞限额不能免掉恶语扣分。
+    if "insult" in signals:
+        signals = tuple(s for s in signals if SCORE_RULES.get(s, 0) < 0)
     proposed = [SCORE_RULES[s] * event.confidence for s in signals if s in SCORE_RULES]
     absolute = sum(abs(value) for value in proposed)
     if absolute == 0:
@@ -188,7 +250,7 @@ def apply_relationship(
         return result
     charged = min(limit, absolute)
     scale = charged / absolute
-    score = max(0.0, min(1000.0, state.score + sum(proposed) * scale))
+    score = max(0.0, min(990.0, state.score + sum(proposed) * scale))
     changes = []
     reasons = tuple("rule_" + signal for signal in signals)
     if score != state.score:
@@ -211,12 +273,16 @@ def apply_relationship(
         # An initial measured value is evidence, not a guessed legacy dimension.
         changes.append(_contribution(event, day, value - (previous or 0.0),
                                      "observed_" + name, name))
-    guard["days"][day] = guard["days"].get(day, 0.0) + charged
+    bucket[day] = bucket.get(day, 0.0) + charged
     _record_guard(guard, event, charged)
     updated = replace(
         state, score=score, stage=relationship_stage(score), **dimensions,
         identity_revision=event.context.identity_revision, updated_at=now,
-        reason_codes=reasons,
+        reason_codes=tuple(dict.fromkeys((
+            *(("initial_relationship_default",)
+              if "initial_relationship_default" in state.reason_codes else ()),
+            *reasons,
+        ))),
     )
     result.update(relationship=updated, contributions=tuple(changes),
                   applied=bool(changes), reason_codes=reasons)
@@ -256,7 +322,11 @@ def correct_relationship(
         stage=relationship_stage(state.score if score is None else score),
         frozen=state.frozen if frozen is None else frozen, updated_at=now,
         identity_revision=context.identity_revision,
-        reason_codes=("manual_correction",),
+        reason_codes=tuple(dict.fromkeys((
+            "manual_correction",
+            *(("initial_relationship_default",)
+              if "initial_relationship_default" in state.reason_codes else ()),
+        ))),
     )
     version = current_version + 1
     operation_id = stable_key(context.account_key, "manual_relationship", version)
@@ -280,7 +350,7 @@ def correct_relationship(
 def project_relationship(
     contributions: Iterable[tuple[Context, RelationshipContribution]], *,
     context: Context, authorized_account_keys: Iterable[str] | None = None,
-    identity_revision: str,
+    identity_revision: str, baseline_score: float = 0.0,
 ) -> Relationship:
     """Recompute from immutable source rows under a *current* authorized grant.
 
@@ -289,9 +359,12 @@ def project_relationship(
     authorization. No prior aggregate snapshot is accepted as new evidence.
     Normalized dimensions are averaged over known source accounts, not added
     into artificial certainty.
+
+    baseline_score 是调用方确认的新关系起点，只应用一次，不作为来源贡献。
     """
     if identity_revision != context.identity_revision:
         raise ValueError("identity_revision_changed")
+    _number(baseline_score, "baseline_score", 0, 1000)
     allowed = ({context.account_key} if authorized_account_keys is None
                else set(authorized_account_keys))
     totals = {"score": 0.0, "trust": 0.0, "familiarity": 0.0, "boundary": 0.0}
@@ -334,7 +407,7 @@ def project_relationship(
             source_key = (source.account_key, row.dimension)
             source_dimensions[source_key] = source_dimensions.get(source_key, 0.0) + row.delta
         updated_at = max(updated_at, row.occurred_at)
-    score = max(0.0, min(1000.0, totals["score"]))
+    score = max(0.0, min(990.0, (baseline_score if allowed else 0.0) + totals["score"]))
     dimensions = {}
     for name in ("trust", "familiarity", "boundary"):
         measurements = [max(0.0, min(1.0, value))

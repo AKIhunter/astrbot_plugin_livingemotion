@@ -4,6 +4,7 @@ ERRORS = {
     "validation_error": (400, "Invalid console request; check fields and values."),
     "unauthorized": (401, "A valid Dashboard Bearer login is required."),
     "forbidden": (403, "Dashboard administration permission is required for this scope."),
+    "edit_disabled": (403, "Relationship editing is disabled in settings."),
     "version_conflict": (409, "Revision changed; reload and review before submitting again."),
     "unavailable": (503, "Service or action unavailable; no success is confirmed. Do not retry writes."),
 }

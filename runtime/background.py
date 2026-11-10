@@ -29,6 +29,8 @@ class _Job:
     model: bool
     completion: asyncio.Future | None = None
     execution_context: contextvars.Context | None = None
+    # 手动生成（管理员显式点按钮）不受每日模型预算拦住；用量照记，便于观察。
+    exempt_quota: bool = False
 
 
 class BackgroundRuntime:
@@ -51,7 +53,8 @@ class BackgroundRuntime:
     async def submit(self, job_id: str, context: Context, generation: int,
                      work: Callable[[], Awaitable[Any]], *, purpose: str = "local",
                      model: bool = False, input_tokens: int = 0,
-                     output_tokens: int = 0, completion=None) -> dict[str, str]:
+                     output_tokens: int = 0, completion=None,
+                     exempt_quota: bool = False) -> dict[str, str]:
         if not self._accepting:
             return {"status": "rejected", "reason_code": "runtime_stopped"}
         if model and self.config.mode != "active":
@@ -59,6 +62,7 @@ class BackgroundRuntime:
         if not job_id or job_id in self._pending:
             return {"status": "rejected", "reason_code": "duplicate_job"}
         enabled = {"emotion": self.config.emotion_model_enabled,
+                   "feeling": self.config.enabled,
                    "dream": self.config.dream_enabled, "diary": self.config.diary_enabled,
                    "behavior": self.config.autonomy_enabled,
                    "catchup": getattr(self.config, "catchup_enabled", False),
@@ -74,7 +78,8 @@ class BackgroundRuntime:
             return {"status": "rejected", "reason_code": "missing_token_budget"}
         try:
             self._queue.put_nowait(_Job(job_id, context, generation, purpose, work, model,
-                                       completion, contextvars.copy_context()))
+                                       completion, contextvars.copy_context(),
+                                       bool(exempt_quota)))
         except asyncio.QueueFull:
             return {"status": "rejected", "reason_code": "queue_full"}
         self._pending.add(job_id)
@@ -142,10 +147,13 @@ class BackgroundRuntime:
                 if job.model:
                     # Charge at actual dispatch; queued work cannot reset midnight quotas.
                     period = datetime.fromtimestamp(self.store.clock(), timezone.utc).date().isoformat()
+                    # 手动生成不设上限（仍写一条预留，便于事后看用量）。
+                    limit = (max(self.config.model_daily_limit, 10 ** 6)
+                             if job.exempt_quota else self.config.model_daily_limit)
                     result = await self.store.reserve_quota(
                         job.job_id, job.context, job.generation, period=period,
-                        purpose=job.purpose, limit=self.config.model_daily_limit,
-                        global_limit=self.config.model_daily_limit,
+                        purpose=job.purpose, limit=limit,
+                        global_limit=limit,
                         min_interval_seconds=(self.config.emotion_interval_seconds
                                               if job.purpose == "emotion" else 0),
                     )
@@ -172,6 +180,12 @@ class BackgroundRuntime:
                 status, reason = "unknown", "model_result_unknown"
             except asyncio.TimeoutError:
                 status, reason = "unknown" if job.model else "failed", "task_timeout"
+            except ValueError as exc:
+                code = str(exc)
+                status, reason = "failed", (code if code in (
+                    "context_changed", "provider_changed", "model_unavailable",
+                    "provider_budget_contract_unsupported",
+                ) else "job_failed")
             except Exception:
                 # Never retain exception strings or model/private text in ordinary health.
                 status, reason = "failed", "job_failed"

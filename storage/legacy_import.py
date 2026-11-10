@@ -31,12 +31,14 @@ from ..contracts import (
 )
 
 FORMAT = 1
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 # Reviewed full sqlite_master fingerprints, not a permissive version range.
-# V2 remains importable offline; opening the runtime then adds V3 transactionally.
+# V2/V3 remain importable offline; opening the runtime then adds V4 transactionally.
 KNOWN_SCHEMAS = {
     2: "6a884b7faa9b138fce265e4dbcb18c109ded743e73a8bc97bb65003eb04b1ab6",
     3: "090194c3ce46a42faa4679d22eb4925088b1d3916734ba7c48f67326caa9779a",
+    # V4 adds the read-only external memory mirror (LivingMemory sync).
+    4: "6432dc83d892344ae2d550f7ca88162fe1592de50d77d1f7923c63f4ade50389",
 }
 SCHEMA_HASH = KNOWN_SCHEMAS[SCHEMA_VERSION]
 MAX_ROWS = 500

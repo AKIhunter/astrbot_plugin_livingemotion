@@ -24,10 +24,17 @@ class WeatherReport:
     summary: str = "未获取"
     provider: str = "open-meteo"
     fetched_at: float = 0.0
+    code: int | None = None
+    hazard: str = ""
+    temperature: float | None = None
+    observed_at: float = 0.0
 
 
 class WeatherProvider:
     async def get(self, city: str, day: str, timezone: str) -> WeatherReport:
+        raise NotImplementedError
+
+    async def get_current(self, city: str, timezone: str) -> WeatherReport:
         raise NotImplementedError
 
 
@@ -80,6 +87,23 @@ class OpenMeteoWeather(WeatherProvider):
         today = datetime.fromtimestamp(self.clock(), zone).date()
         if selected > today or selected < today - timedelta(days=365):
             return fallback
+        return await self._lookup(key, fallback)
+
+    async def get_current(self, city, timezone):
+        ZoneInfo(timezone)
+        if not isinstance(city, str) or len(city) > 128 or any(ord(c) < 32 for c in city):
+            raise ValueError("weather_city_invalid")
+        # 当前天气使用独立缓存键，不能拿日记的全天最高/最低温充当实况。
+        key = (city.strip(), "current", timezone)
+        fallback = WeatherReport(key[0], self._day(timezone), timezone)
+        if self._closed or not key[0]:
+            return fallback
+        return await self._lookup(key, fallback)
+
+    def _day(self, timezone):
+        return datetime.fromtimestamp(self.clock(), ZoneInfo(timezone)).date().isoformat()
+
+    async def _lookup(self, key, fallback):
         cached = self._cache.get(key)
         if cached and self.clock() < cached[0]:
             self._counts["hit"] += 1
@@ -97,7 +121,7 @@ class OpenMeteoWeather(WeatherProvider):
 
     async def _fetch(self, key):
         city, day, timezone = key
-        report = WeatherReport(city, day, timezone)
+        report = WeatherReport(city, self._day(timezone) if day == "current" else day, timezone)
         try:
             report = await asyncio.wait_for(self._query(key), self.timeout)
         except asyncio.CancelledError:
@@ -108,7 +132,8 @@ class OpenMeteoWeather(WeatherProvider):
             self._inflight.pop(key, None)
         if not self._closed:
             self._cache[key] = (self.clock() + (
-                self.ttl if report.status == "ok" else self.failure_ttl
+                min(self.ttl, 600) if report.status == "ok" and day == "current"
+                else self.ttl if report.status == "ok" else self.failure_ttl
             ), report)
             while len(self._cache) > self.max_cache:
                 self._cache.popitem(last=False)
@@ -127,20 +152,36 @@ class OpenMeteoWeather(WeatherProvider):
             finite(latitude, "latitude", -90, 90)
             finite(longitude, "longitude", -180, 180)
             today = datetime.fromtimestamp(self.clock(), ZoneInfo(timezone)).date()
+            current = day == "current"
             base = ("https://archive-api.open-meteo.com/v1/archive"
-                    if date.fromisoformat(day) < today - timedelta(days=5)
+                    if not current and date.fromisoformat(day) < today - timedelta(days=5)
                     else "https://api.open-meteo.com/v1/forecast")
-            payload = await self.transport(base + "?" + urlencode({
+            params = {
                 "latitude": latitude, "longitude": longitude, "timezone": timezone,
-                "start_date": day, "end_date": day,
-                "daily": "weather_code,temperature_2m_max,temperature_2m_min",
-            }), self.timeout)
+            }
+            params.update({"current": "weather_code,temperature_2m", "timeformat": "unixtime"}
+                          if current else {"start_date": day, "end_date": day,
+                                           "daily": "weather_code,temperature_2m_max,temperature_2m_min"})
+            payload = await self.transport(base + "?" + urlencode(params), self.timeout)
             returned_zone = payload.get("timezone")
             # Open-Meteo normalizes UTC to GMT; only known zero-offset aliases may differ.
             same_utc = (timezone in _UTC_ALIASES and returned_zone in _UTC_ALIASES
                         and payload.get("utc_offset_seconds", 0) == 0)
             if returned_zone != timezone and not same_utc:
                 raise ValueError("weather_timezone_mismatch")
+            if current:
+                value, units = payload["current"], payload["current_units"]
+                code, temperature, observed = value["weather_code"], value["temperature_2m"], value["time"]
+                if type(code) is not int or code not in _CODES:
+                    raise ValueError("weather_code_invalid")
+                finite(temperature, "temperature_current", -100, 70)
+                finite(observed, "weather_observed_at", self.clock() - 3600, self.clock() + 300)
+                if units.get("temperature_2m") != "°C" or units.get("time") != "unixtime":
+                    raise ValueError("weather_units_invalid")
+                return WeatherReport(city, today.isoformat(), timezone, "ok",
+                                     f"{_CODES[code]} · {temperature:g}°C",
+                                     fetched_at=self.clock(), code=code,
+                                     temperature=temperature, observed_at=observed)
             daily = payload["daily"]
             # A current weather object, approximate timestamp, or wrong day is not a diary.
             if daily["time"] != [day]:
@@ -159,6 +200,7 @@ class OpenMeteoWeather(WeatherProvider):
             return WeatherReport(
                 city, day, timezone, "ok", f"{_CODES[code]}，{low:g}–{high:g}°C",
                 fetched_at=self.clock(),
+                code=code,
             )
 
     def health(self):

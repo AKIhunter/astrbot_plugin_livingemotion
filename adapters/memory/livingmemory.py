@@ -29,12 +29,24 @@ def _field(row: object, key: str):
     return row.get(key) if isinstance(row, Mapping) else getattr(row, key, None)
 
 
+_engine_write_locks = {}
+
+
+def _identity_revision(context):
+    value = context.identity_revision
+    if not value.startswith("livingmemory:"):
+        return None
+    revision = value.removeprefix("livingmemory:")
+    return int(revision) if revision.isdecimal() else revision
+
+
 class LivingMemoryAdapter:
     def __init__(
         self,
         provider: Callable[[], object | None],
         *,
         read_enabled: bool = True,
+        write_enabled: bool = False,
         export_enabled: bool = False,
         timeout: float = 2.0,
         max_receipts: int = 256,
@@ -44,11 +56,14 @@ class LivingMemoryAdapter:
             raise ValueError("external_memory_limits_invalid")
         self.provider = provider
         self.read_enabled = read_enabled
+        self.write_enabled = write_enabled
         self.export_enabled = export_enabled
         self.timeout = timeout
         self.max_receipts = max_receipts
         self.identity = IdentityAdapter(provider, timeout=timeout)
         self._receipts: OrderedDict[str, _Receipt] = OrderedDict()
+        self._writes = set()
+        self._closed = False
 
     def _ready(self, provider: object | None) -> bool:
         try:
@@ -74,7 +89,8 @@ class LivingMemoryAdapter:
             return None
 
     def cache_token(self):
-        return id(self._current_provider()), self.read_enabled, self.export_enabled
+        return (id(self._current_provider()), self.read_enabled, self.write_enabled,
+                self.export_enabled, self._closed)
 
     def capabilities(self) -> MemoryCapabilities:
         reasons = [
@@ -86,9 +102,82 @@ class LivingMemoryAdapter:
             reasons.append("external_provider_unavailable")
         if not self.read_enabled:
             reasons.append("external_read_disabled")
+        if self._closed:
+            reasons.append("external_memory_closed")
         return MemoryCapabilities(
-            MemoryMode.EXTERNAL, ready and self.read_enabled, False, False, tuple(reasons)
+            MemoryMode.EXTERNAL, ready and self.read_enabled and not self._closed,
+            False, False, tuple(reasons)
         )
+
+    async def append_source(self, context, content, source_id, source_event_id, kind,
+                            *, metadata=None, guard=None):
+        if (self._closed or not self.write_enabled or not isinstance(content, str)
+                or not content.strip()):
+            return AppendResult(reason_code="external_write_disabled_or_invalid")
+        provider = self._current_provider()
+        try:
+            plugin = provider
+            initializer = getattr(plugin, "initializer", None)
+            engine = getattr(initializer, "memory_engine", None)
+            add_memory = getattr(engine, "add_memory", None)
+            if not callable(add_memory):
+                return AppendResult(reason_code="external_write_engine_unavailable")
+            route = context.route
+            if not route or not context.persona_id or not context.account_id:
+                return AppendResult(reason_code="external_write_source_invalid")
+            write_metadata = {
+                "source_id": source_id, "source_ids": [source_event_id],
+                "source_session_id": route, "adapter_id": context.adapter_id,
+                "source_instance": context.instance_id,
+                "source_account": context.platform + ":" + context.account_id,
+                "subject_accounts": [context.platform + ":" + context.account_id],
+                "audience": ("self_private" if context.scene_kind.value == "private"
+                             else "origin_group:" + context.scene_id),
+                "sensitivity": 0, "content_kind": kind,
+            }
+            write_metadata.update(metadata or {})
+            owner_account = write_metadata.get("owner_account")
+            if not isinstance(owner_account, str) or not owner_account.strip():
+                return AppendResult(reason_code="external_write_owner_unresolved")
+            revision = _identity_revision(context)
+            if revision is not None:
+                write_metadata["identity_revision"] = revision
+            task = asyncio.current_task()
+            self._writes.add(task)
+            lock = _engine_write_locks.setdefault(id(engine), asyncio.Lock())
+            async with lock:
+                if self._closed or self._current_provider() is not provider or (guard and not await guard()):
+                    return AppendResult(reason_code="external_write_context_changed")
+                connection = getattr(engine, "db_connection", None)
+                if connection is None:
+                    return AppendResult(reason_code="external_write_engine_unavailable")
+                async with connection.execute(
+                    "SELECT 1 FROM documents WHERE json_valid(metadata) "
+                    "AND json_extract(metadata, '$.source_id') = ? LIMIT 1", (source_id,)
+                ) as cursor:
+                    if await cursor.fetchone():
+                        return AppendResult(True, "duplicate")
+                if self._closed or self._current_provider() is not provider or (guard and not await guard()):
+                    return AppendResult(reason_code="external_write_context_changed")
+                await asyncio.wait_for(add_memory(
+                    content=content, session_id=route, persona_id=context.persona_id,
+                    metadata=write_metadata,
+                ), max(10.0, self.timeout))
+                return AppendResult(True, "stored")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            return AppendResult(reason_code="external_write_failed")
+        finally:
+            if 'task' in locals():
+                self._writes.discard(task)
+
+    async def close(self):
+        self._closed = True
+        tasks = tuple(task for task in self._writes if task is not asyncio.current_task())
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     def _material(self, row: object, request, identity: IdentitySnapshot, token: str) -> Material:
         metadata = _field(row, "metadata")

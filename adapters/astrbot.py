@@ -133,6 +133,9 @@ class AstrBotBridge:
         method = getattr(plugin, "enabled_for", None)
         if source and source.event() and callable(method):
             try:
+                delegated = getattr(plugin, "livingemotion_delegated_for", None)
+                if callable(delegated) and delegated(source.event()) is True:
+                    return False  # 只有从绫显式让位才能解除同会话冲突。
                 return method(source.event()) is not False
             except Exception:
                 pass

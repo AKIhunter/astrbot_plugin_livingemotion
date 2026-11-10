@@ -5,8 +5,9 @@ from __future__ import annotations
 from dataclasses import replace
 
 from ..adapters.identity import IdentityAdapter, IdentitySnapshot
+from ..config import RELATIONSHIP_DEFAULT_SCORE
 from ..contracts import Relationship, RelationshipContribution, StateRecord
-from ..domain.relationship import project_relationship
+from ..domain.relationship import initial_relationship, project_relationship, relationship_stage
 from ..storage import SQLiteStore
 from .projector import snapshot
 
@@ -39,10 +40,13 @@ async def read_relationship_projection(
         record = await store.get_state(context, "relationship", context.account_id)
     if record is not None and record.generation != generation:
         return None
-    local = snapshot(record, Relationship)
-    result = replace(local, identity_revision=context.identity_revision)
+    local = snapshot(record, Relationship) if record is not None else initial_relationship()
+    default_baseline = record is None or "initial_relationship_default" in local.reason_codes
+    result = replace(local, stage=relationship_stage(local.score),
+                     identity_revision=context.identity_revision)
     generations = {context.scope_key: (context, generation)}
-    if identity.provider_token and len(identity.accounts) > 1 and local.evidence_complete:
+    if local.score < 1000 and identity.provider_token and len(identity.accounts) > 1 and (
+            default_baseline or local.evidence_complete):
         contexts = await store.list_contexts(limit=CONTEXT_LIMIT)
         # A truncated inventory cannot establish a complete projection.
         if len(contexts) >= CONTEXT_LIMIT:
@@ -66,18 +70,21 @@ async def read_relationship_projection(
                 ledger.append((source, RelationshipContribution(**{
                     name: row[name] for name in CONTRIBUTION_FIELDS
                 })))
+        baseline_score = RELATIONSHIP_DEFAULT_SCORE if default_baseline else 0.0
         own = project_relationship(
             ledger, context=context, identity_revision=context.identity_revision,
+            baseline_score=baseline_score,
         )
         fields = ("score", "trust", "familiarity", "boundary")
         if any(getattr(own, name) != getattr(local, name) for name in fields):
-            # A source-only baseline is not decomposable ledger evidence.
+            # 默认基线只计算一次；真实本地修正不能被来源投影覆盖。
             result = replace(result, evidence_complete=False,
                              reason_codes=("relationship_baseline_not_aggregatable",))
         else:
             result = project_relationship(
                 ledger, context=context, identity_revision=context.identity_revision,
                 authorized_account_keys=[source.account_key for source in granted],
+                baseline_score=baseline_score,
             )
             result = replace(result, frozen=local.frozen,
                              updated_at=max(result.updated_at, local.updated_at))

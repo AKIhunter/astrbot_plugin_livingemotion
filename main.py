@@ -8,6 +8,7 @@ from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star, StarTools, register
 
 from .runtime.application import Application
+from .livinghello_coupling import allowed as coupling_allowed
 
 
 @register("astrbot_plugin_livingemotion", "AKIhunter",
@@ -44,6 +45,8 @@ class LivingEmotionPlugin(Star):
             event.set_extra("livingemotion:control_request", None)
         try:
             await self.application.on_message(event)
+            if not coupling_allowed(self.context, "livingemotion"):
+                return
             raw = event.get_extra("livingemotion:context")
             if raw and self.application.config.enabled:
                 from .contracts import Context as SourceContext
@@ -68,6 +71,8 @@ class LivingEmotionPlugin(Star):
 
     @filter.on_llm_request(priority=-sys.maxsize - 1)
     async def buffer_final_request(self, event: AstrMessageEvent, request: ProviderRequest):
+        if not coupling_allowed(self.context, "livingemotion"):
+            return
         raw = event.get_extra("livingemotion:context")
         if not raw or self.application.closed or not self.application.config.enabled:
             return
@@ -83,6 +88,8 @@ class LivingEmotionPlugin(Star):
 
     @filter.on_llm_response(priority=11000)
     async def confirm_consumption(self, event: AstrMessageEvent, response):
+        if not coupling_allowed(self.context, "livingemotion"):
+            return
         await self.application.mark_request_read(event)
 
     # Runs after LivingHello's last decoration. The time is a host submission
@@ -90,6 +97,8 @@ class LivingEmotionPlugin(Star):
     @getattr(filter, "on_decorating_result", lambda **kw: lambda fn: fn)(
         priority=-sys.maxsize - 1)
     async def submit_reply(self, event: AstrMessageEvent):
+        if not coupling_allowed(self.context, "livingemotion"):
+            return
         try:
             allowed = await self.application.on_reply_submitted(event)
         except Exception:

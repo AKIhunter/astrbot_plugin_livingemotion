@@ -7,16 +7,19 @@ import heapq
 from dataclasses import fields, replace
 from uuid import uuid4
 
-from ..config import Config
+from ..config import Config, LEGACY_FIELDS
+from .config_help import field_help, field_parent
 from .. import contracts
 from ..contracts import BotAffect, Context, HumanObservation, SceneKind, to_dict
 from ..domain.emotion import DIMENSIONS, EmotionPolicy, decay_affect
+from ..domain.dreaming import six_emotions, apply_bonus, weather_bonus
+from ..domain.relationship import relationship_stage_dto
 from ..storage.console_data import (
     apply_relationship_override, context_dto, query_console_records, query_relationships,
     project_relationship_clues, query_scopes, selected_contexts, write_relationship_override,
 )
-from ..services.experience import dream_view
-from .projector import snapshot
+from ..services.experience import dream_ready, dream_view
+from .projector import account_affect, snapshot
 from ..domain.proactivity import MOTIVES
 from ..storage.proactivity import read_schedule
 
@@ -25,13 +28,59 @@ class ApplicationError(Exception):
     def __init__(self, code, message):
         self.code, self.message = code, message
         self.status_code = {"validation_error": 400, "unauthorized": 401, "forbidden": 403,
-                            "version_conflict": 409, "unavailable": 503}[code]
+                            "edit_disabled": 403, "version_conflict": 409, "unavailable": 503}[code]
         super().__init__(message)
 
+def behavior_transport_health(application, context):
+    """A matching platform name alone does not prove a usable native route."""
+    valid = False
+    try:
+        sender = application.behavior.sender
+        valid = bool(context and sender._native_transport(
+            application.bridge.source(context), context, context.route))
+    except (ImportError, ValueError, AttributeError, TypeError):
+        pass
+    return {"name": "behavior_transport", "status": "ok" if valid else "degraded",
+            "reason": ("QQ 原生路由已核验；取得消息编号才确认发送。" if valid else
+                       "未核验到可确认的原生发送通道；发送结果可能未知。")}
 
 def dimensions(value):
     return {"pleasure": (value.pleasure + 1) / 2, "arousal": value.arousal,
             "stress": value.stress, "social_need": value.social_need}
+
+
+def _optional_int(value):
+    """把「没传 / 空串 / 数字字符串」统一成 int 或 None，不接受其它形态。"""
+    if value is None or value == "":
+        return None
+    if type(value) is int:
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    raise ApplicationError("validation_error", "图片序号无效。")
+
+
+def emotion_analysis(value: BotAffect):
+    """仅从 BotAffect 数值派生展示指标，不写回状态，也不用于心理诊断。"""
+    pleasure = max(-1.0, min(1.0, value.pleasure))
+    arousal = max(0.0, min(1.0, value.arousal))
+    stress = max(0.0, min(1.0, value.stress))
+    social = max(0.0, min(1.0, value.social_need))
+    positive = max(0.0, pleasure)
+    negative = max(0.0, -pleasure)
+    emotions = six_emotions(value)
+    dimensions_ = {
+        "valence": (pleasure + 1.0) / 2.0,
+        "arousal": arousal,
+        "stress": stress,
+        "social_need": social,
+        "control": max(0.0, min(1.0, 0.5 + pleasure * 0.25 - stress * 0.35)),
+        "certainty": max(0.0, min(1.0, 0.75 - arousal * 0.2 - stress * 0.25)),
+    }
+    return {"emotions": emotions, "dimensions": dimensions_,
+            "basis": "local_affect_heuristic", "kind": "heuristic",
+            "note": "仅根据 BotAffect 数值计算的启发式状态指标，仅供软件展示；"
+                    "情绪、控制感和确定感并非实测结果，不代表人的情绪，不是心理诊断"}
 
 
 SETTINGS_GROUPS = (
@@ -44,6 +93,8 @@ FIELD_LABELS = {
     "memory_read": "允许读取记忆", "memory_export": "允许导出记忆",
     "autonomy_enabled": "允许主动找人", "group_autonomy_enabled": "允许群聊主动行为",
     "emotion_model_enabled": "模型辅助情绪分析", "dream_enabled": "生成梦境",
+    "dream_theme_pool": "梦境主题池", "dream_owner_notify": "梦中惊醒给主人发消息",
+    "dream_owner_qq": "主人QQ",
     "diary_enabled": "生成日记", "night_enabled": "启用作息记录",
     "night_block_chat": "旧版睡眠阻断聊天", "persona_mode": "人格选择方式",
     "persona_id": "原生人格", "timezone": "本地时区", "provider_id": "默认生成模型",
@@ -83,6 +134,17 @@ FIELD_LABELS = {
     "catchup_provider_id": "补课模型", "closing_provider_id": "收尾模型",
     "home_city": "Bot住所城市", "embedding_provider_id": "向量模型",
     "livingmemory_enabled": "使用LivingMemory", "memory_write": "允许写入记忆",
+    "relationship_stage_names": "关系阶段自定义名称",
+    "relationship_stage_descriptions": "关系阶段描述",
+    "relationship_special_description": "独特关系说明",
+    "relationship_edit_enabled": "允许在关系页修改好感",
+    "wake_autocatchup_enabled": "自然醒后主动补答",
+    "wake_greeting_enabled": "先发一句刚醒的招呼",
+    "wake_greeting_texts": "刚醒招呼候选句子",
+    "wake_autocatchup_enabled": "自然醒后主动补答",
+    "wake_greeting_enabled": "先发一句刚醒的招呼",
+    "wake_greeting_texts": "刚醒招呼候选句子",
+    "autonomy_qq_ids": "主动私聊 QQ 号码", "autonomy_qq_group_ids": "主动发言 QQ 群号",
 }
 
 
@@ -110,7 +172,178 @@ def night_display_state(night):
             "asleep": "deep_sleep", "waking": "groggy"}.get(night.phase.value, "awake")
 
 
+EXPERIENCE_ACTION_REASONS = {
+    "generation_disabled": "插件尚未启用，无法生成。",
+    "observe_only": "当前为仅观察模式，无法生成。",
+    "source_unavailable": "当前来源不支持生成，请选择有效的私聊或群聊。",
+    "context_changed": "这个会话当前没有实时消息来源（插件重启后要等它先来一条消息），或来源刚发生变化。先在那个会话里发一句，再回来重试。",
+    "diary_disabled": "请先启用日记生成。",
+    "dream_disabled": "请先启用梦境生成。",
+    "dream_requires_live_rem": "自动做梦要等睡着并睡够一小时；手动触发不受这个限制。",
+    "model_unavailable": "当前用途的生成模型不可用，请检查模型配置。",
+    "provider_budget_contract_unavailable": "当前用途没有可用且支持预算约束的模型。",
+    "provider_budget_contract_unsupported": "当前用途的模型不支持所需预算约束。",
+}
+
+# 状态原因码只用于诊断，页面展示一律用中文解释，避免把 time_decay 这类
+# 内部标识直接抛给使用者。
+AFFECT_REASON_TEXT = {
+    "time_decay": "没有新的互动刺激，情绪随时间自然回落到基准。",
+    "appraisal_concern": "依据最近对话里出现的关切线索更新了情绪。",
+    "similar_stimulus_limited": "同类刺激短时间内重复出现，本次只做有限调整。",
+    "disabled": "情绪细化模型未启用，仅使用本地数值启发式。",
+}
+AFFECT_REASON_FALLBACK = "由本地情绪模型按最近的真实互动更新。"
+
+MODE_REASON_TEXT = {
+    "active": "参与表达与行动：可生成内容并按规则自主发送。",
+    "observe_only": "仅观察：只记录状态，不主动发送。",
+    "disabled": "插件未启用或已停止，所有自动行为暂停。",
+    "ownership_conflict": "检测到其他情感插件占用了当前范围，已退让为仅观察。",
+    "config_observe_only": "原生配置中的运行模式是「仅观察」，请在设置中改为「参与表达与行动」。",
+}
+
+# 同一状态（rejected/skipped）下面原因差别很大，按原因码给一句准话。
+EXPERIENCE_REASON_TEXT = {
+    "input_token_limit": "素材比模型输入上限多，已自动压缩；若仍失败请在设置里调大输入上限。",
+    "input_budget_too_small": "模型输入上限太小，装不下系统提示与人格；请到设置里调大「模型输入上限」。",
+    "no_qualified_material": "这一天没有可用素材：素材为空、超出窗口，或可见范围已变。",
+    "experience_attempt_limit": "本次配额已用完，稍后再试或调整上限。",
+    "dream_requires_live_rem": "自动做梦要等睡着并睡够；手动触发不受限制。",
+    "model_unavailable": "模型不可用：检查主动/日记模型是否已配置、上游是否限流。",
+    "source_unavailable": "当前来源不支持生成（如公开评论区）。",
+    "context_changed": "会话状态在生成期间被重置，可重试。",
+    "generation_disabled": "该类型生成已在设置里关闭。",
+    "experience_exists": "这一天的内容已经存在，不重复生成。",
+}
+
+EXPERIENCE_TASK_TEXT = {
+    "idle": "尚未触发：还没有手动生成，也没到自动计划时间。",
+    "queued": "已排队：正在后台生成，稍后刷新查看结果。",
+    "succeeded": "已完成：内容已保存，可在下方记录里阅读。",
+    "skipped": "已跳过：本次条件不满足，详见下方原因。",
+    "rejected": "已拒绝：来源或权限校验未通过。",
+    "unavailable": "暂不可用：缺少模型或依赖，详见下方原因。",
+    "failed": "失败：生成过程出错，未保存内容。",
+    "unknown": "结果不明：请核对记录，不要重复生成。",
+}
+
+
+def affect_reason_text(reason_codes) -> str:
+    """把内部状态原因码翻译成一句人话，保留诊断码本身不展示。"""
+    codes = [code for code in reason_codes if isinstance(code, str)]
+    texts = [AFFECT_REASON_TEXT[code] for code in codes if code in AFFECT_REASON_TEXT]
+    return " ".join(dict.fromkeys(texts)) or AFFECT_REASON_FALLBACK
+
+
+NIGHT_REASON_TEXT = {
+    "fatigue": "处于疲惫时段，精力在下降。",
+    "recovery": "正在恢复精力。",
+    "manual_wake": "由管理端手动叫醒。",
+    "manual": "由管理端手动调整作息。",
+    "timeline": "按当前作息时间表推进。",
+    "clock_rollback": "检测到系统时间回拨，已暂停结算。",
+}
+
+
+def night_reason_text(reason_codes) -> str:
+    codes = [reason_codes] if isinstance(reason_codes, str) else [
+        code for code in (reason_codes or ()) if isinstance(code, str)]
+    texts = [NIGHT_REASON_TEXT[code] for code in codes if code in NIGHT_REASON_TEXT]
+    return " ".join(dict.fromkeys(texts))
+
+
+BEHAVIOR_REASON_TEXT = {
+    "autonomy_disabled": "未开启「允许主动找人」。",
+    "group_disabled": "群聊主动行为未开启。",
+    "scope_not_allowed": "当前范围不在允许联系的名单内。",
+    "muted_scope": "当前范围已被静音。",
+    "do_not_disturb": "处于免打扰时段。",
+    "outside_active_hours": "不在允许主动联系的时间段内。",
+    "sleeping": "TA 正在睡觉或刚醒，先不打扰。",
+    "low_energy": "精力过低，需要先休息。",
+    "cooldown": "仍在冷却时间内。",
+    "global_quota_exhausted": "今天主动说话的总额度已用完。",
+    "scope_quota_exhausted": "这个会话今天的额度已用完。",
+    "unanswered_backoff": "对方几次没回应，已主动放慢节奏。",
+    "below_score_threshold": "当前时机分数不足，先不打扰。",
+    "unverified_route": "会话路由未验证，不能发送。",
+    "relationship_boundary_changed": "关系边界已变化，本次不分享情绪。",
+    "context_changed": "会话范围已变化，请刷新。",
+    "identity_invalid": "身份校验未通过。",
+    "unavailable": "当前不可用（模式或睡眠限制）。",
+    "behavior_history_unavailable": "缺少今日行为额度记录。",
+    "behavior_dependency_unavailable": "主动行为依赖尚未就绪。",
+    "new_human_message": "期间有新消息，本次跳过。",
+    "stale_generation": "会话已更新，本次作废。",
+    "expired_intent": "这次意图已过期。",
+    "eligible": "全部条件满足，可以开口。",
+    "random_wait": "正在等一个自然的时机。",
+    "checking": "正在想要不要开口。",
+    "random_skip": "这次先安静陪着。",
+    "conversation_active": "还在聊天，先不插话。",
+    "missed_opportunity": "错过的时机已跳过。",
+    "opportunity_interrupted": "上次检查中断，已停止旧任务。",
+    "opportunity_timeout": "这次检查超时，先停下来。",
+    "select_scene": "选择私聊或群聊后查看具体节奏。",
+    "scheduler_delayed": "调度出现延迟。",
+    "queued": "已排队执行。",
+}
+
+
+def behavior_reason_texts(value) -> list[str]:
+    codes = [value] if isinstance(value, str) else [
+        code for code in (value or ()) if isinstance(code, str)]
+    texts = [BEHAVIOR_REASON_TEXT[code] for code in codes if code in BEHAVIOR_REASON_TEXT]
+    return list(dict.fromkeys(texts)) or ["当前条件未满足，原因码见下方诊断。"]
+
+
+ACTION_REASON_TEXT = {
+    "night.sleep": "当前模式不允许手动入睡，请把运行模式改为参与表达与行动。",
+    "night.wake": "插件未启用或睡眠功能关闭。",
+    "behavior.send": "当前条件不满足主动发送要求，先看行为模拟的判定。",
+    "diary.generate": "日记生成条件未满足，详见原因。",
+    "dream.generate": "梦境生成条件未满足，详见原因。",
+}
+
+
 class Console:
+    @property
+    def config_revision(self):
+        # 配置版本只随配置内容变化；插件重载仍使用 revision 使旧行动失效。
+        return contracts.stable_key(to_dict(self.config))
+
+    async def _experience_action(self, context, kind, night):
+        code = ""
+        try:
+            await self.manual_persona()
+            await self.manual_model_binding(kind)
+            if getattr(self, "manual_experience", None) is None or self.manual_experience.closed:
+                code = "executor_stopped"
+            else:
+                value = await self.manual_experience_state()
+                if value[kind].get("status") in ("queued", "running"):
+                    code = "generating"
+        except (ValueError, ImportError, AttributeError):
+            code = "model_or_persona_unavailable"
+        reasons = {"executor_stopped": "手动执行器已停止，请重新连接插件。",
+                   "generating": "正在生成，完成后可以再次重写。",
+                   "model_or_persona_unavailable": "请配置可用的原生人格和日记/梦境模型。"}
+        return {"id": kind + ".generate", "enabled": not code, "reason_code": code,
+                "reason": reasons.get(code, ""), "context_id": ""}
+
+    async def _attach_manual_experience(self, state):
+        try:
+            value = await self.manual_experience_state()
+            state["experience"].update(value)
+            state["experience"]["reason"] = "按当前人格保存。手动生成不受自动开关、作息和每日额度限制。"
+            if not state.get("persona"):
+                state["persona"] = {"id": value["persona_id"], "name": value["persona_id"]}
+        except Exception:
+            state["experience"].update(persona_id="", reason="原生人格不可用，请检查设置。")
+        state["actions"] = [a for a in state["actions"] if a["id"] not in ("diary.generate", "dream.generate")]
+        state["actions"].extend([await self._experience_action(None, kind, None) for kind in ("diary", "dream")])
+
     def _context(self, context_id, *, optional=False):
         if not isinstance(context_id, str) or len(context_id) > 128:
             raise ApplicationError("validation_error", "Invalid context")
@@ -141,17 +374,21 @@ class Console:
                        "chat": "仅私聊", "never": "不允许聊天唤醒", "both": "私聊或群原生@Bot",
                        "gentle": "轻柔", "balanced": "自然", "lively": "活泼"}
         values = to_dict(self.config)
+        values = {key: value for key, value in values.items() if key not in LEGACY_FIELDS}
         options = options or {}
         result_fields = []
         for f in fields(Config):
+            if f.name in LEGACY_FIELDS:
+                continue
             item = {"key": f.name, "label": FIELD_LABELS.get(f.name, "高级设置：" + f.name),
                     "section": field_section(f.name), "value": values[f.name],
                     "type": ("enum" if f.name in enums else "boolean" if type(f.default) is bool
                              else "integer" if type(f.default) is int
                              else "float" if type(f.default) is float else "string"),
                     "advanced": f.name.startswith(("model_", "window_", "body_", "event_"))
-                    or f.name in ("scheduler_seconds", "night_policy_version", "night_block_chat",
-                                  "memory_mode", "sleep_at")}
+                    or f.name == "scheduler_seconds"}
+            parent, level = field_parent(f.name)
+            item.update(field_help(f.name), parent=parent, level=level)
             if f.name in enums:
                 item["options"] = [{"value": v, "label": enum_labels[v]} for v in enums[f.name]]
             if type(f.default) in (int, float):
@@ -169,38 +406,27 @@ class Console:
             if f.name == "persona_id":
                 item["type"] = "enum"
                 item["options"] = options.get("personas", [])
-            behavior_help = {
-                "autonomy_enabled": "打开后会自动等待合适时机，只联系主动行为范围内的会话。",
-                "autonomy_scopes": "勾选允许TA主动联系的会话；也可填写完整范围标识，多个用空格隔开。",
-                "behavior_style": "轻柔更少打扰，自然平衡，活泼更愿意开口；每日额度始终生效。",
-                "behavior_random_min_minutes": "每次机会后重新等待，最短值不能大于最长值。",
-                "behavior_random_max_minutes": "等待结束会再检查是否适合开口，不保证到点发送。",
-                "behavior_idle_minutes": "聊天活跃时先不插话；群聊按全群最近消息计算。",
-                "behavior_emotional_share": "仅在熟悉的私聊关系中轻轻分享心情，不索取安慰或强求回复。",
-                "behavior_provider_id": "主动聊天单独选模型，留空沿用当前聊天模型。",
-            }
-            if f.name in behavior_help:
-                item["help"] = behavior_help[f.name]
             if f.name in ("behavior_random_min_minutes", "behavior_random_max_minutes",
                           "behavior_idle_minutes"):
                 item.update(min=1, max=1440 if f.name == "behavior_idle_minutes" else 10080)
             result_fields.append(item)
         return {
-            "revision": self.revision, "source": "AstrBot native plugin configuration",
+            "revision": self.config_revision, "source": "AstrBot native plugin configuration",
             "values": values, "fields": result_fields,
             "groups": self._settings_groups(),
             "readonly": [{"key": "energy_max", "label": "总精力", "type": "float",
                           "value": 100.0, "step": 0.1, "unit": "点", "readonly": True,
-                          "section": "night"}],
+                          "section": "night", "parent": "night_schedule_enabled", "level": 1,
+                          **field_help("energy_max")}],
         }
 
     @staticmethod
     def _settings_groups():
-        quick = {"enabled", "mode", "persona_id", "timezone", "provider_id", "home_city",
-                 "livingmemory_enabled", "embedding_provider_id", "allow_sleep"}
+        quick = {"enabled", "mode", "timezone", "provider_id", "fallback_provider_id", "home_city"}
         return [{"id": group, "label": label,
                  "field_keys": [f.name for f in fields(Config)
-                                if (f.name in quick if group == "quick_start"
+                                if f.name not in LEGACY_FIELDS and
+                                (f.name in quick if group == "quick_start"
                                     else field_section(f.name) == group)]}
                 for group, label in SETTINGS_GROUPS]
 
@@ -230,6 +456,16 @@ class Console:
                 raise ApplicationError("validation_error", "Invalid scope selection") from None
         return selection, contexts
 
+    async def console_configuration(self, context_id="", persona_id="", view_scope="", platform=""):
+        """保存预读只返回配置，避开天气、图表、记录与模型选项查询。"""
+        self._open()
+        await self.refresh_config()
+        if persona_id or view_scope or platform:
+            await self._selection(persona_id, view_scope, context_id, platform)
+        else:
+            self._context(context_id, optional=True)
+        return {"api_version": 1, "config": self.config_dto()}
+
     async def console_state(self, context_id="", persona_id="", view_scope="", platform=""):
         self._open()
         await self.refresh_config()
@@ -240,43 +476,89 @@ class Console:
             context = self._contexts.get(persisted.account_key, persisted) if persisted else None
         else:
             context = self._context(context_id, optional=True)
+        global_view = bool(selection and selection["view_scope"] == "global")
         memory = self.memory.capabilities()
         settings_options = await self.console_settings_options()
+        effective = self.effective_mode(context)
+        ownership_conflict = bool(context is not None and self.bridge.conflicts(context))
+        mode_reason = ("ownership_conflict" if ownership_conflict and effective == "observe_only"
+                       else effective if effective in MODE_REASON_TEXT else "disabled")
+        # 「有实时来源的会话」才允许写动作。注意不能只看 _contexts：启动时
+        # 会从库里回填上下文，那些会话没有实时来源，点下去必然 context_changed。
+        live = getattr(self, "is_live_context", None)
+        live_ok = (live(context) if callable(live)
+                   else context is not None and context.account_key in self._contexts)
+        action_context_id = context.account_key if context is not None and live_ok else ""
+        from .feeling import feeling_state
+        from .environment import environment_state
         state = {
+            "environment": await environment_state(self),
+            "feeling": await feeling_state(self, persona_id or (context.persona_id if context else "")),
             "api_version": 1, "context_id": context.account_key if context else "",
+            # 动作落点：全局视图的 context_id 按约定留空，页面用这里交代的会话
+            # 提交动作请求；只有进程内真实存在的会话才给落点（重启后从
+            # source_contexts 读出的历史会话没有实时来源，动作必然失败）。
+            "action_target": ({
+                "context_id": action_context_id,
+                # 带上范围与平台：页面可以直接切到该会话，不必先等 scopes。
+                "view_scope": context.scene_kind.value,
+                "platform": context.platform,
+                "label": (f"{context.platform} / {context.scene_kind.value} / "
+                          f"{context.scene_id} / {context.account_id}"),
+            } if action_context_id else None),
             "contexts": [{"id": c.account_key,
                           "label": f"{c.platform} / {c.scene_kind.value} / {c.scene_id} / {c.account_id}"}
                          for c in reversed(self._contexts.values())],
-            "updated_at": self.store.clock(), "mode": self.effective_mode(context),
+            "updated_at": self.store.clock(), "mode": effective,
+            "mode_detail": {"effective": effective, "configured": self.config.mode,
+                            "reason": mode_reason,
+                            "reason_text": MODE_REASON_TEXT.get(mode_reason, "")},
             "revision": self.revision, "config": self.config_dto(settings_options),
+            "emotion_model_analysis": (self.emotion_model_analysis(
+                contexts if selection else [context] if context else [])
+                if hasattr(self, "emotion_model_analysis") else
+                {"status": "uncollected", "reason_code": "uncollected", "applied": False}),
+            "behavior_model": (await self.model_preflight(context, "behavior")
+                               if context and hasattr(self, "model_preflight") else
+                               {"available": False, "reason_code": "source_invalid"}),
             "selection": selection,
             "state_mode": "persona" if getattr(self.config, "persona_shared_state", False) else "scene",
-            "capabilities": ["config.write", "behavior.preview", "scopes.read", "relationships.read",
-                             "relationship.write", "energy.read", "settings-options.read"],
+            "capabilities": ["config.write", "configuration.read", "config.receipt", "behavior.preview", "scopes.read", "relationships.read",
+                             "relationship.write", "energy.read", "settings-options.read",
+                             "memory.sync"],
             "health": [
                 {"name": "runtime", "status": "ok" if self.config.enabled else "unavailable",
                  "reason": "ready" if self.config.enabled else "disabled"},
                 {"name": "configuration", "status": "degraded" if self._config_fault else "ok",
                  "reason": "invalid_native_config" if self._config_fault else "native"},
-                {"name": "ownership", "status": "degraded" if self.bridge.conflicts(context) else "ok",
-                 "reason": "congling_scope_conflict" if self.bridge.conflicts(context) else "exclusive"},
+                {"name": "ownership", "status": "degraded" if ownership_conflict else "ok",
+                 "reason": "congling_scope_conflict" if ownership_conflict else "exclusive"},
                 {"name": "background", "status": "degraded" if self._task_fault else "ok",
                  "reason": self._task_fault or "idle"},
                 {"name": "reply_confirmation", "status": "unavailable",
                  "reason": "unsupported：当前宿主无可靠回复确认；收尾 120 秒超时取消，"
                            "不将 after-sent/bool/None 视为发送成功。"},
+                behavior_transport_health(self, context),
             ],
-            "memory": {"mode": self.config.memory_mode, "provider": self.config.memory_mode,
-                       "can_read": memory.recall, "can_write": memory.append_experience,
-                       "capabilities": [], "reason": ", ".join(memory.reason_codes)},
+            "memory": await self._memory_dto(context),
             "experience": {"diary_enabled": self.config.diary_enabled,
                            "dream_enabled": self.config.dream_enabled,
-                           "reason": "Explicitly enabled generation only"},
+                           # 任务状态：全局视图下动作本来就落在「最近会话」，
+                           # 状态却藏着不给会逼用户切会话。这里统一给出，
+                           # 由前端标注这是哪个会话的任务。
+                           "diary": (self._experience_dto(context, "diary", detail=not global_view)
+                                     if context and hasattr(self, "experience_status") else None),
+                           "dream": (self._experience_dto(context, "dream", detail=not global_view)
+                                     if context and hasattr(self, "experience_status") else None),
+                           "scope_global": global_view,
+                           "reason": "仅在明确启用后生成，不会为了填满页面而编造内容。"},
             "actions": [],
         }
         if selection is not None:
             state["contexts"] = [context_dto(c) for c in contexts]
         if context is None:
+            await self._attach_manual_experience(state)
+            await self._attach_emotion_curve(state, None)
             return state
         owned_state = getattr(self.store, "get_owned_state", None)
         bot_record = (await owned_state(context, "bot") if callable(owned_state)
@@ -285,18 +567,19 @@ class Console:
         if callable(policy):
             policy = policy()
         bot = decay_affect(snapshot(bot_record, BotAffect), now=self.store.clock(), policy=policy)
-        reason = (", ".join(bot.reason_codes) if all(
-            ref.context.scope_key == context.scope_key for ref in bot.evidence) else "")
         baseline = policy.baseline
         baseline = (dimensions(baseline) if isinstance(baseline, BotAffect)
                     else dimensions(BotAffect(**dict(zip(DIMENSIONS, baseline)))))
-        obs_record = await self.store.get_state(context, "observation", context.account_id)
+        obs_record = (await self.store.get_state(context, "observation", context.account_id)
+                      if not global_view else None)
         obs = snapshot(obs_record, HumanObservation) if obs_record else None
         generation = await self.store.get_generation(context)
-        relation = await self.current_relationship(context)
+        relation = await self.current_relationship(context) if not global_view else None
         night = await self.night_snapshot(context)
+        night_record = await self.store.get_state(context, "night")
+        catchup_runtime = dict(((night_record.value or {}).get("_runtime") or {}).get("catchup") or {}) if night_record else {}
         availability = await self.availability(context)
-        source = self.bridge.source(context)
+        source = self.bridge.source(context) if not global_view else None
         preview = await self.behavior.preview_behavior(context)
         schedule = await read_schedule(self.store, context)
         behavior_history = (await self.behavior_history(context, self.store_period(), None)
@@ -316,30 +599,70 @@ class Console:
                 "name": "主动调度", "status": "degraded" if stalled or stuck else "ok",
                 "reason": "opportunity_interrupted" if stuck else "scheduler_delayed" if stalled else "ready",
             })
-        model_ready = False
-        try:
-            await self.model_binding(context)
-            model_ready = True
-        except (ValueError, ImportError):
-            pass
+        # 全局视图也要给出生成动作：它仍然绑定一个具体会话（最近使用的那个），
+        # 否则页面只能显示「宿主未开放此操作」，用户看到的就是「开关开了却按不了」。
+        experience_actions = ([await self._experience_action(context, kind, night)
+                               for kind in ("diary", "dream")] if context is not None else [])
         active = self.effective_mode(context) == "active" and context.scene_kind != SceneKind.PUBLIC_COMMENT
         if relation is not None and not await self.validate_context(context, generation):
             relation = None
         if relation is not None:
             relation = await apply_relationship_override(self.store, context, relation)
+        personal = None
+        personal_record = None
+        if not global_view and context.account_id:
+            personal_record = await self.store.get_state(context, "relationship", context.account_id)
+            if personal_record is not None and personal_record.generation == generation:
+                personal = account_affect(personal_record, context)
+            if personal is not None and (
+                not await self.validate_context(context, generation)
+                or await self.store.get_generation(context) != generation
+            ):
+                personal = None
+        personal_state = (decay_affect(personal[0], now=self.store.clock(), policy=policy)
+                          if personal else None)
         state.update({
+            "user_emotion": ({
+                "subject": context.account_id, "context_id": context.account_key,
+                "scope_kind": "account", "source": "local_account_interactions",
+                "label": ", ".join(personal_state.labels),
+                "dimensions": dimensions(personal_state), "baseline": baseline,
+                "emotion_analysis": emotion_analysis(personal_state),
+                "reason": ", ".join(personal_state.reason_codes),
+                "updated_at": personal[0].updated_at,
+                "version": personal_record.version,
+            } if personal_state else None),
             "persona": {"id": context.persona_id, "name": context.persona_id,
                         "source": "AstrBot native", "revision": context.persona_revision,
-                        "description": source.persona.prompt if source else ""},
+                        "description": source.persona.prompt if source else "",
+                        "description_available": bool(source and source.persona.prompt)},
             "bot_state": {"dimensions": dimensions(bot), "baseline": baseline,
                           "label": ", ".join(bot.labels),
-                          "reason": reason, "updated_at": bot.updated_at,
+                          "emotion_analysis": emotion_analysis(bot),
+                          "reason": affect_reason_text(bot.reason_codes),
+                          "reason_codes": list(bot.reason_codes),
+                          "updated_at": bot.updated_at,
                           "version": bot_record.version if bot_record else 0, "source": "livingEmotion"},
             "observation": ({"subject": obs.subject_id, "label": ", ".join(obs.labels),
+                             "emotion_analysis": {"labels": list(obs.labels),
+                                                  "confidence": obs.confidence,
+                                                  "basis": "observed_human_signal",
+                                                  "kind": "heuristic",
+                                                  "note": "仅展示已记录的人类观测标签与置信度，"
+                                                          "不补推其他情绪，不是心理诊断"},
                              "confidence": obs.confidence, "observed_at": obs.occurred_at,
                              "expires_at": obs.expires_at, "source": "human observation"}
                             if obs and obs.expires_at > self.store.clock() else None),
-            "relationship": ({"stage": relation.stage, "raw": relation.score,
+            "emotion_analysis": {"bot": emotion_analysis(bot),
+                                 "human": ({"labels": list(obs.labels),
+                                            "confidence": obs.confidence,
+                                            "basis": "observed_human_signal",
+                                            "kind": "heuristic",
+                                            "note": "仅展示已记录的人类观测标签与置信度，"
+                                                    "不补推其他情绪，不是心理诊断"}
+                                           if obs and obs.expires_at > self.store.clock() else {})},
+            "relationship": ({**relationship_stage_dto(relation.score, self.config),
+                             "raw": relation.score, "score": round(relation.score / 10, 1),
                              "normalized": relation.normalized, "scale": "0-1000",
                              "source_completeness": "complete" if relation.evidence_complete else "partial",
                              "identity_revision": context.identity_revision,
@@ -353,24 +676,76 @@ class Console:
                       "display_state": night_display_state(night),
                       "energy": night.energy / 100, "energy_percent": night.energy,
                       "energy_max": 100, "sleep_at": night.sleep_started_at,
-                      "wake_at": night.wake_at, "reason": ""},
+                      "wake_at": night.wake_at,
+                      "cycle_started_at": night.cycle_started_at,
+                      "drowsy_at": night.drowsy_at, "deep_sleep_at": night.deep_sleep_at,
+                      "base_wake_at": night.base_wake_at,
+                      "cycle_kind": night.cycle_kind, "lie_in_minutes": night.lie_in_minutes,
+                      "reason": night_reason_text(night.reason_codes),
+                      "schedule": {
+                          "schedule_enabled": bool(self.config.night_schedule_enabled),
+                          "sleep_enabled": bool(self.config.night_enabled),
+                          "allow_sleep": bool(self.config.allow_sleep),
+                          "fatigue_start": self.config.fatigue_start,
+                          "fatigue_end": self.config.fatigue_end,
+                          "deep_sleep_at": self.config.deep_sleep_at,
+                          "wake_at": self.config.wake_at,
+                          "nap_enabled": bool(self.config.nap_enabled),
+                          "nap_start": self.config.nap_start, "nap_end": self.config.nap_end,
+                          "lie_in_min": self.config.lie_in_min_minutes,
+                          "lie_in_max": self.config.lie_in_max_minutes,
+                          "wake_mode": self.config.wake_mode,
+                          "wake_reply_limit": self.config.wake_reply_limit,
+                          "wake_window_minutes": self.config.wake_window_minutes,
+                          "catchup_enabled": bool(self.config.catchup_enabled),
+                          "catchup_reply_enabled": bool(self.config.catchup_reply_enabled),
+                          "timezone": self.config.timezone,
+                      },
+                      "catch_up": {
+                          "enabled": bool(self.config.catchup_enabled),
+                          "reply_enabled": bool(self.config.catchup_reply_enabled),
+                          "completed": catchup_runtime.get("completed", 0),
+                          "total": catchup_runtime.get("total", 0),
+                          "reason": catchup_runtime.get("reason", ""),
+                      }},
             "behavior": {
                 "enabled": self.config.autonomy_enabled,
-                "reason": ", ".join(preview.reason_codes), "candidates": [],
+                "reason": ", ".join(behavior_reason_texts(getattr(preview, "reason_codes", ()))),
+                "reason_codes": list(getattr(preview, "reason_codes", ())),
+                "eligible": bool(getattr(preview, "eligible", False)),
+                "score": getattr(preview, "score", None),
+                "min_score": self._behavior_min_score(),
+                "reasons": list(getattr(preview, "reason_codes", ())),
+                "candidates": [],
                 "scope_key": context.scope_key,
                 "remaining": (max(0, min(
                     self.config.behavior_daily_limit - behavior_history.global_used,
                     self.config.behavior_scope_daily_limit - behavior_history.scope_used,
                 )) if behavior_history else None),
+                "daily_used": (behavior_history.global_used if behavior_history else None),
+                "scope_used": (behavior_history.scope_used if behavior_history else None),
                 "backoff": (behavior_history.unanswered_count if behavior_history else None),
                 "next_check_at": (schedule or {}).get("next_at"),
                 "last_check_at": (schedule or {}).get("checked_at"),
                 "last_outcome": (schedule or {}).get("last_outcome", "waiting"),
                 "last_reason": (schedule or {}).get("last_reason", "random_wait"),
+                "last_reason_text": behavior_reason_texts((schedule or {}).get("last_reason", "random_wait")),
                 "last_motive": MOTIVES.get((schedule or {}).get("last_mode"), ("尚未开口", ""))[0],
                 "random_interval": [self.config.behavior_random_min_minutes,
                                     self.config.behavior_random_max_minutes],
+                "config": {name: getattr(self.config, name) for name in (
+                    "enabled", "mode", "timezone", "scheduler_seconds",
+                    "provider_id", "fallback_provider_id", "autonomy_scopes",
+                    "autonomy_enabled", "group_autonomy_enabled", "autonomy_qq_ids",
+                    "autonomy_qq_group_ids", "muted_scopes", "behavior_style",
+                    "behavior_provider_id", "behavior_daily_limit", "behavior_scope_daily_limit",
+                    "behavior_cooldown_seconds", "behavior_unanswered_limit",
+                    "behavior_random_min_minutes", "behavior_random_max_minutes",
+                    "behavior_idle_minutes", "behavior_emotional_share", "active_start",
+                    "active_end", "dnd_start", "dnd_end",
+                )},
                 "style": self.config.behavior_style,
+                "model_ready": behavior_ready,
                 "cooldown_until": (max(
                     (behavior_history.last_attempt_at or 0) + self.config.behavior_cooldown_seconds
                     if behavior_history.last_attempt_at is not None else 0,
@@ -379,32 +754,200 @@ class Console:
                 "motives": [label for label, _ in MOTIVES.values()],
             },
             "actions": [
-                {"id": name, "enabled": enabled,
-                 "reason": "" if enabled else "Current mode, provider or policy does not permit this action"}
+                {"id": name, "enabled": enabled, "context_id": action_context_id,
+                 "reason": "" if enabled else (ACTION_REASON_TEXT.get(name, "当前模式、模型或策略不允许此操作。")
+                                               if state.get("mode") == "active"
+                                               else MODE_REASON_TEXT.get(mode_reason, "")),
+                 "reason_code": "" if enabled else ("mode_unavailable" if state.get("mode") != "active"
+                                                    else "policy_unavailable")}
                 for name, enabled in (
                     ("night.sleep", active and self.config.night_enabled),
                     ("night.wake", self.config.enabled and self.config.night_enabled),
-                    ("diary.generate", active and self.config.diary_enabled and model_ready),
-                    ("dream.generate", active and self.config.dream_enabled and model_ready
-                     and night.phase.value == "asleep" and night.sleep_stage == "REM"),
-                    ("behavior.send", active and behavior_ready and preview.eligible),
+                    # 真实发送由管理员显式触发：手动路径跳过时机分数、冷却与未回应
+                    # 退避，其余硬约束（静音、时段、额度、身份、来源）照旧；模型是否
+                    # 可用在执行时反馈，不再把按钮直接锁死。
+                    ("behavior.send", active),
                 )
-            ],
+            ] + experience_actions,
         })
-        if selection and selection["view_scope"] == "global":
-            state["actions"] = []
-            state["representative_context_id"] = context.account_key
+        if global_view:
+            # 全局视图不合并任何具体会话的内容，但动作仍然需要一个落点：
+            # 每个动作自带 action_target 的 context_id，页面按它提交，
+            # 不会出现「按钮能点、请求却被判 Unknown context」。
+            state["representative_context_id"] = action_context_id
             state["context_id"] = ""
             state["observation"] = None
+            state["emotion_analysis"]["human"] = {}
             state["relationship"] = None
+            state["persona"].update(revision="")
             state["behavior"].update(
                 scope_key="", next_check_at=None, last_check_at=None, remaining=None,
-                backoff=None, last_outcome="waiting",
-                last_reason="select_scene", last_motive="选择私聊或群聊后查看",
+                cooldown_until=None, backoff=None, last_outcome="waiting", reason="",
+                reason_codes=[], reasons=[], eligible=None, score=None,
+                last_reason="select_scene", last_reason_text=behavior_reason_texts("select_scene"),
+                last_motive="全局人格视图",
             )
-            # A global numerical view is not a new audience for private reasons.
-            state["bot_state"]["reason"] = ""
+            state["availability"]["reasons"] = []
+            state["health"] = [item for item in state["health"] if item["name"] != "主动调度"]
+            # 标签与曲线统一取同一份真实状态；拆分模式使用最近活跃会话投影。
+            shared_state = bool(getattr(self.config, "persona_shared_state", False))
+            state["bot_state"].update(
+                label=state["bot_state"]["label"],
+                reason=("这是私聊与群聊共享的人格情绪，不绑定具体会话。" if shared_state else
+                        "当前展示最近活跃会话的人格状态，数值与曲线使用同一份状态。"),
+                reason_codes=[], global_view=True,
+            )
+        await self._attach_manual_experience(state)
+        await self._attach_emotion_curve(state, context)
         return state
+
+    async def _attach_emotion_curve(self, state, context):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        zone = self.config.timezone or "Asia/Shanghai"
+        now = self.store.clock()
+        end = int(now // 300) * 300
+        points = (await self.store.emotion_history(context, since=now - 86400, until=now)
+                  if context else [{"at": at, "emotions": None, "basis": "uncollected"}
+                      for at in range(end - 86100, end + 1, 300)])
+        reports = {}
+        weather = getattr(self, "_manual_weather", None)
+        city = self.config.home_city
+        days = {datetime.fromtimestamp(now, ZoneInfo(zone)).date().isoformat()}
+        days.update(datetime.fromtimestamp(p["at"], ZoneInfo(zone)).date().isoformat() for p in points)
+        for day in days:
+            if weather and city:
+                reports[day] = await weather.get(city, day, zone)
+        current_day = datetime.fromtimestamp(now, ZoneInfo(zone)).date().isoformat()
+        bonus = weather_bonus(reports.get(current_day), city=city, day=current_day, timezone=zone)
+        for target in (state.get("emotion_analysis", {}).get("bot"),
+                       state.get("bot_state", {}).get("emotion_analysis")):
+            if target:
+                target["emotions"] = apply_bonus(target["emotions"], bonus)
+                target["weather_bonus"] = bonus
+        current_emotions = state.get("emotion_analysis", {}).get("bot", {}).get("emotions", {})
+        if any(bonus.values()) and current_emotions:
+            dominant = max(current_emotions, key=current_emotions.get)
+            state["bot_state"]["label"] = ({
+                "joy": "happy", "anger": "angry", "sadness": "sad",
+                "fear": "anxious", "surprise": "excited", "affection": "caring",
+            }[dominant] if current_emotions[dominant] >= .25 else "calm")
+        for point in points:
+            if point["emotions"] is not None:
+                day = datetime.fromtimestamp(point["at"], ZoneInfo(zone)).date().isoformat()
+                point["emotions"] = apply_bonus(point["emotions"], weather_bonus(
+                    reports.get(day), city=city, day=day, timezone=zone))
+        state["emotion_curve"] = {"points": points, "interval_seconds": 300,
+            "window_start": now - 86400, "window_end": now, "timezone": zone,
+            "basis": "recorded_state_decay_with_daily_weather",
+            "collected": any(p["emotions"] is not None for p in points)}
+
+    def _behavior_min_score(self):
+        try:
+            policy = getattr(self, "behavior", None)
+            policy = policy.policy() if policy is not None and callable(
+                getattr(policy, "policy", None)) else None
+            return getattr(policy, "min_score", None)
+        except Exception:  # noqa: BLE001 - 旧宿主/测试替身没有 policy 时不影响页面
+            return None
+
+    def _experience_dto(self, context, kind, *, detail=True):
+        """任务状态：从未触发显示「尚未触发」，不再伪装成错误。
+
+        detail=False（全局视图）：只给进度/时间/原因，去掉 job_id 与会话键
+        ——进度要能看，具体会话的技术标识不外露。
+        """
+        try:
+            status = dict(self.experience_status(context, kind) or {})
+        except Exception:  # noqa: BLE001 - 状态查询失败不该让整页读不出
+            status = {"status": "unavailable", "reason_code": "experience_status_unavailable"}
+        code = status.get("status")
+        # 归属会话：全局视图下动作落在最近会话，任务卡要能说明「这是谁的」。
+        if detail:
+            status["context_id"] = context.account_key
+        else:
+            status.pop("job_id", None)
+        if code == "unavailable" and status.get("reason_code") in (
+                "experience_not_attempted", ""):
+            return {**status, "status": "idle", "reason_code": "",
+                    "reason": EXPERIENCE_TASK_TEXT["idle"]}
+        if isinstance(code, str):
+            specific = EXPERIENCE_REASON_TEXT.get(status.get("reason_code"))
+            status.setdefault("status_text", specific or EXPERIENCE_TASK_TEXT.get(code, ""))
+        return status
+
+    def _memory_sync(self):
+        from ..services.memory_sync import MemorySyncService
+        service = getattr(self, "_memory_sync_service", None)
+        if service is None:
+            service = MemorySyncService(self.store, self.bridge.discover, self.config)
+            self._memory_sync_service = service
+        return service
+
+    async def _memory_dto(self, context):
+        """记忆后端真实能力；不再把内部枚举 mode=none 当成「本地向量 · 待配置」。"""
+        caps = self.memory.capabilities()
+        external = bool(getattr(self.config, "livingmemory_enabled", False))
+        configured = getattr(self.config, "memory_mode", "none")
+        mode = "external" if external else (
+            configured if configured in ("local_lite", "local_vector") else "none")
+        backend = {"external": "LivingMemory", "local_vector": "本地向量记忆",
+                   "local_lite": "本地轻量记录"}.get(mode, "未接入记忆后端")
+        reason_text = {
+            "external_provider_unavailable": "未找到可用的 LivingMemory 插件，请确认它已安装并启用。",
+            "external_read_disabled": "尚未开启「允许记忆检索」。",
+            "external_write_disabled": "尚未开启「允许记忆写入」。",
+            "external_background_authorization_unsupported": "外部后端不支持后台代为授权，后台自动流程会跳过记忆写入。",
+            "external_idempotent_export_unsupported": "外部后端不支持幂等导出，因此不提供导出按钮。",
+            "external_memory_closed": "记忆后端已关闭。",
+            "embedding_provider_missing": "未配置原生向量模型，本地向量检索不可用。",
+        }
+        reasons = [reason_text.get(code, code) for code in caps.reason_codes]
+        capabilities = []
+        if caps.recall:
+            capabilities.append("按需检索记忆（对话与生成时使用）")
+        if caps.append_experience:
+            capabilities.append("写入新的互动与体验（由当前后端的写入通道负责）")
+        if external:
+            capabilities.append("手动同步当前人格的全量记忆到本地只读镜像")
+        persona_id = context.persona_id if context is not None else ""
+        try:
+            mirror = await self.store.external_memory_mirror(persona_id, limit=5)
+        except (ValueError, AttributeError):
+            mirror = {"total": 0, "provider": "", "synced_at": None,
+                      "truncated": False, "items": []}
+        status = self._memory_sync().status() if external else {
+            "enabled": False, "available": False, "reason": "", "provider": ""}
+        return {
+            "mode": mode, "backend": backend,
+            "provider": "astrbot_plugin_livingmemory" if external else "",
+            "provider_ready": bool(status.get("available")),
+            "can_read": caps.recall, "can_write": caps.append_experience,
+            "capabilities": capabilities, "reasons": reasons,
+            "reason": "；".join(reasons),
+            "persona_id": persona_id, "mirror": mirror,
+            "sync": status,
+        }
+
+    async def console_memory_sync(self, context_id="", *, actor_id="console"):
+        """手动把当前人格在 LivingMemory 的记忆读进本地只读镜像。
+
+        只在 livingmemory_enabled=True 时可用；只读对方库，不写回、不调用模型。
+        供「设置 → 记忆 → 手动同步当前人格记忆」按钮使用。
+        """
+        self._open()
+        self._actor(actor_id, "manual memory sync")
+        context = (self._context(context_id) if context_id
+                   else next(reversed(self._contexts.values()), None))
+        outcome = await self._memory_sync().sync(context)
+        if outcome.status == "synced":
+            await self.store.append_audit(
+                action="memory.sync", actor_id=actor_id, reason="manual memory sync",
+                context=context, value={"persona_id": outcome.persona_id,
+                                        "stored": outcome.stored,
+                                        "truncated": outcome.truncated},
+            )
+        return outcome.as_dict()
 
     def store_period(self):
         from datetime import datetime
@@ -416,13 +959,21 @@ class Console:
                               persona_id="", view_scope="", platform=""):
         self._open()
         selection = None
-        if persona_id or view_scope or platform:
+        if kind in ("diary", "dream"):
+            selection = {"persona_id": persona_id or (
+                self._context(context_id).persona_id if context_id else
+                (await self.manual_persona())[0])}
+            context = None
+        elif persona_id or view_scope or platform:
             selection, _ = await self._selection(persona_id, view_scope, context_id, platform)
             context = None
         else:
             context = self._context(context_id)
         try:
-            result = (await query_console_records(
+            result = (await self.store.query_persona_experiences(
+                self.instance_id, selection["persona_id"], kind,
+                page=page, page_size=page_size, query=query,
+            ) if kind in ("diary", "dream") else await query_console_records(
                 self.store, self.instance_id, selection, kind,
                 page=page, page_size=page_size, query=query,
             ) if selection else await self.store.query_records(
@@ -446,17 +997,20 @@ class Console:
                         item[name] = {**raw, "pleasure": (raw["pleasure"] + 1) / 2}
             elif kind == "behavior":
                 item.update(candidate=value.get("purpose", ""), intent_id=row["id"],
-                            result=row["status"], vetoes=value.get("reason_codes", []))
+                            result=row["status"], vetoes=value.get("reason_codes", []),
+                            purpose=value.get("purpose", ""),
+                            transport_status=value.get("transport_receipt", {}).get("status", "uncollected"),
+                            receipt_id=value.get("transport_receipt", {}).get("receipt_id"))
             else:
                 loaded = await self.store.load_experience(row["id"])
                 if loaded is None:
                     continue
                 entry, _ = loaded
-                item.update(title=entry.period, body=entry.body, visibility="private",
+                item.update(title=row.get("day") or entry.period, body=entry.body, visibility="private",
                             clarity=entry.clarity, pinned=entry.pinned,
                             context_id=entry.context.account_key,
-                            pin_available=(self.config.enabled
-                                           and entry.context.account_key in self._contexts),
+                            pin_available=(entry.context.platform == "console" or
+                                           self.config.enabled and entry.context.account_key in self._contexts),
                             sources=[{"kind": ref.kind.value, "label": ref.kind.value,
                                       "source_id": ref.source_id} for ref in entry.evidence])
                 if kind == "dream":
@@ -481,25 +1035,28 @@ class Console:
         return {"api_version": 1, "selection": selection, **result}
 
     async def console_relationships(self, persona_id, view_scope="global", context_id="",
-                                    platform="", page=1, page_size=10, query="", limit=200):
+                                    platform="", page=1, page_size=10, query="", limit=200,
+                                    graph_scope="matched"):
         self._open()
         selection, contexts = await self._selection(persona_id, view_scope, context_id, platform)
         try:
             result = await query_relationships(self.store, self.instance_id, selection,
                                                page=page, page_size=page_size,
-                                               query=query, limit=limit)
+                                               query=query, limit=limit, config=self.config,
+                                               graph_scope=graph_scope)
         except ValueError:
             raise ApplicationError("validation_error", "Invalid relationship query") from None
         if self.config.memory_read and contexts and result["nodes"]:
             supplement = await self._relationship_memory(contexts)
             # Recall can wait for I/O. Refresh local rows even when the supplement fails.
-            result = await query_relationships(self.store, self.instance_id, selection,
-                                              page=page, page_size=page_size, query=query, limit=limit)
+            extra, memory_generation = (), None
             if supplement and self.config.memory_read:
                 context, generation, statements = supplement
-                result["peer_edges"] = await project_relationship_clues(
-                    self.store, self.instance_id, selection, result["nodes"], statements,
-                    memory_generation=(context.scope_key, generation))
+                extra, memory_generation = statements, (context.scope_key, generation)
+            result = await query_relationships(
+                self.store, self.instance_id, selection, page=page, page_size=page_size,
+                query=query, limit=limit, config=self.config, graph_scope=graph_scope,
+                extra=extra, memory_generation=memory_generation)
         return {"api_version": 1, "selection": selection, **result}
 
     async def _relationship_memory(self, contexts):
@@ -553,9 +1110,12 @@ class Console:
             return
 
     async def console_relationship(self, persona_id, platform, account_id, *,
-                                   expected_version, actor_id, reason, context_id="",
-                                   score=None, frozen=None):
+                                   expected_version, actor_id, reason="", context_id="",
+                                   score=None, frozen=None, note=None):
         self._open()
+        if not self.config.relationship_edit_enabled:
+            raise ApplicationError("edit_disabled", "Relationship editing is disabled")
+        reason = reason or "控制台编辑关系"
         self._actor(actor_id, reason)
         _, contexts = await self._selection(persona_id, "global", context_id, platform)
         context = next((c for c in contexts if c.account_id == account_id), None)
@@ -564,7 +1124,7 @@ class Console:
         try:
             override = await write_relationship_override(
                 self.store, context, expected_version=expected_version, actor_id=actor_id,
-                reason=reason, score=score, frozen=frozen)
+                reason=reason, score=score, frozen=frozen, note=note)
         except ValueError as exc:
             if getattr(exc, "code", None) == "version_conflict":
                 raise ApplicationError("version_conflict", "Relationship changed; refresh first") from None
@@ -699,17 +1259,35 @@ class Console:
             "groups": self._settings_groups(), "reasons": reasons,
         }
 
-    async def update_config(self, patch, *, expected_revision, reason, actor_id, context_id=""):
+    async def update_config(self, patch, *, expected_revision, reason, actor_id, context_id="", receipt="state"):
         self._open()
+        if receipt not in ("state", "config"):
+            raise ApplicationError("validation_error", "Invalid configuration receipt")
+        # 保存配置不再要求用户填写原因：留空时用固定审计说明，审计记录仍然完整。
+        reason = reason.strip() if isinstance(reason, str) else ""
+        reason = reason or "控制台保存配置"
         self._actor(actor_id, reason)
         await self.refresh_config()
         if context_id:
             self._context(context_id)
         async with self._config_lock:
-            if expected_revision != self.revision:
+            # 兼容旧页面提交的当前运行版本；新页面使用独立的配置版本。
+            if expected_revision not in (self.config_revision, self.revision):
                 raise ApplicationError("version_conflict", "Configuration changed; refresh first")
-            if not isinstance(patch, dict) or not patch or set(patch) - set(to_dict(self.config)):
+            if (not isinstance(patch, dict) or not patch
+                    or set(patch) - (set(to_dict(self.config)) - LEGACY_FIELDS)):
                 raise ApplicationError("validation_error", "Unknown or empty configuration patch")
+            # New list edits replace hidden legacy grants, including on clear.
+            patch = dict(patch)
+            if {"autonomy_qq_ids", "autonomy_qq_group_ids"} & patch.keys():
+                patch["autonomy_scopes"] = ""
+            # 改作息时间本身就表达「要用这套作息」：自动打开时间表，
+            # 否则设置里填了时间却永远不生效，页面与设置对不上。
+            schedule_keys = {"fatigue_start", "fatigue_end", "deep_sleep_at", "wake_at",
+                             "nap_enabled", "nap_start", "nap_end",
+                             "lie_in_min_minutes", "lie_in_max_minutes", "timezone"}
+            if patch.keys() & schedule_keys and "night_schedule_enabled" not in patch:
+                patch["night_schedule_enabled"] = True
             try:
                 updated = Config.from_mapping({**to_dict(self.config), **patch})
             except (ValueError, TypeError, KeyError, OverflowError):
@@ -727,15 +1305,33 @@ class Console:
             await self._replace_config(updated)
             await self.store.append_audit(action="config.update", actor_id=actor_id,
                                           reason=reason, value={"fields": sorted(patch)})
+            # 回执仍在锁内形成，只在原生持久化、运行时替换与审计完成后确认成功。
+            if receipt == "config":
+                return {"api_version": 1, "config": self.config_dto()}
         return await self.console_state(context_id)
 
     async def console_preview(self, context_id):
         self._open()
         context = self._context(context_id)
-        result = await self.behavior.preview_behavior(context)
-        return {"api_version": 1, "eligible": result.eligible,
-                "reasons": list(result.reason_codes), "candidates": [],
+        result = await self.behavior.evaluate(context)
+        codes = list(result.reason_codes)
+        return {"api_version": 1, "eligible": bool(result.eligible),
+                "score": result.score,
+                "min_score": getattr(self.behavior.policy(), "min_score", None),
+                "reasons": codes,
+                "reason_text": "；".join(behavior_reason_texts(codes)),
+                "gates": [{"code": code, "text": BEHAVIOR_REASON_TEXT.get(code, "未在页面登记的原因码。")}
+                          for code in codes],
+                "candidates": [],
                 "model_calls": 0, "sends": 0}
+
+    async def console_simulate(self, context_id):
+        """模拟一条主动发言：不判时机、不发送、不落库，只把文本给页面展示。"""
+        self._open()
+        context = self._context(context_id)
+        result = await self.behavior.simulate(context)
+        return {"api_version": 1, **result, "model_calls": int(result["status"] != "unavailable"),
+                "sends": 0}
 
     async def console_action(self, context_id, action, *, expected_revision, reason,
                              actor_id, confirmed, entry_id="", pinned=None, expected_pinned=None):
@@ -746,7 +1342,9 @@ class Console:
         if expected_revision != self.revision:
             raise ApplicationError("version_conflict", "Configuration changed; refresh first")
         if action == "experience.pin":
-            if (not self.config.enabled or not isinstance(entry_id, str) or not entry_id
+            private_entry = await self.store.load_experience(entry_id) if entry_id else None
+            private_archive = bool(private_entry and private_entry[0].context.platform == "console")
+            if (not self.config.enabled and not private_archive or not isinstance(entry_id, str) or not entry_id
                     or len(entry_id) > 512 or type(pinned) is not bool
                     or type(expected_pinned) is not bool or pinned == expected_pinned):
                 raise ApplicationError("validation_error", "Invalid pin update")
@@ -763,7 +1361,12 @@ class Console:
             return {**result, "model_calls": 0, "sends": 0}
         if entry_id or pinned is not None or expected_pinned is not None:
             raise ApplicationError("validation_error", "Pin fields require a pin action")
+        if action in ("diary.generate", "dream.generate"):
+            return await self.console_experience_generate(
+                str(uuid4()), (await self.manual_persona())[0], action.split(".")[0], actor_id=actor_id)
         state = await self.console_state(context_id)
+        if expected_revision != self.revision:
+            raise ApplicationError("version_conflict", "Configuration changed; refresh first")
         if not any(a["id"] == action and a["enabled"] for a in state["actions"]):
             raise ApplicationError("forbidden", "Action is unavailable")
         context = self._context(context_id)
@@ -772,28 +1375,38 @@ class Console:
             result = await self.advance_scope(context, action=action)
             if result is None:
                 raise ApplicationError("version_conflict", "Night state changed")
-            result = {"status": "accepted", "reason": "night_state_committed"}
+            result = {"status": "accepted",
+                      "reason": ("已按手动指令进入疲劳期：精力清零，随后进入睡眠。" if action == "night.sleep"
+                                 else "已按手动指令叫醒，精力保持不变。"),
+                      "reason_code": "night_state_committed"}
         elif action == "behavior.send":
-            self.spawn_action(self.behavior.execute(context, intent_id="manual:" + request_id))
-            result = {"status": "queued", "reason": "behavior_queued"}
+            # 管理员显式要求「现在发一条」：跳过时机分数、冷却与未回应退避，
+            # 静音、免打扰、额度、身份与来源校验仍然生效。
+            self.spawn_action(self.behavior.execute(context, intent_id="manual:" + request_id,
+                                                    manual=True))
+            result = {"status": "queued",
+                      "reason": "已按管理员指令排队发送，结果会写入行为记录，可在下方「最近执行」查看。",
+                      "reason_code": "behavior_queued"}
         else:
-            service = await self.experience_service(context)
-            source = await self.bridge.current(context)
-            if source is None:
-                raise ApplicationError("unavailable", "Source changed")
-            result = (await service.queue_diary(context, persona_text=source.persona.prompt)
-                      if action == "diary.generate" else await service.queue_dream(
-                          context, await self.night_snapshot(context),
-                          persona_text=source.persona.prompt))
+            # 日记与梦境都是管理员在控制台显式触发：一律按手动处理。
+            result = await self.queue_experience(
+                context, action.removesuffix(".generate"), manual=True,
+            )
         await self.store.append_audit(action=action, actor_id=actor_id, reason=reason,
                                       context=context, value={"request_id": request_id,
-                                                              "status": result["status"]})
+                                                              "status": result["status"],
+                                                              "reason_code": result.get("reason_code", "")})
         return {"api_version": 1, "request_id": request_id, **result}
 
     async def correct_relationship(self, context_id, *, expected_version, reason, actor_id,
                                    score=None, frozen=None):
         self._open()
+        # 关系校正也允许免填原因：审计仍记录一条固定说明。
+        reason = reason.strip() if isinstance(reason, str) else ""
+        reason = reason or "控制台修改好感"
         self._actor(actor_id, reason)
+        if not getattr(self.config, "relationship_edit_enabled", False):
+            raise ApplicationError("forbidden", "Relationship editing is disabled in settings")
         context = self._context(context_id)
         result = await self.store.correct_relationship(
             context, await self.store.get_generation(context), expected_version=expected_version,
@@ -817,6 +1430,16 @@ class Console:
                              expected_pinned=None):
         self._open()
         self._actor(actor_id, reason)
+        loaded = await self.store.load_experience(entry_id)
+        if loaded and loaded[0].context.platform == "console":
+            old, generation = loaded
+            identifier = (await self.manual_persona())[0]
+            if (old.context.persona_id != identifier or old.context.instance_id != self.instance_id
+                    or old.context.account_key != context_id or old.pinned != expected_pinned):
+                raise ApplicationError("version_conflict", "档案或人格已变化")
+            result = await self.store.pin_experience(
+                old, replace(old, pinned=pinned), generation, actor_id=actor_id, reason=reason)
+            return {"api_version": 1, **result}
         context = self._context(context_id)
         from .models import _pin_actor
         token = _pin_actor.set((actor_id, reason))
@@ -828,3 +1451,42 @@ class Console:
             return {"api_version": 1, **result}
         finally:
             _pin_actor.reset(token)
+
+    # ---- 情绪卡片图片（管理员自行维护，按情绪名称匹配） ----
+    def _emotion_images(self):
+        from ..storage.emotion_images import EmotionImages
+        return EmotionImages(self.data_dir)
+
+    async def console_emotion_images(self):
+        """只返回元数据：真正图片按需单独取，避免 state 载荷被图片撑大。"""
+        from ..storage.emotion_images import EmotionImageError
+        try:
+            return self._emotion_images().list()
+        except EmotionImageError as error:
+            raise ApplicationError(error.code, error.message) from error
+
+    async def console_emotion_image(self, mood, index=None, data_url=None, remove=False,
+                                    *, actor_id="console"):
+        from ..storage.emotion_images import EmotionImageError
+        images = self._emotion_images()
+        try:
+            if remove:
+                removed = images.delete(mood, _optional_int(index))
+                return {"api_version": 1, "mood": mood, "removed": removed,
+                        "moods": images.list()["moods"]}
+            if data_url is not None:
+                stored = images.save(mood, data_url)
+                payload = images.read(mood, stored.index)
+                return {"api_version": 1, "mood": mood, "saved": stored.name,
+                        "index": stored.index, "bytes": stored.size,
+                        "updated_at": stored.updated_at,
+                        "data_url": f"data:{payload[0]};base64,{payload[1]}",
+                        "moods": images.list()["moods"]}
+            payload = images.read(mood, _optional_int(index))
+            if payload is None:
+                return {"api_version": 1, "mood": mood, "data_url": None, "updated_at": None}
+            return {"api_version": 1, "mood": mood,
+                    "data_url": f"data:{payload[0]};base64,{payload[1]}",
+                    "updated_at": payload[2]}
+        except EmotionImageError as error:
+            raise ApplicationError(error.code, error.message) from error

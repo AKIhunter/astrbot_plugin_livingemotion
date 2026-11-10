@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
 from .config import Config
+from .domain.relationship import initial_relationship
 from .contracts import (
     API_VERSION,
     SCHEMA_VERSION,
@@ -58,13 +59,14 @@ class LivingEmotionAPI:
     def _result(status: str, reason: str, **data: Any) -> dict[str, Any]:
         return {"api_version": API_VERSION, "status": status, "reason_code": reason, **data}
 
-    async def get_capabilities(self) -> dict[str, Any]:
+    async def get_capabilities(self, context=None) -> dict[str, Any]:
         await self._sync()
-        mode = (self._application.effective_mode() if self._application
+        mode = (self._application.effective_mode(self._context(context) if context is not None else None) if self._application
                 else self._config.mode if self._config.enabled and self._active else "disabled")
         return self._result(
             "ok", "capabilities", schema_version=SCHEMA_VERSION,
             operations=["get_capabilities", "resolve_producer_context", "ingest_event", "get_bot_state",
+                        "get_current_emotion",
                         "get_observation", "get_relationship", "get_availability",
                         "preview_behavior", "get_health"],
             mode=mode, memory_mode=self._config.memory_mode,
@@ -232,11 +234,65 @@ class LivingEmotionAPI:
     async def get_bot_state(self, context: Context | Mapping[str, Any]) -> dict[str, Any]:
         return await self._snapshot(context, "bot", BotAffect())
 
+    async def get_current_emotion(self, context=None, *, event=None) -> dict[str, Any]:
+        """Numeric read facade for other plugins; no text, evidence or identity fields."""
+        await self._sync()
+        if not self._active or not self._config.enabled:
+            return self._result("unavailable", "plugin_disabled")
+        try:
+            app = self._application
+            if event is not None:
+                if app is None:
+                    return self._result("unavailable", "native_bridge_unavailable")
+                source, _ = await app.bridge.normalize(event, self._store.clock())
+                scope = source.context
+            else:
+                scope = self._context(context)
+            if self._instance_id is not None and scope.instance_id != self._instance_id:
+                return self._result("rejected", "instance_mismatch")
+            # Shared private state is never exposed to a public-comment producer.
+            if scope.scene_kind == SceneKind.PUBLIC_COMMENT:
+                return self._result("unavailable", "public_comment_no_emotion")
+            generation = await self._store.get_generation(scope)
+            if app is not None and not await app.validate_context(scope, generation):
+                return self._result("unavailable", "context_changed")
+            from .runtime.projector import current_affect
+            from .runtime.state_scope import source_affect
+            from .domain.dreaming import six_emotions
+            record = await self._store.get_state(scope, "bot")
+            state = current_affect(record, now=self._store.clock())
+            state = source_affect(state, scope)
+            emotions = await app.weather_emotions(state) if app else six_emotions(state)
+            if app is not None and not await app.validate_context(scope, generation):
+                return self._result("unavailable", "context_changed")
+            latest = await self._store.get_state(scope, "bot")
+            if (latest.version if latest else 0) != (record.version if record else 0):
+                return self._result("unavailable", "state_changed")
+            dominant = max(emotions, key=emotions.get)
+            dominant = dominant if emotions[dominant] >= .25 else "calm"
+            mode = app.effective_mode(scope) if app else self._config.mode
+            return self._result("ok", "current_emotion", data={
+                "emotions": emotions, "dominant": dominant, "labels": list(state.labels),
+                "affect": {k: getattr(state, k) for k in (
+                    "pleasure", "arousal", "stress", "social_need")},
+                "updated_at": state.updated_at, "sampled_at": self._store.clock(),
+                "version": record.version if record else 0, "generation": generation,
+                "mode": mode, "may_influence_reply": mode == "active",
+            })
+        except (TypeError, ValueError, KeyError, AttributeError):
+            return self._result("rejected", "invalid_context")
+        except StoreClosed:
+            return self._result("unavailable", "store_closed")
+        except Exception:
+            return self._result("unavailable", "emotion_read_failed")
+
     async def get_observation(self, context: Context | Mapping[str, Any]) -> dict[str, Any]:
         return await self._snapshot(context, "observation", None)
 
     async def get_relationship(self, context: Context | Mapping[str, Any]) -> dict[str, Any]:
-        return await self._snapshot(context, "relationship", Relationship())
+        return await self._snapshot(
+            context, "relationship", initial_relationship(),
+        )
 
     async def get_availability(self, context: Context | Mapping[str, Any]) -> dict[str, Any]:
         await self._sync()

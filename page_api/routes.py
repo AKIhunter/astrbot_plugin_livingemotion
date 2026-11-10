@@ -8,10 +8,13 @@ from .validation import body_parameters, query_parameters
 PLUGIN_NAME = "astrbot_plugin_livingemotion"
 RESPONSE_HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 ROUTES = (
-    ("state", "GET"), ("records", "GET"), ("config", "POST"),
+    ("state", "GET"), ("records", "GET"), ("config", "POST"), ("configuration", "GET"),
     ("preview", "POST"), ("action", "POST"),
     ("scopes", "GET"), ("relationships", "GET"), ("relationship", "POST"),
     ("energy", "GET"), ("settings-options", "GET"),
+    ("memory-sync", "POST"), ("behavior-simulate", "POST"),
+    ("emotion-images", "GET"), ("emotion-image", "GET"), ("emotion-image-save", "POST"),
+    ("experience-generate", "POST"), ("experience-task", "GET"),
 )
 
 
@@ -43,6 +46,9 @@ class PageAPI:
     async def config(self):
         return await self._dispatch("config")
 
+    async def configuration(self):
+        return await self._dispatch("configuration")
+
     async def preview(self):
         return await self._dispatch("preview")
 
@@ -64,6 +70,27 @@ class PageAPI:
     async def settings_options(self):
         return await self._dispatch("settings-options")
 
+    async def memory_sync(self):
+        return await self._dispatch("memory-sync")
+
+    async def behavior_simulate(self):
+        return await self._dispatch("behavior-simulate")
+
+    async def emotion_images(self):
+        return await self._dispatch("emotion-images")
+
+    async def emotion_image(self):
+        return await self._dispatch("emotion-image")
+
+    async def emotion_image_save(self):
+        return await self._dispatch("emotion-image-save")
+
+    async def experience_generate(self):
+        return await self._dispatch("experience-generate")
+
+    async def experience_task(self):
+        return await self._dispatch("experience-task")
+
     async def _dispatch(self, operation: str):
         from astrbot.api.web import json_response, request
 
@@ -78,7 +105,7 @@ class PageAPI:
                 parameters = query_parameters(operation, request.query)
             else:
                 parameters = await body_parameters(operation, request)
-            if operation in ("config", "action", "relationship"):
+            if operation in ("config", "action", "relationship", "memory-sync", "experience-generate"):
                 parameters["actor_id"] = actor_id
             # Parsing may yield; never start business work on a stopped instance.
             if self._closed:
@@ -129,7 +156,8 @@ class PageAPI:
             nodes = result.get("nodes")
             if (not isinstance(nodes, list) or len(nodes) > parameters["limit"]
                     or result.get("displayed") != len(nodes)
-                    or len(nodes) > result["total"]
+                    or (parameters.get("graph_scope", "matched") == "matched"
+                        and len(nodes) > result["total"])
                     or not isinstance(result.get("edges"), list)
                     or len(result["edges"]) != len(nodes)):
                 raise ConsoleError("unavailable")

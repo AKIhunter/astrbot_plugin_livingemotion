@@ -317,6 +317,8 @@ class StateScopeStore:
                 (write.owner.owner_key, write.kind, version, now, payload),
             )
             versions[f"{write.kind}:"] = version
+            if write.kind == "bot":
+                self._append_emotion(db, write.owner.owner_key, write.owner.generation, now, write.value)
             if write.kind == "night" and (
                 write.energy_events or row is None or row["value_json"] != payload
             ):
@@ -328,6 +330,47 @@ class StateScopeStore:
                                     stable_key("state", write.owner, version), "", before, after,
                                     write.energy_events)
         return versions
+
+    def _append_emotion(self, db, key, generation, now, value):
+        import math
+        dims = [value.get(k) for k in ("pleasure", "arousal", "stress", "social_need")]
+        if any(type(v) not in (int, float) or not math.isfinite(v) for v in dims):
+            return
+        db.execute("INSERT OR REPLACE INTO emotion_samples VALUES(?,?,?,?,?,?,?)",
+                   (key, generation, now, *dims))
+        db.execute("DELETE FROM emotion_samples WHERE at<?", (now - 172800,))
+
+    async def emotion_history(self, context, *, since, until):
+        """Reconstruct 5 minute values from recorded state and its known decay."""
+        from ..domain.emotion import decay_affect
+        from ..domain.dreaming import six_emotions
+        owner = self.state_owner(context)
+        key = owner.owner_key if owner else context.scope_key
+        generation = owner.generation if owner and owner.mode == "shared" else await self.get_generation(context)
+        def read(db):
+            self._check_owner(db, context, owner)
+            rows = db.execute(
+                """SELECT * FROM emotion_samples WHERE owner_key=? AND generation=? AND at<=?
+                   AND (at>=? OR at=(SELECT MAX(at) FROM emotion_samples
+                       WHERE owner_key=? AND generation=? AND at<?)) ORDER BY at""",
+                (key, generation, until, since, key, generation, since)).fetchall()
+            points, index, current = [], 0, None
+            # Right edge is a completed 5-minute slot; exactly 288 slots for 24h.
+            end = int(until // 300) * 300
+            for at in range(end - 86100, end + 1, 300):
+                if at < since:
+                    continue
+                while index < len(rows) and rows[index]["at"] <= at:
+                    current = rows[index]; index += 1
+                emotions = None
+                if current is not None:
+                    affect = BotAffect(**{k: current[k] for k in
+                        ("pleasure", "arousal", "stress", "social_need")}, updated_at=current["at"])
+                    emotions = six_emotions(decay_affect(affect, now=at))
+                points.append({"at": at, "emotions": emotions,
+                               "basis": "recorded_decay" if current is not None else "uncollected"})
+            return points
+        return await self._run(read)
 
     def _append_energy(self, db, context, key, event_id, source_id, before, after, changes):
         if not changes and (before.energy != after.energy or before.phase != after.phase

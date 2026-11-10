@@ -16,7 +16,7 @@ class NightStore:
         details.allowed gates the side effect, but elapsed state still commits.
         """
         from .sqlite import _Rejected
-        if operation not in ("tick", "reply_started", "reply_submitted", "wake", "manual"):
+        if operation not in ("tick", "reply_started", "reply_submitted", "wake", "manual", "dream_wake"):
             raise ValueError("invalid night operation")
         if operation.startswith("reply_") and (
             not isinstance(reply_id, str) or not reply_id.strip() or len(reply_id) > 512

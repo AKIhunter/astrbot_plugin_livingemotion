@@ -1,89 +1,479 @@
 {
-  "enabled": {"type": "bool", "default": true, "description": "Enable local state processing"},
-  "mode": {"type": "string", "default": "active", "options": ["active", "observe_only"], "description": "Operating mode"},
-  "memory_mode": {"type": "string", "default": "none", "options": ["none", "local_lite", "external"], "description": "Optional long-term memory"},
-  "memory_read": {"type": "bool", "default": false, "description": "Allow external memory reads"},
-  "memory_export": {"type": "bool", "default": false, "description": "Allow explicit experience export"},
-  "autonomy_enabled": {"type": "bool", "default": false, "description": "Allow autonomous behavior"},
-  "group_autonomy_enabled": {"type": "bool", "default": false, "description": "Allow group autonomous behavior"},
-  "emotion_model_enabled": {"type": "bool", "default": false, "description": "Allow paid emotion refinement"},
-  "dream_enabled": {"type": "bool", "default": false, "description": "Allow dream generation"},
-  "diary_enabled": {"type": "bool", "default": false, "description": "Allow diary generation"},
-  "night_enabled": {"type": "bool", "default": true, "description": "Enable local night state"},
-  "night_block_chat": {"type": "bool", "default": false, "description": "Explicitly allow night state to block ordinary chat"},
-  "persona_mode": {"type": "string", "default": "follow", "options": ["follow", "explicit", "none"], "description": "Native persona selection"},
-  "persona_id": {"type": "string", "default": "", "description": "Explicit native persona ID"},
-  "timezone": {"type": "string", "default": "", "description": "IANA timezone, required for autonomous scheduling"},
-  "provider_id": {"type": "string", "default": "", "description": "Background provider; empty follows current session"},
-  "fallback_provider_id": {"type": "string", "default": "", "description": "Fallback only before dispatch, never retry an unknown request"},
-  "autonomy_scopes": {"type": "string", "default": "", "description": "Whitespace-separated full scope keys; empty denies all"},
-  "muted_scopes": {"type": "string", "default": "", "description": "Whitespace-separated muted scope keys"},
-  "night_schedule_enabled": {"type": "bool", "default": false, "description": "Enable planned sleep windows"},
-  "sleep_at": {"type": "string", "default": "01:00", "description": "Local sleep time HH:MM"},
-  "wake_at": {"type": "string", "default": "08:00", "description": "Local wake time HH:MM"},
-  "diary_at": {"type": "string", "default": "23:00", "description": "Local diary time HH:MM"},
-  "diary_backfill_yesterday": {"type": "bool", "default": false, "description": "Allow only yesterday diary backfill"},
-  "scheduler_seconds": {"type": "int", "default": 60, "description": "Local scheduler interval, no default model calls"},
-  "dnd_start": {"type": "string", "default": "01:00", "description": "Autonomy do-not-disturb start HH:MM"},
-  "dnd_end": {"type": "string", "default": "08:00", "description": "Autonomy do-not-disturb end HH:MM"},
-  "active_start": {"type": "string", "default": "00:00", "description": "Autonomy active window start HH:MM"},
-  "active_end": {"type": "string", "default": "23:59", "description": "Autonomy active window end HH:MM (exclusive)"},
-  "behavior_daily_limit": {"type": "int", "default": 6, "description": "Global daily autonomous attempts"},
-  "behavior_scope_daily_limit": {"type": "int", "default": 2, "description": "Daily autonomous attempts per source scope"},
-  "behavior_cooldown_seconds": {"type": "int", "default": 7200, "description": "Autonomous attempt cooldown"},
-  "behavior_unanswered_limit": {"type": "int", "default": 2, "description": "Stop after this many unanswered confirmed or unknown sends"},
-  "behavior_random_min_minutes": {"type": "int", "default": 90, "description": "随机等待最短分钟数 (1..10080)，须不大于最长时间"},
-  "behavior_random_max_minutes": {"type": "int", "default": 240, "description": "随机等待最长分钟数 (1..10080)，到点再次检查是否适合开口"},
-  "behavior_idle_minutes": {"type": "int", "default": 20, "description": "聊天安静至少这些分钟后才尝试主动 (1..1440)"},
-  "behavior_style": {"type": "string", "default": "balanced", "options": ["gentle", "balanced", "lively"], "description": "主动节奏：轻柔、自然、活泼"},
-  "behavior_emotional_share": {"type": "bool", "default": true, "description": "允许熟悉的私聊关系中分享轻微主观心情；自主发送总开关仍生效"},
-  "behavior_provider_id": {"type": "string", "default": "", "description": "主动聊天模型，留空沿用当前聊天模型"},
-  "diary_retries": {"type": "int", "default": 2, "description": "Diary retry limit (0..2); all attempts consume budget"},
-  "dream_per_night": {"type": "int", "default": 2, "description": "Dream attempt limit per sleep episode (1..2)"},
-  "diary_retention_days": {"type": "int", "default": 30, "description": "Unpinned diary retention (1..365 days)"},
-  "dream_retention_days": {"type": "int", "default": 7, "description": "Unpinned dream retention (1..30 days)"},
-  "dream_half_life_seconds": {"type": "int", "default": 86400, "description": "Dream clarity half-life"},
-  "experience_body_chars": {"type": "int", "default": 2000, "description": "Maximum experience body characters"},
-  "model_concurrency": {"type": "int", "default": 1, "description": "Background worker limit (1..8)"},
-  "queue_size": {"type": "int", "default": 100, "description": "Bounded background queue (1..1000)"},
-  "model_daily_limit": {"type": "int", "default": 48, "description": "Global daily model reservations"},
-  "emotion_interval_seconds": {"type": "int", "default": 300, "description": "Minimum refinement interval per scope"},
-  "model_input_tokens": {"type": "int", "default": 4096, "description": "Maximum input tokens per model task"},
-  "model_output_tokens": {"type": "int", "default": 1024, "description": "Maximum requested output tokens"},
-  "model_timeout_seconds": {"type": "int", "default": 30, "description": "Background task timeout"},
-  "window_days": {"type": "int", "default": 7, "description": "Body retention days (1..7)"},
-  "window_per_scope": {"type": "int", "default": 200, "description": "Body records per scope (1..200)"},
-  "window_global": {"type": "int", "default": 10000, "description": "Total body records (1..10000)"},
-  "body_max_chars": {"type": "int", "default": 8000, "description": "Body characters per record (1..8000)"},
-  "event_days": {"type": "int", "default": 30, "description": "Non-body event retention days"},
-  "persona_shared_state": {"type": "bool", "default": true, "description": "Share numeric emotion and night state within one instance/persona; old missing setting keeps scene mode"},
-  "night_policy_version": {"type": "int", "default": 2, "description": "2 enables five-state rules after timezone setup; old missing field stays 1"},
-  "allow_sleep": {"type": "bool", "default": true, "description": "Policy 2: allow sleep to block chat; off keeps energy tracking"},
-  "nap_enabled": {"type": "bool", "default": true, "description": "Policy 2: enable afternoon nap"},
-  "nap_start": {"type": "string", "default": "13:00", "description": "Nap start HH:MM"},
-  "nap_end": {"type": "string", "default": "14:30", "description": "Nap end HH:MM"},
-  "fatigue_start": {"type": "string", "default": "23:30", "description": "Night fatigue/sleep cycle start HH:MM"},
-  "fatigue_end": {"type": "string", "default": "07:00", "description": "Fatigue drain end, not permission to exit deep sleep"},
-  "deep_sleep_at": {"type": "string", "default": "02:30", "description": "Deep sleep HH:MM; drowsy starts at the start/deep midpoint"},
-  "lie_in_min_minutes": {"type": "int", "default": 0, "description": "Minimum nonnegative lie-in minutes"},
-  "lie_in_max_minutes": {"type": "int", "default": 90, "description": "Maximum lie-in minutes; one durable draw per night"},
-  "wake_mode": {"type": "string", "default": "chat", "options": ["chat", "never", "both"], "description": "Private human wake; never; or private/native group mention"},
-  "wake_reply_limit": {"type": "int", "default": 3, "description": "Generation attempts allowed after chat wake; failures count"},
-  "wake_window_minutes": {"type": "int", "default": 10, "description": "Absolute wake window from first host submission"},
-  "energy_reply_cost": {"type": "float", "default": 4.0, "description": "Energy cost once per visible reply; fixed step 0.1"},
-  "energy_fatigue_per_minute": {"type": "float", "default": 0.8, "description": "Awake fatigue drain per minute; fixed step 0.1"},
-  "energy_recovery_per_minute": {"type": "float", "default": 1.5, "description": "Sleep/non-fatigue recovery per minute; fixed step 0.1"},
-  "catchup_enabled": {"type": "bool", "default": true, "description": "Read archived unread messages after waking"},
-  "catchup_reply_enabled": {"type": "bool", "default": true, "description": "Generate bounded historical replies after reading"},
-  "closing_enabled": {"type": "bool", "default": false, "description": "Allow bedtime closing in recently participating real scenes"},
-  "closing_random": {"type": "bool", "default": false, "description": "Use one budgeted generation for closing instead of local template"},
-  "closing_lead_minutes": {"type": "int", "default": 5, "description": "Closing lead before night fatigue start"},
-  "diary_provider_id": {"type": "string", "default": "", "description": "Diary provider; empty follows chat"},
-  "dream_provider_id": {"type": "string", "default": "", "description": "Dream provider; empty follows chat"},
-  "catchup_provider_id": {"type": "string", "default": "", "description": "Catchup provider; empty follows chat"},
-  "closing_provider_id": {"type": "string", "default": "", "description": "Closing provider; empty follows chat"},
-  "home_city": {"type": "string", "default": "", "description": "Bot home city for weather"},
-  "embedding_provider_id": {"type": "string", "default": "", "description": "Native embedding provider ID; no credentials"},
-  "livingmemory_enabled": {"type": "bool", "default": false, "description": "Use installed LivingMemory public facade instead of local vectors"},
-  "memory_write": {"type": "bool", "default": false, "description": "Allow local automatic vector collection"}
+  "enabled": {
+    "type": "bool",
+    "default": true,
+    "description": "启用插件。例：开启并选仅观察，先体验生活状态。"
+  },
+  "mode": {
+    "type": "string",
+    "default": "active",
+    "options": [
+      "active",
+      "observe_only"
+    ],
+    "description": "运行模式。例：observe_only仅观察；active参与表达和已授权行为。"
+  },
+  "persona_mode": {
+    "type": "string",
+    "default": "follow",
+    "options": [
+      "follow",
+      "explicit",
+      "none"
+    ],
+    "description": "人格选择方式。例：follow跟随会话；explicit须选择原生人格。"
+  },
+  "persona_id": {
+    "type": "string",
+    "default": "",
+    "description": "指定模式使用的原生人格ID。例：先选explicit，再选择人格。"
+  },
+  "persona_shared_state": {
+    "type": "bool",
+    "default": true,
+    "description": "同一人格共享情绪与精力数值，正文来源仍隔离。例：开启可让群私聊使用同一精力。"
+  },
+  "timezone": {
+    "type": "string",
+    "default": "",
+    "description": "作息与调度使用的IANA时区。例：Asia/Shanghai；不是城市名。"
+  },
+  "provider_id": {
+    "type": "string",
+    "default": "",
+    "description": "各后台生成任务通用默认聊天模型，留空跟随会话；情绪细化、日记、梦境、主动聊天、醒后补答和晚安可用专用模型覆盖。例：先设通用模型，再按需单独覆盖。"
+  },
+  "fallback_provider_id": {
+    "type": "string",
+    "default": "",
+    "description": "请求发出前的备用模型，未知请求不重发。例：选择备用聊天模型。"
+  },
+  "autonomy_enabled": {
+    "type": "bool",
+    "default": false,
+    "description": "允许随机等待后主动找话题，需正常模式、时区与号码授权。例：等待90–240分钟再评估。"
+  },
+  "autonomy_qq_ids": {
+    "type": "string",
+    "default": "",
+    "description": "允许主动私聊的QQ号码，手写或输入框下拉追加；只匹配已有真实私聊。例：12345678, 23456789。"
+  },
+  "autonomy_qq_group_ids": {
+    "type": "string",
+    "default": "",
+    "description": "主动发言QQ群号限制；留空表示所有已知真实QQ群，填写则只匹配所列群。群聊总开关、静默、时段和预算仍生效，非QQ不扩大；私聊空名单仍不授权。例：留空作用于已知QQ群，或填34567890, 45678901。"
+  },
+  "group_autonomy_enabled": {
+    "type": "bool",
+    "default": false,
+    "description": "允许在授权群内主动发言。例：只需私聊时关闭。"
+  },
+  "muted_scopes": {
+    "type": "string",
+    "default": "",
+    "description": "静默真实会话范围，优先于允许名单。例：复制现有scope_key，多个用空格分隔。"
+  },
+  "active_start": {
+    "type": "string",
+    "default": "00:00",
+    "description": "主动时段开始HH:MM，支持跨午夜。例：09:00。"
+  },
+  "active_end": {
+    "type": "string",
+    "default": "23:59",
+    "description": "主动时段结束HH:MM，不含结束边界。例：22:00；不能与开始相同。"
+  },
+  "dnd_start": {
+    "type": "string",
+    "default": "01:00",
+    "description": "主动免打扰开始HH:MM。例：23:00至次日08:00。"
+  },
+  "dnd_end": {
+    "type": "string",
+    "default": "08:00",
+    "description": "主动免打扰结束HH:MM。例：08:00；不阻止正常接收消息。"
+  },
+  "behavior_style": {
+    "type": "string",
+    "default": "balanced",
+    "options": [
+      "gentle",
+      "balanced",
+      "lively"
+    ],
+    "description": "主动节奏，硬额度始终生效。例：gentle轻柔、balanced自然、lively活泼。"
+  },
+  "behavior_emotional_share": {
+    "type": "bool",
+    "default": true,
+    "description": "允许熟悉私聊中分享轻微心情，不索求安慰、不带入群聊。例：聊聊今天的趣事。"
+  },
+  "behavior_provider_id": {
+    "type": "string",
+    "default": "",
+    "description": "主动聊天专用模型。例：留空沿用默认或当前聊天模型。"
+  },
+  "behavior_random_min_minutes": {
+    "type": "int",
+    "default": 90,
+    "description": "随机等待最短分钟数1–10080，不能大于最长。例：90至240。"
+  },
+  "behavior_random_max_minutes": {
+    "type": "int",
+    "default": 240,
+    "description": "随机等待最长分钟数1–10080，到点仍会检查是否适合开口。例：240为4小时。"
+  },
+  "behavior_idle_minutes": {
+    "type": "int",
+    "default": 20,
+    "description": "聊天安静至少1–1440分钟再尝试；群聊看全群。例：20分钟。"
+  },
+  "behavior_daily_limit": {
+    "type": "int",
+    "default": 6,
+    "description": "每日所有会话主动尝试总额度，失败也计入。例：6次。"
+  },
+  "behavior_scope_daily_limit": {
+    "type": "int",
+    "default": 2,
+    "description": "每个会话每日主动尝试额度，与总额度同时生效。例：2次。"
+  },
+  "behavior_cooldown_seconds": {
+    "type": "int",
+    "default": 7200,
+    "description": "同会话主动尝试后的冷却秒数。例：7200为2小时。"
+  },
+  "behavior_unanswered_limit": {
+    "type": "int",
+    "default": 2,
+    "description": "连续未回应次数上限，未知发送结果保守计入。例：2次后先停止主动。"
+  },
+  "emotion_model_enabled": {
+    "type": "bool",
+    "default": false,
+    "description": "模型辅助细化主观情绪。例：关闭保留本地规则，开启消耗模型预算。"
+  },
+  "emotion_interval_seconds": {
+    "type": "int",
+    "default": 300,
+    "description": "同范围模型情绪分析最小间隔秒数。例：300为5分钟。"
+  },
+  "night_schedule_enabled": {
+    "type": "bool",
+    "default": false,
+    "description": "自动作息，启用前填写时区。例：23:30夜间、02:30沉睡、08:00基础起床。"
+  },
+  "allow_sleep": {
+    "type": "bool",
+    "default": true,
+    "description": "允许睡眠影响聊天可用性，关闭仍记录精力。例：希望夜里随时回复时关闭。"
+  },
+  "nap_enabled": {
+    "type": "bool",
+    "default": true,
+    "description": "启用午休时间段。例：13:00至14:30。"
+  },
+  "nap_start": {
+    "type": "string",
+    "default": "13:00",
+    "description": "本地午休开始HH:MM。例：13:00。"
+  },
+  "nap_end": {
+    "type": "string",
+    "default": "14:30",
+    "description": "本地午休结束HH:MM，不能与开始相同。例：14:30。"
+  },
+  "fatigue_start": {
+    "type": "string",
+    "default": "23:30",
+    "description": "夜间疲劳与睡眠周期开始，和沉睡中点为转困时间。例：23:30。"
+  },
+  "fatigue_end": {
+    "type": "string",
+    "default": "07:00",
+    "description": "疲劳消耗结束，不代表退出沉睡。例：07:00，仍按起床时间唤醒。"
+  },
+  "deep_sleep_at": {
+    "type": "string",
+    "default": "02:30",
+    "description": "沉睡时间须在夜间开始与基础起床之间。例：23:30→02:30→08:00。"
+  },
+  "wake_at": {
+    "type": "string",
+    "default": "08:00",
+    "description": "基础起床HH:MM，实际另加本周期固定赖床值。例：08:00加0–90分钟。"
+  },
+  "lie_in_min_minutes": {
+    "type": "int",
+    "default": 0,
+    "description": "最少赖床分钟数，可为0，不大于最多。例：0。"
+  },
+  "lie_in_max_minutes": {
+    "type": "int",
+    "default": 90,
+    "description": "最多赖床0–1440分钟，每周期只抽取一次。例：90。"
+  },
+  "wake_mode": {
+    "type": "string",
+    "default": "chat",
+    "options": [
+      "chat",
+      "never",
+      "both"
+    ],
+    "description": "聊天唤醒：chat仅私聊、never不允许、both私聊或群原生@。例：chat。"
+  },
+  "wake_reply_limit": {
+    "type": "int",
+    "default": 3,
+    "description": "聊天唤醒回复尝试1–100轮，失败计入。例：3轮。"
+  },
+  "wake_window_minutes": {
+    "type": "int",
+    "default": 10,
+    "description": "首次提交起固定唤醒窗口1–1440分钟。例：10分钟。"
+  },
+  "energy_reply_cost": {
+    "type": "float",
+    "default": 4.0,
+    "description": "每次可见回复精力消耗0–100，步进0.1。例：4.0点。"
+  },
+  "energy_fatigue_per_minute": {
+    "type": "float",
+    "default": 0.8,
+    "description": "疲劳清醒阶段每分钟消耗0–100，步进0.1。例：0.8点/分钟。"
+  },
+  "energy_recovery_per_minute": {
+    "type": "float",
+    "default": 1.5,
+    "description": "适用恢复阶段每分钟恢复0–100，步进0.1，上限100。例：1.5点/分钟。"
+  },
+  "catchup_enabled": {
+    "type": "bool",
+    "default": true,
+    "description": "醒后阅读真实来源的未读归档。例：只读不补答时关闭下方补答开关。"
+  },
+  "catchup_reply_enabled": {
+    "type": "bool",
+    "default": true,
+    "description": "允许醒后有限历史补答，需阅读、模型与预算。例：和醒后阅读同时开启。"
+  },
+  "catchup_provider_id": {
+    "type": "string",
+    "default": "",
+    "description": "醒后补课模型。例：留空跟随默认模型。"
+  },
+  "closing_enabled": {
+    "type": "bool",
+    "default": false,
+    "description": "睡前在近期参与的真实会话道晚安。例：开启，不向所有好友群发。"
+  },
+  "closing_random": {
+    "type": "bool",
+    "default": false,
+    "description": "使用模型随机生成晚安，关闭用本地模板。例：关闭可少一次模型调用。"
+  },
+  "closing_lead_minutes": {
+    "type": "int",
+    "default": 5,
+    "description": "夜间开始前0–60分钟评估晚安。例：23:30起点、提前5分钟为23:25附近。"
+  },
+  "closing_provider_id": {
+    "type": "string",
+    "default": "",
+    "description": "随机晚安生成模型。例：选轻量聊天模型。"
+  },
+  "diary_enabled": {
+    "type": "bool",
+    "default": false,
+    "description": "自动私人日记，使用合法素材并消耗预算。例：本地23:00计划生成。"
+  },
+  "diary_at": {
+    "type": "string",
+    "default": "23:00",
+    "description": "日记计划时间HH:MM，到点评估不保证生成。例：23:00。"
+  },
+  "diary_backfill_yesterday": {
+    "type": "bool",
+    "default": false,
+    "description": "仅补写昨天缺失日记。例：昨天停机后尝试补写，不遍历更早历史。"
+  },
+  "diary_provider_id": {
+    "type": "string",
+    "default": "",
+    "description": "日记专用模型。例：留空跟随默认模型。"
+  },
+  "diary_retries": {
+    "type": "int",
+    "default": 2,
+    "description": "日记明确失败后的重试上限0–2，每次计预算。例：0不重试。"
+  },
+  "diary_retention_days": {
+    "type": "int",
+    "default": 30,
+    "description": "未固定日记保留1–365天。例：30天。"
+  },
+  "dream_enabled": {
+    "type": "bool",
+    "default": false,
+    "description": "睡眠中生成想象梦境，不能当真实事实。例：开启体验梦境。"
+  },
+  "dream_theme_pool": {
+    "type": "text",
+    "default": "[\"赛博朋克\",\"绿野仙踪\",\"生活日常\",\"星际漫游\",\"海底王国\",\"古堡奇遇\",\"森林童话\",\"校园时光\",\"蒸汽幻想\",\"云端旅行\",\"四季庭院\",\"时光回廊\"]",
+    "description": "梦境池：每次随机两个不同主题，结合当日情绪。支持JSON列表、逗号或换行分隔，2–32项。"
+  },
+  "dream_owner_notify": {
+    "type": "bool", "default": false,
+    "description": "自动梦境因愤怒或恐惧惊醒时给主人发一次消息。默认关闭，开启允许夜间专用通知；手动生成不发送。"
+  },
+  "dream_owner_qq": {
+    "type": "string", "default": "",
+    "description": "梦中惊醒消息接收人，仅一个主人QQ，须已有真实私聊来源。"
+  },
+  "dream_provider_id": {
+    "type": "string",
+    "default": "",
+    "description": "梦境专用模型。例：选简短叙事模型。"
+  },
+  "dream_per_night": {
+    "type": "int",
+    "default": 2,
+    "description": "每个睡眠周期梦境尝试1–2次，失败计入。例：1。"
+  },
+  "dream_retention_days": {
+    "type": "int",
+    "default": 7,
+    "description": "未固定梦境保留1–30天。例：7天。"
+  },
+  "dream_half_life_seconds": {
+    "type": "int",
+    "default": 86400,
+    "description": "梦境清晰度减半的秒数。例：86400为一天。"
+  },
+  "experience_body_chars": {
+    "type": "int",
+    "default": 2000,
+    "description": "日记或梦境正文1–8000字符。例：2000。"
+  },
+  "home_city": {
+    "type": "string",
+    "default": "",
+    "description": "公开住所城市用于天气，不填详细地址、不替代时区。例：上海。"
+  },
+  "livingmemory_enabled": {
+    "type": "bool",
+    "default": false,
+    "description": "使用已安装LivingMemory接口，关闭使用本地向量。例：外部插件配置好后开启。"
+  },
+  "memory_read": {
+    "type": "bool",
+    "default": false,
+    "description": "允许按身份和用途检索记忆。例：需要根据经历找话题时开启。"
+  },
+  "memory_write": {
+    "type": "bool",
+    "default": false,
+    "description": "允许写入聊天回复体验，不做语义价值筛选；仍按来源隔离并遵守保留期。例：停止新增记录时关闭。"
+  },
+  "embedding_provider_id": {
+    "type": "string",
+    "default": "",
+    "description": "仅本地向量记忆需要原生embedding提供商；启用LivingMemory无需配置本地embedding，WebUI中此项置灰，仍需配置LivingMemory自身。例：本地向量模式选择已配置的AstrBot向量提供商。"
+  },
+  "relationship_stage_names": {
+    "type": "string",
+    "default": "[\"反感\",\"陌生\",\"友好\",\"亲近\",\"独特\"]",
+    "description": "5档关系名称：0–10反感、11–24陌生、25–44友好、45–99亲近、100独特。须为5项JSON数组；空字符串使用默认名称。旧11项自动兼容，保留特殊名称。普通互动最高99，100由管理员设置。小数按下一档下界划分。"
+  },
+  "relationship_stage_descriptions": {
+    "type": "string",
+    "default": "[\"\",\"\",\"\",\"\"]",
+    "description": "前4档关系的相处描述，须为4项JSON数组，每项最多1000字。留空沿用该档默认描述；控制台按关系名称和描述两栏编辑。"
+  },
+  "relationship_special_description": {
+    "type": "string",
+    "default": "",
+    "description": "100分独特关系的自定义说明，最多1000字，影响回复中的关系表达。单个对象的关系备注优先于此说明。例：主人，温柔陪伴、主动关心，保留傲娇表达。"
+  },
+  "relationship_edit_enabled": {
+    "type": "bool",
+    "default": false,
+    "description": "是否在关系页显示好感编辑。默认关闭只读；打开后才出现好感分数与冻结开关的编辑表单。例：需要人工校正某个账号的好感时才开启。"
+  },
+  "window_days": {
+    "type": "int",
+    "default": 7,
+    "description": "正文素材保留1–7天。例：7天，同时受条数上限限制。"
+  },
+  "window_per_scope": {
+    "type": "int",
+    "default": 200,
+    "description": "每个真实会话正文素材1–200条。例：200。"
+  },
+  "window_global": {
+    "type": "int",
+    "default": 10000,
+    "description": "全部正文素材总量1–10000条。例：10000。"
+  },
+  "body_max_chars": {
+    "type": "int",
+    "default": 8000,
+    "description": "单条正文1–8000字符，超长截断。例：8000。"
+  },
+  "event_days": {
+    "type": "int",
+    "default": 30,
+    "description": "不含正文的事件记录保留天数。例：30。"
+  },
+  "scheduler_seconds": {
+    "type": "int",
+    "default": 60,
+    "description": "后台评估间隔1–3600秒，每轮不一定调用模型。例：60。"
+  },
+  "model_concurrency": {
+    "type": "int",
+    "default": 1,
+    "description": "本插件后台模型并发1–8。例：1适合轻量部署。"
+  },
+  "queue_size": {
+    "type": "int",
+    "default": 100,
+    "description": "后台队列容量1–1000，不是每日额度。例：100。"
+  },
+  "model_daily_limit": {
+    "type": "int",
+    "default": 48,
+    "description": "每日后台模型调用预留总额度，失败计入。例：48次。"
+  },
+  "model_input_tokens": {
+    "type": "int",
+    "default": 32768,
+    "description": "每任务输入 1–32768（按 UTF-8 字节估计的上界，不是 Token 数）。太小会装不下系统提示与人格，日记/梦境将无法生成。例：32768。"
+  },
+  "model_output_tokens": {
+    "type": "int",
+    "default": 1024,
+    "description": "每任务请求输出1–8192 Token，主动行为可能更短。例：1024。"
+  },
+  "model_timeout_seconds": {
+    "type": "int",
+    "default": 30,
+    "description": "后台模型超时1–120秒，未知请求不自动重发。例：30。"
+  },
+  "wake_autocatchup_enabled": {
+    "type": "bool",
+    "default": true,
+    "description": "自然醒后即使没人说话也主动爬楼补答；只对这一段睡眠期确有未读的会话生效。例：希望它醒来自己补话时开启。"
+  },
+  "wake_greeting_enabled": {
+    "type": "bool",
+    "default": true,
+    "description": "爬楼前先发一句刚醒的招呼。例：不想它冒头时关闭。"
+  },
+  "wake_greeting_texts": {
+    "type": "string",
+    "default": "刚醒，我看看之前你们说了什么。|我醒了，先把这几小时翻一翻。|醒了…看看都说了什么。",
+    "description": "刚醒招呼候选，用竖线分隔，每次随机取一条。例：改成你自己的口吻。"
+  }
 }

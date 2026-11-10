@@ -7,7 +7,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 import time
-from typing import Protocol
+from typing import Any, Protocol
 from weakref import WeakValueDictionary
 from zoneinfo import ZoneInfo
 
@@ -17,6 +17,7 @@ from ..contracts import (
     CommitResult, ContentKind, Context, Event, EvidenceRef, IntentStatus, NightPhase,
     NightState, Relationship, SceneKind, SleepState, finite, stable_key,
 )
+from ..domain.proactivity import emotional_share_allowed
 from ..ports.memory import Material, MemoryRequest, RecallResult, ValidationResult
 from ..storage import SQLiteStore
 from .output import public_text_allowed
@@ -190,6 +191,7 @@ class _Attempt:
     stage: str = "intent_created"
     guard_called: bool = False
     guard_reason: str | None = None
+    transport_receipt: dict | None = None
 
 
 class _Lane:
@@ -199,6 +201,14 @@ class _Lane:
 
 
 _LANES: WeakValueDictionary[str, _Lane] = WeakValueDictionary()
+
+
+# 管理员手动发送可以跳过的「时机」类原因。硬约束（静音、免打扰、时段、
+# 睡眠、精力、额度、身份与来源）一律不可跳过。
+_MANUAL_SOFT_REASONS = frozenset({
+    "autonomy_disabled", "group_autonomy_disabled", "not_whitelisted",
+    "cooldown", "unanswered_backoff", "below_score_threshold",
+})
 
 
 def _inside(minute: int, window: tuple[int, int]) -> bool:
@@ -329,12 +339,9 @@ class BehaviorService:
         if attempt is not None:
             if behavior_score(snapshot) < policy.min_score:
                 reasons.append("below_score_threshold")
-            if attempt.intent.purpose == "proactive:emotional_share":
-                relation = snapshot.relationship
-                if (relation.score < 600 or not relation.evidence_complete
-                        or (relation.trust is not None and relation.trust < .55)
-                        or (relation.boundary is not None and relation.boundary >= .5)):
-                    reasons.append("relationship_boundary_changed")
+            if (attempt.intent.purpose == "proactive:emotional_share"
+                    and not emotional_share_allowed(snapshot.relationship, context.scene_kind)):
+                reasons.append("relationship_boundary_changed")
             if snapshot.lifecycle_revision != attempt.snapshot.lifecycle_revision:
                 reasons.append("lifecycle_changed")
             if snapshot.persona_prompt != attempt.snapshot.persona_prompt:
@@ -351,14 +358,20 @@ class BehaviorService:
 
     async def _gates(
         self, context: Context, *, attempt: _Attempt | None = None,
+        manual: bool = False,
     ) -> tuple[BehaviorSnapshot | None, BehaviorPolicy, tuple[str, ...]]:
         policy = self.policy()
         now = self._now()
         reasons = list(self._policy_reasons(context, policy, now))
+        if manual:
+            # 早退分支也要先滤掉时机类否定，否则手动发送会被它们挡住。
+            reasons = [reason for reason in reasons if reason not in _MANUAL_SOFT_REASONS]
         if reasons:
             return None, policy, tuple(reasons)
         snapshot = await self._bounded(self.current(context), policy)
         reasons.extend(self._snapshot_reasons(snapshot, context, policy, now, attempt))
+        if manual:
+            reasons = [reason for reason in reasons if reason not in _MANUAL_SOFT_REASONS]
         if reasons:
             return snapshot, policy, tuple(reasons)
         if await self._bounded(self.validate_identity(context), policy) is not True:
@@ -397,7 +410,11 @@ class BehaviorService:
         reasons.extend(self._snapshot_reasons(
             snapshot, context, self.policy(), self._now(), attempt,
         ))
-        return snapshot, policy, tuple(reasons)
+        if manual:
+            # 管理员显式要求「现在发一条」时只跳过时机类的软性门槛；
+            # 静音、免打扰、额度、身份、来源这类硬约束永远保留。
+            reasons = [reason for reason in reasons if reason not in _MANUAL_SOFT_REASONS]
+        return snapshot, policy, tuple(dict.fromkeys(reasons))
 
     async def evaluate(self, context: Context) -> BehaviorEvaluation:
         """Read-only: no material retrieval, model, reservation or send."""
@@ -412,9 +429,54 @@ class BehaviorService:
         except Exception:
             return BehaviorEvaluation(False, ("behavior_dependency_unavailable",))
 
+    async def simulate(self, context: Context) -> dict[str, Any]:
+        """只生成一条用于页面展示的话：不判时机/冷却/额度，不写库、不发送。
+
+        管理员点「模拟」就是想看「现在这样会说出什么」，所以这里刻意绕开所有
+        gate，只用当前人格+情绪+最近素材调一次模型，把文本带回去展示。
+        """
+        if self._closed:
+            return {"status": "unavailable", "reason_code": "behavior_closed", "text": ""}
+        policy = self.policy()
+        now = self._now()
+        try:
+            snapshot = await self.current(context)
+        except Exception:
+            snapshot = None
+        if snapshot is None:
+            return {"status": "unavailable", "reason_code": "source_unavailable", "text": ""}
+        intent = BehaviorIntent(
+            stable_key("behavior-simulate", context.scope_key, now), context, "simulate",
+            now, now + 300, await self.store.get_generation(context),
+        )
+        materials: tuple[Material, ...] = ()
+        try:
+            request = MemoryRequest(intent.intent_id, "simulate", context)
+            recall = await (self.materials(request) if self.materials
+                            else self._local_materials(request))
+            if isinstance(recall, RecallResult):
+                materials = tuple(recall.materials)[:3]
+        except Exception:
+            materials = ()
+        try:
+            text = await asyncio.wait_for(
+                self.model(GenerationRequest(intent, snapshot, materials,
+                                             policy.max_output_tokens, policy.max_output_chars)),
+                timeout=policy.model_timeout_seconds,
+            )
+        except Exception:
+            return {"status": "failed", "reason_code": "model_unavailable", "text": ""}
+        if not isinstance(text, str) or not text.strip():
+            return {"status": "failed", "reason_code": "model_output_invalid", "text": ""}
+        if not public_text_allowed(text):
+            return {"status": "failed", "reason_code": "model_output_unsafe", "text": ""}
+        return {"status": "ok", "reason_code": "simulated",
+                "text": text.strip()[: policy.max_output_chars],
+                "materials": len(materials)}
+
     async def preview_behavior(self, context: Context) -> BehaviorPreview:
         result = await self.evaluate(context)
-        return BehaviorPreview(result.eligible, result.reason_codes)
+        return BehaviorPreview(result.eligible, result.reason_codes, score=result.score)
 
     async def _local_materials(self, request: MemoryRequest) -> RecallResult:
         rows = await self.store.read_window(request.context)
@@ -471,14 +533,16 @@ class BehaviorService:
         return (isinstance(validation, ValidationResult) and validation.valid is True
                 and validation.materials == materials)
 
-    async def _review(self, attempt: _Attempt) -> str | None:
-        _, _, reasons = await self._gates(attempt.intent.context, attempt=attempt)
+    async def _review(self, attempt: _Attempt, *, manual: bool = False) -> str | None:
+        _, _, reasons = await self._gates(attempt.intent.context, attempt=attempt,
+                                          manual=manual)
         if reasons:
             return reasons[0]
         if not await self._valid_materials(attempt):
             return "evidence_invalid"
         # Validators can wait for external I/O. Refresh after they return.
-        snapshot, policy, reasons = await self._gates(attempt.intent.context, attempt=attempt)
+        snapshot, policy, reasons = await self._gates(attempt.intent.context, attempt=attempt,
+                                                     manual=manual)
         if reasons:
             return reasons[0]
         latest = await self._bounded(self.current(attempt.intent.context), policy)
@@ -493,9 +557,11 @@ class BehaviorService:
         if await self.store.human_watermark(context) != attempt.intent.human_watermark:
             return "new_human_message"
         now, policy = self._now(), self.policy()
-        reasons = self._policy_reasons(context, policy, now) + self._snapshot_reasons(
+        reasons = list(self._policy_reasons(context, policy, now) + self._snapshot_reasons(
             latest, context, policy, now, attempt,
-        )
+        ))
+        if manual:
+            reasons = [reason for reason in reasons if reason not in _MANUAL_SOFT_REASONS]
         if reasons:
             return reasons[0]
         if any(not material_allowed(item, context, now) for item in attempt.materials):
@@ -507,6 +573,7 @@ class BehaviorService:
             attempt.intent.context, attempt.intent.intent_id, attempt.intent.generation,
             expected_status=old, status=new, reason_code=reason,
             reservation_id=attempt.reservations[0] if attempt.reservations else None,
+            transport_receipt=attempt.transport_receipt if new in TERMINAL else None,
         )
 
     def _result(
@@ -553,8 +620,9 @@ class BehaviorService:
 
     async def execute(
         self, context: Context, *, intent_id: str, purpose: str = "proactive",
+        manual: bool = False,
     ) -> BehaviorResult:
-        return await self._enqueue(context, intent_id, purpose)
+        return await self._enqueue(context, intent_id, purpose, manual=manual)
 
     async def execute_intent(self, intent: BehaviorIntent) -> BehaviorResult:
         """Consume an unpersisted T5 proposal without refreshing its invalidation tokens."""
@@ -564,7 +632,7 @@ class BehaviorService:
 
     async def _enqueue(
         self, context: Context, intent_id: str, purpose: str,
-        proposal: BehaviorIntent | None = None,
+        proposal: BehaviorIntent | None = None, *, manual: bool = False,
     ) -> BehaviorResult:
         if not isinstance(intent_id, str) or not intent_id.strip() or len(intent_id) > 256:
             raise ValueError("stable_intent_id_required")
@@ -579,25 +647,25 @@ class BehaviorService:
         self._lane.pending += 1
         try:
             async with self._lane.lock:
-                return await self._execute(context, intent_id, purpose, proposal)
+                return await self._execute(context, intent_id, purpose, proposal, manual=manual)
         finally:
             self._tasks.discard(task)
             self._lane.pending -= 1
 
     async def _execute(
         self, context: Context, intent_id: str, purpose: str,
-        proposal: BehaviorIntent | None,
+        proposal: BehaviorIntent | None, *, manual: bool = False,
     ) -> BehaviorResult:
         attempt = None
         try:
             existing = await self.store.get_intent(context, intent_id)
             if existing:
                 return BehaviorResult(intent_id, existing["status"], ("intent_exists",))
-            snapshot, policy, reasons = await self._gates(context)
+            snapshot, policy, reasons = await self._gates(context, manual=manual)
             if reasons:
                 return BehaviorResult(intent_id, "rejected", reasons)
             score = behavior_score(snapshot)
-            if score < policy.min_score:
+            if score < policy.min_score and not manual:
                 return BehaviorResult(intent_id, "rejected", ("below_score_threshold",), score)
             # Capture the watermark before any retrieval or generation.
             generation = await self.store.get_generation(context)
@@ -649,7 +717,7 @@ class BehaviorService:
             attempt.materials = tuple(recall.materials)
             if not await self._valid_materials(attempt):
                 return await self._settle(attempt, "cancelled", "no_qualified_materials")
-            reason = await self._review(attempt)
+            reason = await self._review(attempt, manual=manual)
             if reason:
                 return await self._settle(attempt, "cancelled", reason)
             if (len(snapshot.persona_prompt) + sum(len(item.text) for item in attempt.materials)
@@ -669,16 +737,22 @@ class BehaviorService:
             if not public_text_allowed(text):
                 return await self._settle(attempt, "failed", "model_output_unsafe")
             attempt.stage = "final_review"
-            reason = await self._review(attempt)
+            reason = await self._review(attempt, manual=manual)
             if reason:
                 return await self._settle(attempt, "cancelled", reason)
             transition = await self._transition(attempt, "generating", "sending", "dispatch_claimed")
             if transition["status"] != "updated":
                 return await self._settle(attempt, "cancelled", transition["reason_code"])
 
+            send_deadline = asyncio.get_running_loop().time() + self.policy().send_timeout_seconds
+
             async def authorize() -> bool:
                 attempt.guard_called = True
-                attempt.guard_reason = await self._review(attempt)
+                attempt.guard_reason = await self._review(attempt, manual=manual)
+                # Async authorization can finish on the same loop turn as timeout.
+                # Refuse a late dispatch even if wait_for cancellation has not run.
+                if asyncio.get_running_loop().time() >= send_deadline:
+                    raise TimeoutError("send_authorization_expired")
                 return attempt.guard_reason is None
 
             attempt.stage = "send"
@@ -688,6 +762,11 @@ class BehaviorService:
                 timeout=self.policy().send_timeout_seconds,
             )
             status, reason = self._receipt_status(attempt, receipt)
+            attempt.transport_receipt = {
+                "status": "confirmed" if status == "succeeded" else
+                          "rejected" if status == "failed" else "unknown",
+                "receipt_id": receipt.receipt_id if status == "succeeded" else None,
+            }
             result = await self._settle(attempt, status, reason)
             if result.status != "succeeded" or self._closed:
                 return result
@@ -759,7 +838,7 @@ class BehaviorService:
         A caller supplies a purpose-specific authorization check. These messages
         concern an existing conversation and do not require idle autonomy.
         """
-        if purpose not in ("closing", "catchup") or not context.route:
+        if purpose not in ("closing", "catchup", "dream_wake") or not context.route:
             return "rejected"
         task = asyncio.current_task()
         self._tasks.add(task)
@@ -793,12 +872,14 @@ class BehaviorService:
         current_status, dispatched, reserved = "pending", False, False
         result = "rejected"
 
+        transport_receipt = None
         async def transition(new, reason):
             nonlocal current_status
             outcome = await self.store.transition_intent(
                 context, key, generation, expected_status=current_status,
                 status=new, reason_code=reason,
                 reservation_id=key + ":send" if new == "reserved" else None,
+                transport_receipt=transport_receipt if new in TERMINAL else None,
             )
             if outcome["status"] != "updated":
                 raise ValueError("control_intent_changed")
@@ -832,11 +913,19 @@ class BehaviorService:
                 raise ValueError("control_output_unsafe")
             await transition("sending", "control_submit")
 
+            guard_called, guard_allowed = False, False
+            deadline = asyncio.get_running_loop().time() + self.policy().send_timeout_seconds
             async def submit_guard():
+                nonlocal guard_called, guard_allowed
+                guard_called = True
                 if not await send_guard():
                     return False
                 # This is submission to the host, not a transport receipt.
-                return await on_submit(context, key, text)
+                allowed = await on_submit(context, key, text)
+                if asyncio.get_running_loop().time() >= deadline:
+                    raise TimeoutError("send_authorization_expired")
+                guard_allowed = bool(allowed)
+                return guard_allowed
 
             dispatched = True
             receipt = await asyncio.wait_for(
@@ -846,12 +935,20 @@ class BehaviorService:
             confirmed = (isinstance(receipt, SendReceipt)
                          and receipt.intent_id == key and receipt.route == context.route
                          and receipt.status == "confirmed"
+                         and guard_called and guard_allowed
                          and isinstance(receipt.receipt_id, str) and bool(receipt.receipt_id)
+                         and len(receipt.receipt_id) <= 512
+                         and type(receipt.confirmed_parts) is int
+                         and type(receipt.total_parts) is int
                          and receipt.confirmed_parts == receipt.total_parts
                          and receipt.total_parts > 0)
             result = "confirmed" if confirmed else "unknown"
-            if isinstance(receipt, SendReceipt) and receipt.status == "rejected":
+            if (isinstance(receipt, SendReceipt) and receipt.status == "rejected"
+                    and receipt.intent_id == key and receipt.route == context.route
+                    and receipt.confirmed_parts == 0):
                 result = "rejected"
+            transport_receipt = {"status": result,
+                                 "receipt_id": receipt.receipt_id if confirmed else None}
             await transition("succeeded" if confirmed else
                              "failed" if result == "rejected" else "unknown",
                              "send_" + result)

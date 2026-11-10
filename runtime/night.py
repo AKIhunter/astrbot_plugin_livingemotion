@@ -8,7 +8,7 @@ from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from ..contracts import (
-    Availability, NightPhase, NightState, SceneKind, SleepState, StateWrite, stable_key, to_dict,
+    ActorRole, Context, Event, Availability, NightPhase, NightState, SceneKind, SleepState, StateWrite, stable_key, to_dict,
 )
 from ..domain.night import (
     SleepCycle,
@@ -286,6 +286,9 @@ class NightRuntime:
             if action and not await self.validate_context(context):
                 return None
             def transform(state, runtime, now, attempt):
+                # 手动作息是管理员的一次性指令：只改作息状态，绝不改动精力。
+                # 之前的实现会让手动叫醒后精力跳到满值，用户看到的就是"刷满"。
+                before_units = state.energy_units
                 state, changes = self._advance_life(state, now, runtime)
                 if action == "night.wake":
                     state = replace(
@@ -302,9 +305,14 @@ class NightRuntime:
                     runtime.pop("manual_wake_until", None)
                     cycle = SleepCycle(stable_key("manual", now), "manual", now, now + 8 * 3600)
                     state = replace(state, wake_at=None)
+                    # 手动入睡必须真正进入睡眠：allow_sleep 是「自动作息是否影响聊天」
+                    # 的开关，不应阻断管理员的手动指令，否则按钮看起来完全没生效。
                     state, added = advance_life(state, now=now, cycle=cycle,
                                                policy=life_policy(self.config),
-                                               allow_sleep=self.config.allow_sleep)
+                                               allow_sleep=True)
+                    state = replace(state, display_state=SleepState.DEEP_SLEEP,
+                                    phase=NightPhase.ASLEEP,
+                                    sleep_started_at=state.sleep_started_at or now)
                     changes = (*changes, *added)
                 elif runtime.get("manual_wake_until", 0) > now:
                     state = replace(state, display_state=SleepState.AWAKE, phase=NightPhase.AWAKE,
@@ -312,9 +320,15 @@ class NightRuntime:
                                     deep_sleep_at=None, drowsy_at=None, sleep_started_at=None,
                                     sleep_stage=None)
                 if action:
+                    # 恢复动手前的精力值：手动操作不结算、不奖励、不惩罚。
+                    if before_units is not None:
+                        state = replace(state, energy_units=before_units,
+                                        energy=before_units / 10)
                     changes = (*changes, {
                         "occurred_at": now, "category": "manual",
-                        "before_units": state.energy_units, "after_units": state.energy_units,
+                        "before_units": before_units if before_units is not None
+                        else state.energy_units,
+                        "after_units": state.energy_units,
                         "reason_code": action,
                     })
                 return state, changes, {"allowed": True, "reason_code": action or "night_clock"}
@@ -388,10 +402,29 @@ class NightRuntime:
     async def night_guard(self, context, original):
         if self.effective_mode(context) != "active" or not self.config.night_enabled:
             return False
-        current = await self.night_snapshot(context)
+        record = await self.store.get_state(context, "night")
+        if record is None:
+            return False
+        persisted = snapshot(record, NightState)
+        now = self.store.clock()
+        if persisted.updated_at > now:
+            return False
+        # 校验仅投影当前周期，不写入状态或生成新周期，以免使已选素材失效。
+        if self._night_v2():
+            current, _ = advance_life(
+                persisted, now=now, policy=life_policy(self.config),
+                allow_sleep=bool(self.config.allow_sleep and self.config.night_enabled),
+            )
+        elif persisted.policy_version == 2:
+            return False
+        else:
+            current = advance_night(persisted, now=now, enabled=self.config.night_enabled)
         return (current.phase == NightPhase.ASLEEP and current.sleep_stage == "REM"
+                and current.sleep_started_at is not None
                 and current.sleep_started_at == original.sleep_started_at
+                and current.wake_at is not None and now < current.wake_at
                 and await self.validate_context(context))
+
 
     async def confirm_reply(self, receipt):
         """Trusted transport-confirmation port, not a model or HTTP callback."""
@@ -440,9 +473,184 @@ class NightRuntime:
             except Exception:
                 self._task_fault = "scheduler_tick_failed"
 
+    async def _manual_persona_text(self, context) -> str:
+        """手动生成时的人格文本：不依赖实时事件，按已记录的会话路由现取。
+
+        取不到就用空串（生成仍然只依据已入库素材），绝不为了凑字段编造人格。
+        """
+        adapter = getattr(self.bridge, "persona", None)
+        if adapter is None:
+            return ""
+        try:
+            snapshot = await adapter.resolve(context)
+            prompt = getattr(getattr(snapshot, "persona", None), "prompt", "")
+        except Exception:
+            return ""
+        return prompt if isinstance(prompt, str) and len(prompt) <= 16000 else ""
+
+    async def queue_experience(
+        self, context, kind: str, *, manual: bool = False, night: NightState | None = None,
+    ) -> dict:
+        """可信管理端/定时器共用入口。
+
+        manual=True：管理员在控制台显式点了按钮。此时不要求"此刻有实时消息"，
+        也不要求梦境睡够时长——素材早已入库，人格按已记录的路由现取。
+        """
+        if kind not in ("diary", "dream"):
+            return {"status": "rejected", "reason_code": "experience_kind_invalid"}
+        if manual:
+            from uuid import uuid4
+            return await self.console_experience_generate(
+                str(uuid4()), (await self.manual_persona())[0], kind, actor_id="console")
+        day = datetime.fromtimestamp(self.store.clock(), ZoneInfo(
+            self.config.timezone or "Asia/Shanghai")).date().isoformat()
+        if await self.store.auto_daily_blocked(context, kind, day):
+            return {"status": "skipped", "reason_code": "daily_content_preserved"}
+        result = {"status": "skipped", "reason_code": "generation_disabled"}
+        service = None
+        try:
+            if (not self.closed and self.config.enabled and self.config.mode == "active"
+                    and getattr(self.config, kind + "_enabled")):
+                if self.effective_mode(context) != "active":
+                    result = {"status": "skipped", "reason_code": "observe_only"}
+                else:
+                    source = await self.bridge.current(context)
+                    # 自动流程仍然要求「现在有实时来源」；手动是管理员显式指令，
+                    # 会话安静多久都能生成（依据是已入库的素材与已记录的人格）。
+                    if source is None and not manual:
+                        result = {"status": "rejected", "reason_code": "source_unavailable"}
+                    elif not await (self.validate_context(context) if source is not None
+                                    else self.validate_manual(context)):
+                        result = {"status": "rejected", "reason_code": "context_changed"}
+                    else:
+                        persona_text = (source.persona.prompt if source is not None
+                                        else await self._manual_persona_text(context))
+                        service = await self.experience_service(context)
+                        if kind == "diary":
+                            result = await service.queue_diary(
+                                context, persona_text=persona_text, manual=manual,
+                            )
+                        else:
+                            if night is None:
+                                night = await self.night_snapshot(context)
+                            if not isinstance(night, NightState):
+                                raise ValueError("night_state_unavailable")
+                            result = await service.queue_dream(
+                                context, night, persona_text=persona_text, manual=manual,
+                            )
+        except ValueError as exc:
+            # 只公开约定的诊断码，不把供应商异常消息传给控制台。
+            code = str(exc)
+            if code not in {
+                "provider_budget_contract_unavailable", "provider_budget_contract_unsupported",
+                "model_unavailable", "experience_service_limit", "night_state_unavailable",
+            }:
+                code = "experience_preparation_unavailable"
+            result = {"status": "unavailable", "reason_code": code}
+        except Exception:
+            result = {"status": "unavailable", "reason_code": "experience_preparation_unavailable"}
+        # 触发时间：页面用它显示「什么时候点的」，而不是让管理员自己猜。
+        result.setdefault("attempted_at", self.store.clock())
+        attempts = getattr(self, "_experience_attempts", None)
+        if attempts is None:
+            attempts = self._experience_attempts = {}
+        key = (context.account_key, kind)
+        attempts.pop(key, None)
+        attempts[key] = (dict(result), service)
+        while len(attempts) > 512:
+            attempts.pop(next(iter(attempts)))
+        return result
+
+    def experience_status(self, context, kind: str) -> dict:
+        """有界、仅元数据；queued 不代表已生成，读取时合并最终任务状态。"""
+        attempt = getattr(self, "_experience_attempts", {}).get((context.account_key, kind))
+        if attempt is None:
+            return {"status": "unavailable", "reason_code": "experience_not_attempted"}
+        result, service = attempt
+        if result.get("job_id") and service is not None and (
+            result["status"] == "queued" or result.get("reason_code") == "duplicate_job"
+        ):
+            return {**result, **service.outcome(result["job_id"])}
+        return dict(result)
+
+    async def maybe_dream_wake(self, context):
+        """Explicit owner consent; no synthetic QQ route, private body or model send."""
+        if (not self.config.dream_owner_notify or not self.config.dream_owner_qq
+                or not self.config.night_enabled or not self.config.allow_sleep
+                or context.scene_kind != SceneKind.PRIVATE or context.platform.lower() != "qq"
+                or context.account_id != self.config.dream_owner_qq):
+            return
+        for candidate in await self.store.dream_wake_candidates(context, self.store.clock()):
+            profile = candidate["profile"]
+            if profile.get("night_event") not in ("anger", "fear") or profile.get("nap"):
+                continue
+            source = Context.from_dict(candidate["source"])
+            if profile.get("recipient") != self.config.dream_owner_qq:
+                continue
+            # One intent per persona/night/recipient, even if two dreams occur.
+            key = stable_key("dream-wake", context.instance_id, context.persona_id,
+                             profile.get("cycle_id") or profile.get("sleep_started_at"),
+                             context.account_key)
+            generation, revision = await self.store.get_generation(context), self.revision
+            async def authorized(target, gen, rev):
+                now = self.store.clock()
+                if (self.closed or not self.config.enabled or not self.config.dream_owner_notify
+                        or not self.config.night_enabled or not self.config.allow_sleep
+                        or self.revision != rev or self.effective_mode(target) != "active"
+                        or target.account_id != self.config.dream_owner_qq
+                        or target.scope_key in self.config.muted_scopes.split()
+                        or not await self.validate_context(target, gen)
+                        or not await self.validate_context(source, candidate["generation"])
+                        or await self.store.get_generation(source) != candidate["generation"]
+                        or not profile.get("wake_at") or not now < profile["wake_at"]):
+                    return False
+                owner = self.store.state_owner(source)
+                # A saved dream belongs to the state mode/generation at creation.
+                if profile.get("state_owner") != (to_dict(owner) if owner else None):
+                    return False
+                loaded = await self.store.load_experience(candidate["id"])
+                if not loaded or loaded[0].dream_profile != profile:
+                    return False
+                current = await self.night_snapshot(source)
+                return bool(current and current.wake_at == profile["wake_at"] and (
+                    current.cycle_id == profile.get("cycle_id") if profile.get("cycle_id") else
+                    current.sleep_started_at == profile.get("sleep_started_at")))
+            async def submitted(target, intent, text):
+                if not await authorized(target, generation, revision):
+                    return False
+                if self._night_v2():
+                    def transform(state, runtime, now, attempt):
+                        state, changes = self._advance_life(state, now, runtime)
+                        state = replace(state, display_state=SleepState.GROGGY, phase=NightPhase.DROWSY,
+                            wake_session="dream:" + intent, wake_replies_used=0,
+                            wake_reply_limit=max(1, self.config.wake_reply_limit),
+                            first_reply_submitted_at=now, wake_window_deadline=now + 300,
+                            reason_codes=("dream_wake",))
+                        state, charge = submit_life_reply(state, now=now, policy=life_policy(self.config),
+                                                          allow_sleep=self.config.allow_sleep)
+                        return state, (*changes, *charge), {"allowed": True, "reason_code": "dream_wake"}
+                    result = await self.store.night_operation(target, transform,
+                        operation="dream_wake", expected_generation=generation)
+                    if result.get("allowed") is not True:
+                        return False
+                # Submission is a real host attempt, never a fabricated receipt.
+                event = Event(intent, "livingemotion.host", "bot_reply_submitted", target,
+                    ActorRole.BOT, self.store.clock(), intent, actor_id=target.bot_id, body=text)
+                result = await self.api.ingest_event(event)
+                return result.get("status") in ("accepted", "duplicate")
+            text = ("刚刚被一个难过又吓人的梦惊醒了……你醒着的话，可以陪我说两句吗？"
+                    if profile["night_event"] == "fear" else
+                    "刚才梦里被气醒了，心里还有点不平。你醒着的话，我想和你说说。")
+            await self.behavior.execute_control(context, intent_id=key, purpose="dream_wake",
+                generate=lambda: self._ready_text(text), authorize=authorized, on_submit=submitted,
+                generation=generation, revision=revision)
+            return
+
     async def tick(self):
         if self.closed or not self.config.enabled:
             return
+        from .feeling import maybe_feeling
+        await maybe_feeling(self)
         now = self.store.clock()
         proactive_scopes = set()
         proactive_contexts = {c.scope_key: c for c in self._contexts.values()}
@@ -453,21 +661,20 @@ class NightRuntime:
             if closing is not None and self.effective_mode(context) == "active":
                 await closing(context)
             night = await self.advance_scope(context)
+            if night is not None and night.phase == NightPhase.WAKING:
+                # 自然醒且这一夜确有未读时才主动爬楼，不等群里有人说话。
+                try:
+                    await self._wake_catchup_if_unread(context, night)
+                except Exception:
+                    pass
             if (self.effective_mode(context) != "active"
                     or not await self.validate_context(context)):
                 continue
-            source = await self.bridge.current(context)
-            if self.config.diary_enabled or self.config.dream_enabled:
-                try:
-                    experience = await self.experience_service(context)
-                    if self.config.diary_enabled:
-                        await experience.queue_diary(context, persona_text=source.persona.prompt)
-                    if self.config.dream_enabled and night:
-                        await experience.queue_dream(
-                            context, night, persona_text=source.persona.prompt,
-                        )
-                except ValueError:
-                    self._task_fault = "provider_budget_contract_unavailable"
+            await self.maybe_dream_wake(context)
+            if self.config.diary_enabled:
+                await self.queue_experience(context, "diary")
+            if self.config.dream_enabled:
+                await self.queue_experience(context, "dream", night=night)
             if self.config.autonomy_enabled and len(self._actions) < self.config.queue_size:
                 if (context.scope_key not in proactive_scopes
                         and context == proactive_contexts[context.scope_key]):

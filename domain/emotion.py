@@ -20,12 +20,17 @@ from ..contracts import (
     NightState, Relationship, finite, stable_key, to_dict,
 )
 
-RULE_VERSION = "emotion-1"
+RULE_VERSION = "emotion-2"
 DIMENSIONS = ("pleasure", "arousal", "stress", "social_need")
 BASELINE = (0.0, 0.3, 0.0, 0.3)
 
 # Deltas describe the Bot's appraisal, never a copy of the speaker's feeling.
 RULES = {
+    "insult": (-0.14, 0.12, 0.14, 0.04),
+    "praise": (0.12, 0.05, -0.04, -0.02),
+    "constructive_criticism": (0.04, 0.03, -0.02, -0.01),
+    "teaching": (0.06, 0.04, -0.03, -0.01),
+    "surprise": (0.02, 0.12, 0.02, 0.01),
     "sadness": (0.0, 0.03, 0.02, -0.02),
     "anxiety": (0.0, 0.04, 0.03, -0.02),
     "joy": (0.08, 0.04, -0.02, -0.03),
@@ -135,9 +140,14 @@ def event_signals(event: Event) -> tuple[str, ...]:
     if event.actor_role != ActorRole.HUMAN or event.event_type in _NON_EVENTS:
         return ()
     signals = set(event.signals).intersection(RULES).difference({"reply_succeeded"})
+    from .appraisal import local_appraisals
+    signals.update(local_appraisals(event.body))
     text = event.body.casefold().strip().rstrip(".!\u3002\uff01")
     if text in _SELF_REPORTS:
         signals.add(_SELF_REPORTS[text])
+    if "insult" in signals:
+        signals.difference_update({"praise", "care", "gratitude", "joy",
+                                   "constructive_criticism", "teaching", "apology"})
     return tuple(sorted(signals or {"interaction"}))
 
 
@@ -349,7 +359,7 @@ def _model_delta(value: Any, cap: float) -> tuple[float, ...]:
         value = json.loads(text, object_pairs_hook=_unique_object)
     if not isinstance(value, Mapping) or set(value) - {"rule_version", "delta", "confidence"}:
         raise ValueError("model_schema")
-    if value.get("rule_version") != RULE_VERSION:
+    if value.get("rule_version") not in (RULE_VERSION, "emotion-1"):
         raise ValueError("model_version")
     delta = value.get("delta")
     if not isinstance(delta, Mapping) or not delta or set(delta) - set(DIMENSIONS):
@@ -421,6 +431,9 @@ def apply_emotion(
     weight = event.confidence * policy.sensitivity
     if relationship is not None:
         weight *= 0.75 + 0.25 * relationship.normalized
+    if relationship is not None and relationship.score >= 450 and set(signals) & {
+            "sadness", "anxiety", "care"}:
+        weight *= 2  # 亲近加倍关怀；单事件情绪上限仍然有效，不双倍刷好感。
     delta = [sum(RULES[s][i] for s in signals) * weight for i in range(4)]
     reasons = ["rule_" + signal for signal in signals]
     if model_suggestion is not None:

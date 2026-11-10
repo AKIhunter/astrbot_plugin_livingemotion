@@ -439,6 +439,11 @@ def _cycle_display(state, at, *, allow_sleep):
         ) else SleepState.GROGGY if state.energy_units < 100 else SleepState.AWAKE
     if at >= state.wake_at:
         return SleepState.AWAKE
+    # 梦中惊醒有独立的短唤醒窗；到期仍按原夜晚时间重新入睡。
+    if (state.wake_session and state.wake_session.startswith("dream:")
+            and state.wake_window_deadline is not None and at < state.wake_window_deadline
+            and state.wake_replies_used < state.wake_reply_limit):
+        return SleepState.GROGGY if state.energy < 10 else SleepState.AWAKE
     if state.deep_sleep_at is not None and at >= state.deep_sleep_at:
         return SleepState.DEEP_SLEEP
     if state.wake_session:

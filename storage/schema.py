@@ -109,6 +109,53 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = ((
         occurred_at REAL NOT NULL, accepted INTEGER NOT NULL, reason_code TEXT NOT NULL)""",
     "ALTER TABLE intents ADD COLUMN state_persona_key TEXT",
     "ALTER TABLE intents ADD COLUMN state_revision INTEGER",
+), (
+    # External memory mirror: a read-only copy pulled from LivingMemory (or any
+    # other provider wired in integrations/*). Never the source of truth.
+    """CREATE TABLE external_memories (
+        memory_id INTEGER NOT NULL, persona_id TEXT NOT NULL, body TEXT NOT NULL,
+        created_at REAL, session_id TEXT NOT NULL DEFAULT '',
+        metadata_json TEXT NOT NULL DEFAULT '{}', synced_at REAL NOT NULL,
+        PRIMARY KEY(persona_id, memory_id))""",
+    "CREATE INDEX external_memories_persona ON external_memories(persona_id, memory_id)",
+    """CREATE TABLE external_memory_sync (
+        persona_id TEXT PRIMARY KEY, provider TEXT NOT NULL,
+        synced_at REAL NOT NULL, stored INTEGER NOT NULL,
+        truncated INTEGER NOT NULL DEFAULT 0)""",
+), (
+    """CREATE TABLE experience_daily (
+        owner_key TEXT NOT NULL, kind TEXT NOT NULL, day TEXT NOT NULL,
+        timezone TEXT NOT NULL, experience_id TEXT, revision INTEGER NOT NULL,
+        origin TEXT NOT NULL, updated_at REAL NOT NULL,
+        PRIMARY KEY(owner_key,kind,day))""",
+    """CREATE TABLE experience_jobs (
+        request_id TEXT PRIMARY KEY, owner_key TEXT NOT NULL, persona_id TEXT NOT NULL,
+        kind TEXT NOT NULL, day TEXT NOT NULL, timezone TEXT NOT NULL,
+        status TEXT NOT NULL, reason_code TEXT NOT NULL, experience_id TEXT,
+        expected_entry_revision INTEGER NOT NULL, attempted_at REAL NOT NULL,
+        finished_at REAL, generation_snapshot_json TEXT NOT NULL)""",
+    """CREATE UNIQUE INDEX experience_active_day ON experience_jobs(owner_key,kind,day)
+        WHERE status IN ('queued','running')""",
+    "CREATE INDEX experience_jobs_owner ON experience_jobs(owner_key,attempted_at)",
+), (
+    # Numeric history only; never retain message text, evidence or account labels.
+    """CREATE TABLE emotion_samples (
+        owner_key TEXT NOT NULL, generation INTEGER NOT NULL, at REAL NOT NULL,
+        pleasure REAL NOT NULL, arousal REAL NOT NULL, stress REAL NOT NULL,
+        social_need REAL NOT NULL, PRIMARY KEY(owner_key,generation,at))""",
+    "CREATE INDEX emotion_retention ON emotion_samples(at)",
+    """INSERT OR IGNORE INTO emotion_samples
+        SELECT s.owner_key,COALESCE(o.generation,0),s.updated_at,
+        json_extract(s.value_json,'$.pleasure'),COALESCE(json_extract(s.value_json,'$.arousal'),0.3),
+        COALESCE(json_extract(s.value_json,'$.stress'),0),COALESCE(json_extract(s.value_json,'$.social_need'),0.3)
+        FROM owner_states s LEFT JOIN state_owners o ON o.owner_key=s.owner_key
+        WHERE s.kind='bot' AND json_type(s.value_json,'$.pleasure') IN ('integer','real')""",
+    """INSERT OR IGNORE INTO emotion_samples
+        SELECT scope_key,generation,updated_at,
+        json_extract(value_json,'$.pleasure'),COALESCE(json_extract(value_json,'$.arousal'),0.3),
+        COALESCE(json_extract(value_json,'$.stress'),0),COALESCE(json_extract(value_json,'$.social_need'),0.3)
+        FROM states WHERE kind='bot' AND record_key=''
+        AND json_type(value_json,'$.pleasure') IN ('integer','real')""",
 ))
 
 

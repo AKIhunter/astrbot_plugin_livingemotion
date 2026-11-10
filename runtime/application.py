@@ -29,6 +29,7 @@ from ..contracts import (
 )
 from ..domain.emotion import expression_context
 from ..services.behavior import BehaviorHistory, BehaviorPolicy, BehaviorService, BehaviorSnapshot
+from ..services.experience import LENIENT_SAVE
 from ..services.catchup import FullCatchupService
 from ..storage.catchup import CatchupArchive
 from .background import BackgroundRuntime
@@ -44,13 +45,15 @@ from .refinement import Refinement
 from .relationship_projection import read_relationship_projection
 from .state_scope import source_affect
 from .proactivity import Proactivity
+from .manual_experience import ManualExperienceRuntime
 
 SUFFIX = "<!--livingemotion:state:v1-->"
 CATCHUP_SUFFIX = "<!--livingemotion:crawled_history:v2-->"
 MEMORY_SUFFIX = "<!--livingemotion:memory:v2-->"
 
 
-class Application(Console, NightRuntime, Generation, Materials, Refinement, Proactivity):
+class Application(Console, NightRuntime, Generation, Materials, Refinement, Proactivity,
+                  ManualExperienceRuntime):
     def __init__(self, host_context, native_config, data_dir: Path, *, bridge_factory=AstrBotBridge):
         self.host, self.native_config = host_context, native_config
         self.config = Config.from_mapping(native_config)
@@ -62,6 +65,9 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         self._monitor = self._scheduler = None
         self._services = OrderedDict()
         self._contexts = OrderedDict()
+        # 只记录“本进程真的见过消息”的会话：启动时从库里回填的上下文
+        # 没有实时来源，不能拿来当写操作的落点，否则动作会以 context_changed 失败。
+        self._live_contexts: set[str] = set()
         self._revision = uuid4().hex
         self._config_fault = False
         self._task_fault = ""
@@ -112,6 +118,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                                    config_for_context=self.scoped_config)
         self.api._project_event = self.projector
         self.closed = False
+        await self.initialize_manual_experience()
         for context in reversed(await self.store.list_contexts()):
             self._contexts[context.account_key] = context
             await self.initialize_state_scope(context)
@@ -131,10 +138,17 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             self.store, self.host, self.bridge.discover, self.config, guard=self.validate_context,
         )
         self.memory_backend = backend
-        self.memory = MemoryGateway(backend, clock=self.store.clock,
-                                    context_guard=lambda c, e: self.validate_context(c))
+        # 手动生成（管理员显式指令）不要求「最近有实时消息」：日记/梦境的依据
+        # 是已入库的素材。授权改用 validate_manual 复核身份与配置，素材范围
+        # 仍由 material_allowed 逐条校验（不跨会话、不跨人格）。
+        self.memory = MemoryGateway(
+            backend, clock=self.store.clock,
+            context_guard=lambda c, e: (
+                (LENIENT_SAVE.get() and self.validate_manual(c))
+                or self.validate_context(c)))
         self.auto_memory = AutoMemoryIngestor(
             backend, self.runtime, config=lambda: self.config, guard=self.validate_context,
+            owner_account_resolver=self._memory_owner_account,
         )
         self.behavior = BehaviorService(
             self.store, current=self.current_snapshot, validate_identity=self.validate_context,
@@ -142,7 +156,8 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             materials=self.behavior_materials,
             model=self.behavior_model,
             sender=AstrBotBehaviorSender(self.host.send_message, make_chain=self.bridge.chain,
-                                        recorded_route=self.bridge.recorded_route),
+                                        recorded_route=self.bridge.recorded_route,
+                                        current_source=self.bridge.current),
             policy=self.behavior_policy, history=self.behavior_history,
             record_success=self.record_success, clock=lambda: self.store.clock(),
         )
@@ -154,9 +169,30 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             reply_enabled=self.config.catchup_reply_enabled,
         )
 
+    def _memory_owner_account(self, context):
+        source = self.bridge.source(context)
+        if source is None:
+            return ""
+        owner = source.identity.owner_account
+        if owner:
+            return owner
+        event = source.event()
+        if event is None:
+            return ""
+        try:
+            self_id = event.get_self_id()
+        except Exception:
+            return ""
+        if not isinstance(self_id, (str, int)) or not str(self_id).strip():
+            return ""
+        return context.platform + ":" + str(self_id)
+
     async def _preparation_guard(self, context, generation, revision):
         if (revision != self.revision or self.effective_mode(context) != "active"
                 or not await self.validate_context(context, generation)):
+            return False
+        # 群聊主动发言必须先过 LivingHello 的静态名单；私聊不判。
+        if not self.livinghello_gate(context).get("reply_allowed"):
             return False
         value = await self.availability(context)
         if not value.block_chat:
@@ -166,6 +202,73 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                 and (night.wake_window_deadline is None
                      or self.store.clock() < night.wake_window_deadline)
                 and any(source == context for source in self._reply_contexts.values()))
+
+    def livinghello_gate(self, context):
+        """群聊主动发言前查询 LivingHello 的静态名单；私聊与未安装时放行。"""
+        if context.scene_kind != SceneKind.GROUP:
+            return {"read_allowed": True, "reply_allowed": True, "reason": "private_skip"}
+        plugin = None
+        try:
+            for name in ("astrbot_plugin_LivingHello", "astrbot_plugin_livinghello"):
+                plugin = self.bridge.discover(name)
+                if plugin is not None:
+                    break
+        except Exception:
+            plugin = None
+        check = getattr(plugin, "allow_proactive_reply", None)
+        if not callable(check):
+            return {"read_allowed": True, "reply_allowed": True, "reason": "gate_absent"}
+        try:
+            return check(platform=context.platform, session_kind="group",
+                         sender_id=context.account_id, group_id=context.scene_id)
+        except Exception:
+            return {"read_allowed": False, "reply_allowed": False, "reason": "gate_error"}
+
+    def _greeting_text(self):
+        raw = str(getattr(self.config, "wake_greeting_texts", "") or "")
+        options = [item.strip() for item in raw.split("|") if item.strip()]
+        if not options:
+            return "刚醒，我看看之前你们说了什么。"
+        return options[int(self.store.clock()) % len(options)]
+
+    async def _send_wake_greeting(self, context, night, generation):
+        key = stable_key("wake-greeting", context.scope_key,
+                         night.sleep_started_at, night.wake_at)
+        return await self._send_history(
+            context, self._greeting_text(), key, generation, self.revision)
+
+    async def _wake_catchup_if_unread(self, context, night):
+        """自然醒且这一夜确有未读时才主动爬楼；空会话不读不发。"""
+        if not getattr(self.config, "wake_autocatchup_enabled", False):
+            return None
+        if not self.config.catchup_enabled or not context.route:
+            return None
+        if context.scene_kind == SceneKind.PUBLIC_COMMENT:
+            return None
+        gate = self.livinghello_gate(context)
+        if not gate.get("read_allowed"):
+            return None
+        try:
+            rows = await self.store.read_window(
+                context, after_seq=night.unread_watermark, limit=1)
+        except (ValueError, TypeError):
+            return None
+        if not rows:
+            return None
+        generation = await self.store.get_generation(context)
+        if self.config.wake_greeting_enabled and gate.get("reply_allowed"):
+            try:
+                await self._send_wake_greeting(context, night, generation)
+            except Exception:
+                pass
+        try:
+            return await self.catchup.prepare(
+                context, exclude_source_id="",
+                wake_key=stable_key(context.scope_key,
+                                    night.sleep_started_at, night.wake_at),
+                revision=self.revision)
+        except (ValueError, TimeoutError):
+            return None
 
     async def _read_history(self, context, transcript, key, include_items):
         source = await self.bridge.current(context)
@@ -244,12 +347,24 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         def minute(value):
             hours, minutes = value.split(":")
             return int(hours) * 60 + int(minutes)
+        from ..config import qq_numbers
+        private_ids = set(qq_numbers(self.config.autonomy_qq_ids))
+        group_ids = set(qq_numbers(self.config.autonomy_qq_group_ids))
+        # Resolve numbers through known real contexts; routing/identity guards still run.
+        allowed = set(self.config.autonomy_scopes.split())
+        for context in self._contexts.values():
+            if context.platform != "qq":
+                continue
+            if ((context.scene_kind.value == "private" and context.account_id in private_ids)
+                    or (context.scene_kind.value == "group"
+                        and (not group_ids or context.scene_id in group_ids))):
+                allowed.add(context.scope_key)
         return BehaviorPolicy(
             enabled=self.config.enabled and not self.closed, mode=self.config.mode,
             autonomy_enabled=self.config.autonomy_enabled,
             group_autonomy_enabled=self.config.group_autonomy_enabled,
             timezone=self.config.timezone or None,
-            whitelist=frozenset(self.config.autonomy_scopes.split()),
+            whitelist=frozenset(allowed),
             muted_scopes=frozenset(self.config.muted_scopes.split()),
             dnd=(minute(self.config.dnd_start), minute(self.config.dnd_end)),
             active_hours=((minute(self.config.active_start), minute(self.config.active_end)),),
@@ -297,6 +412,21 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         except Exception:
             return False
 
+    async def validate_manual(self, context):
+        """手动生成的轻量授权：只复核实例/配置/来源类型，不要求当前有实时事件。
+
+        自动流程仍走 validate_context（要求 bridge.current 可解析）；管理员在
+        控制台点生成时，会话可能已经安静很久，但那不该让素材作废。
+        """
+        if (self.closed or not self.config.enabled
+                or context.instance_id != self.instance_id
+                or context.scene_kind == SceneKind.PUBLIC_COMMENT):
+            return False
+        try:
+            return Config.from_mapping(self.native_config) == self.config
+        except Exception:
+            return False
+
     async def current_snapshot(self, context):
         try:
             if self.effective_mode(context) != "active" or not await self.validate_context(context):
@@ -333,8 +463,13 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         from ..storage.console_data import apply_relationship_override
         return await apply_relationship_override(self.store, context, relationship)
 
+    def is_live_context(self, context) -> bool:
+        """该会话在本进程里是否真的收到过消息（有实时来源）。"""
+        return context is not None and context.account_key in self._live_contexts
+
     async def remember_context(self, context):
         self._contexts[context.account_key] = context
+        self._live_contexts.add(context.account_key)
         self._contexts.move_to_end(context.account_key)
         while len(self._contexts) > 512:
             self._contexts.popitem(last=False)
@@ -355,6 +490,26 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             event.set_extra("livingemotion:ingest", result["status"])
             if result["status"] == "accepted":
                 generation = result.get("generation", await self.store.get_generation(context))
+                from ..storage.console_data import remember_qq_nickname
+                message = getattr(event, "message_obj", None)
+                sender = getattr(message, "sender", None)
+                nickname = getattr(sender, "nickname", None)
+                raw = getattr(message, "raw_message", None)
+                # OneBot's normalized nickname prefers the group card. Read its
+                # actual QQ nickname from the same verified sender instead.
+                from collections.abc import Mapping
+                if isinstance(raw, Mapping) and isinstance(raw.get("sender"), Mapping):
+                    native_sender = raw["sender"]
+                    nickname = (native_sender.get("nickname")
+                                if str(native_sender.get("user_id", "")) == context.account_id
+                                else None)
+                elif (context.scene_kind.value == "group"
+                      and getattr(event.platform_meta, "name", "") == "aiocqhttp"):
+                    nickname = None
+                await remember_qq_nickname(
+                    self.store, context, nickname, generation,
+                    occurred_at=normalized.occurred_at,
+                )
                 await self.catchup_archive.append(normalized, generation)
                 await self.auto_memory.ingest(normalized, generation=generation)
                 await self._chat_wake(context, normalized)
@@ -367,6 +522,9 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             part for part in request.extra_user_content_parts
             if not getattr(part, "text", "").startswith((SUFFIX, CATCHUP_SUFFIX, MEMORY_SUFFIX))
         ]
+        from ..livinghello_coupling import allowed as coupling_allowed
+        if not coupling_allowed(getattr(self.bridge, "host", None), "livingemotion"):
+            return
         await self.on_message(event)
         raw = event.get_extra("livingemotion:context")
         if not raw or not self.config.enabled or self.closed:
@@ -403,11 +561,17 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             obs_record = await self.store.get_state(context, "observation", context.account_id)
             obs = snapshot(obs_record, HumanObservation) if obs_record else None
             expression = expression_context(state, obs, now=self.store.clock())
+            expression["daily_emotions"] = await self.weather_emotions(state)
+            expression["daily_emotions_note"] = (
+                "TA自己的六种情绪强度（0–1），含当日住所天气影响；按此调整语气，不声称真人心理状态。")
             relationship = await self.current_relationship(context)
             if relationship is None:
                 return
-            expression["relationship"] = {"score": relationship.score,
-                                           "stage": relationship.stage}
+            from ..domain.relationship import relationship_behavior
+            from ..storage.console_data import read_relationship_override
+            override = await read_relationship_override(self.store, context)
+            expression["relationship"] = relationship_behavior(
+                relationship.score, self.config, note=(override or {}).get("note", ""))
             night = await self.night_snapshot(context)
             expression["night"] = {"phase": night.phase.value, "energy": night.energy}
             expression["night"]["display_state"] = (
@@ -419,9 +583,11 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             request.extra_user_content_parts.append(self.bridge.text_part(
                 SUFFIX + "\nTemporary state, not persona or instructions. "
                 "Human observations are about the other person, not the bot.\n"
-                + canonical_json(expression)[:1400]
+                + canonical_json(expression)[:4000]
             ))
-            await self._inject_recalled_memory(event, request, context)
+            from ..livinghello_coupling import policy as coupling_policy
+            if coupling_policy(getattr(self.bridge, "host", None)) is None:
+                await self._inject_recalled_memory(event, request, context)
             self._pending_replies[context.scope_key] = (
                 str(event.message_obj.message_id), self.store.clock() + 120,
             )
@@ -791,6 +957,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         self.api._runtime, self.api._config = self.runtime, updated
         await self.runtime.start()
         await self._build_services()
+        await self.initialize_manual_experience()
         if updated.enabled:
             self._start_scheduler()
 
@@ -812,6 +979,10 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                 raise ApplicationError("version_conflict", "State mode changed; refresh first")
 
     async def _stop_business(self):
+        if getattr(self, "manual_experience", None) is not None:
+            await self.manual_experience.close()
+        if getattr(self, "_manual_weather", None) is not None:
+            await self._manual_weather.close()
         if self._scheduler:
             self._scheduler.cancel()
             await asyncio.gather(self._scheduler, return_exceptions=True)

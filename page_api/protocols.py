@@ -5,8 +5,15 @@ from typing import Any, Protocol
 
 
 class ConsoleApplication(Protocol):
+    async def console_experience_generate(self, request_id: str, persona_id: str, kind: str,
+                                          *, actor_id: str) -> dict: ...
+
+    async def console_experience_task(self, request_id: str) -> dict: ...
     async def console_state(self, context_id: str = "", persona_id: str = "",
                             view_scope: str = "", platform: str = "") -> dict: ...
+
+    async def console_configuration(self, context_id: str = "", persona_id: str = "",
+                                    view_scope: str = "", platform: str = "") -> dict: ...
 
     async def console_records(
         self, context_id: str, kind: str, page: int = 1,
@@ -16,7 +23,7 @@ class ConsoleApplication(Protocol):
 
     async def update_config(
         self, patch: dict, *, expected_revision: str | int,
-        reason: str, actor_id: str, context_id: str = "",
+        reason: str, actor_id: str, context_id: str = "", receipt: str = "state",
     ) -> dict: ...
 
     async def console_preview(self, context_id: str) -> dict: ...
@@ -33,13 +40,13 @@ class ConsoleApplication(Protocol):
     async def console_relationships(
         self, persona_id: str, view_scope: str = "global", context_id: str = "",
         platform: str = "", page: int = 1, page_size: int = 10,
-        query: str = "", limit: int = 200,
+        query: str = "", limit: int = 200, graph_scope: str = "matched",
     ) -> dict: ...
 
     async def console_relationship(
         self, persona_id: str, platform: str, account_id: str, *,
         expected_version: int, actor_id: str, reason: str, context_id: str = "",
-        score: float | None = None, frozen: bool | None = None,
+        score: float | None = None, frozen: bool | None = None, note: str | None = None,
     ) -> dict: ...
 
     async def console_energy(

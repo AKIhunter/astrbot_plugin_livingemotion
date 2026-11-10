@@ -28,6 +28,16 @@ def initiative_probability(score, unanswered, style):
     return min(.9, (.25 + .65 * score) * multiplier / (1 + unanswered))
 
 
+def emotional_share_allowed(relationship: Relationship, scene: SceneKind):
+    # 新关系默认基线不作为聚合证据，但不应永久阻断后续建立的私聊关系。
+    evidence_ready = (relationship.evidence_complete
+                      or "initial_relationship_default" in relationship.reason_codes)
+    return (scene == SceneKind.PRIVATE and relationship.score >= 600
+            and evidence_ready
+            and (relationship.trust is None or relationship.trust >= .55)
+            and (relationship.boundary is None or relationship.boundary < .5))
+
+
 def motives(affect: BotAffect, relationship: Relationship, scene: SceneKind, *,
             emotional_share=True, absent_seconds=0):
     weights = {
@@ -37,10 +47,7 @@ def motives(affect: BotAffect, relationship: Relationship, scene: SceneKind, *,
     }
     # Sharing feelings needs an established private relationship. Shared affect
     # numbers never authorize a private explanation in a group.
-    if (emotional_share and scene == SceneKind.PRIVATE and relationship.score >= 600
-            and relationship.evidence_complete
-            and (relationship.trust is None or relationship.trust >= .55)
-            and (relationship.boundary is None or relationship.boundary < .5)):
+    if emotional_share and emotional_share_allowed(relationship, scene):
         weights["emotional_share"] = .5 + affect.social_need + affect.stress
     if absent_seconds >= 3 * 86400 and relationship.score >= 200:
         weights["reconnect"] = 1.5

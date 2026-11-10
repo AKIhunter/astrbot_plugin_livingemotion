@@ -35,6 +35,7 @@ from ..contracts import (
 from .schema import migrate
 from .state_scope import StateScopeStore
 from .night import NightStore
+from .experiences import ExperienceStore
 
 T = TypeVar("T")
 STATE_KINDS = frozenset(("bot", "observation", "relationship", "night"))
@@ -111,7 +112,7 @@ class _ProjectionLock(asyncio.Lock):
             self._acquiring -= 1
 
 
-class SQLiteStore(StateScopeStore, NightStore):
+class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
     def __init__(self, path: str | Path, *, config: Config | None = None,
                  clock: Callable[[], float] = time.time):
         self.path = Path(path)
@@ -294,6 +295,11 @@ class SQLiteStore(StateScopeStore, NightStore):
                 raise ValueError("scene-scoped state requires empty record_key")
             if type(write.expected_version) is not int or write.expected_version < 0:
                 raise ValueError("invalid expected_version")
+            if write.kind == "relationship" and "_relationship_override_version" in write.value:
+                from .console_data import _override
+                override = _override(db, context)
+                if write.value["_relationship_override_version"] != (override or {}).get("version", 0):
+                    raise _Rejected("version_conflict")
             loggable = write.kind == "night" and (
                 write.value.get("policy_version") == 2 or write.energy_events
             )
@@ -314,6 +320,8 @@ class SQLiteStore(StateScopeStore, NightStore):
                 payload = _state_json(write.value)
             if len(payload) > 65536:
                 raise ValueError("state payload too large")
+            if write.kind == "bot":
+                self._append_emotion(db, context.scope_key, generation, now, write.value)
             if direct_cas:
                 # The CAS belongs in the UPDATE itself. Mature non-loggable
                 # snapshots need no preceding SELECT or UPSERT lookup.
@@ -368,16 +376,21 @@ class SQLiteStore(StateScopeStore, NightStore):
         owner = self.state_owner(context)
         return await self._run(lambda db: self._projection_snapshot(db, context, owner))
 
-    async def project_snapshot(self, context: Context, calculate: Callable[..., T]) -> T:
+    async def project_snapshot(self, context: Context, calculate: Callable[..., T],
+                               *, relationship_override=False) -> T:
         """Run a pure local calculation with its snapshot on the same worker.
 
         No model or async callback belongs here. The returned projection still
         carries the read's original CAS/generation ticket; commit rechecks it.
         """
         owner = self.state_owner(context)
-        return await self._run(
-            lambda db: calculate(*self._projection_snapshot(db, context, owner)),
-        )
+        def project(db):
+            generation, records = self._projection_snapshot(db, context, owner)
+            if relationship_override:
+                from .console_data import _override
+                records["_relationship_override"] = _override(db, context)
+            return calculate(generation, records)
+        return await self._run(project)
 
     def _projection_snapshot(self, db, context, owner):
         if owner is not None:
@@ -538,12 +551,22 @@ class SQLiteStore(StateScopeStore, NightStore):
         return await self._run(commit)
 
     async def refine_emotion(self, event: Event, generation: int, version: int,
-                             value: dict, trace: dict, *, owner=None) -> CommitResult:
-        """Replace a single committed appraisal; do not replay its other effects."""
+                             value: dict, trace: dict, *, owner=None,
+                             relationship_write=None, relationship_trace=None,
+                             contributions=()) -> CommitResult:
+        """Replace this event's joint appraisal and ledger in one CAS transaction."""
         payload = canonical_json(trace)
         if len(payload) > 65536 or trace.get("event_key") != event.idempotency_key:
             raise ValueError("invalid refinement trace")
         context, now = event.context, self._now()
+        relation_payload = canonical_json(relationship_trace) if relationship_trace else None
+        if relation_payload is not None and (
+                len(relation_payload) > 65536
+                or relationship_trace.get("event_key") != event.idempotency_key
+                or relationship_write is None
+                or relationship_write.kind != "relationship"
+                or relationship_write.record_key != context.account_id):
+            raise ValueError("invalid relationship refinement")
 
         def commit(db):
             def mutate():
@@ -556,7 +579,9 @@ class SQLiteStore(StateScopeStore, NightStore):
                 if not row or row["seq"] != row["human_watermark"]:
                     raise _Rejected("new_human_message")
                 versions = self._write_states(
-                    db, context, generation, (StateWrite("bot", value, version, owner=owner),), now,
+                    db, context, generation,
+                    (StateWrite("bot", value, version, owner=owner),)
+                    + ((relationship_write,) if relationship_write else ()), now,
                 )
                 changed = db.execute(
                     """UPDATE event_traces SET value_json=? WHERE event_key=? AND scope_key=?
@@ -565,6 +590,30 @@ class SQLiteStore(StateScopeStore, NightStore):
                 ).rowcount
                 if changed != 1:
                     raise _Rejected("trace_missing")
+                if relation_payload is not None:
+                    changed = db.execute(
+                        """UPDATE event_traces SET value_json=? WHERE event_key=? AND scope_key=?
+                           AND generation=? AND kind='relationship'""",
+                        (relation_payload, event.idempotency_key, context.scope_key, generation),
+                    ).rowcount
+                    if changed != 1:
+                        raise _Rejected("trace_missing")
+                    db.execute("""DELETE FROM relationship_ledger WHERE event_key=?
+                                  AND scope_key=? AND generation=? AND account_id=?""",
+                               (event.idempotency_key, context.scope_key, generation, context.account_id))
+                    for contribution in contributions:
+                        if (contribution.source_id != event.idempotency_key
+                                or contribution.account_id != context.account_id):
+                            raise ValueError("contribution account mismatch")
+                        db.execute(
+                            """INSERT INTO relationship_ledger(scope_key,generation,event_key,
+                               source_id,account_id,occurred_at,day,dimension,delta,reason_code)
+                               VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                            (context.scope_key, generation, event.idempotency_key,
+                             contribution.source_id, contribution.account_id,
+                             contribution.occurred_at, contribution.day, contribution.dimension,
+                             contribution.delta, contribution.reason_code),
+                        )
                 return CommitResult("accepted", "emotion_refined", event.idempotency_key,
                                     generation, versions)
             try:
@@ -683,11 +732,38 @@ class SQLiteStore(StateScopeStore, NightStore):
                                    SELECT scope_key FROM state_members WHERE persona_key=?)""",
                             (now, owner.persona_key),
                         )
+                db.execute(
+                    "UPDATE experience_daily SET experience_id=NULL,revision=revision+1,updated_at=? "
+                    "WHERE experience_id IN (SELECT experience_id FROM experiences WHERE scope_key=?)",
+                    (now, context.scope_key))
+                db.execute(
+                    "UPDATE experience_jobs SET status=CASE WHEN status='running' THEN 'unknown' "
+                    "ELSE 'cancelled' END,reason_code='source_cleared',finished_at=? "
+                    "WHERE status IN ('queued','running') AND EXISTS "
+                    "(SELECT 1 FROM json_each(generation_snapshot_json,'$.sources') "
+                    "WHERE json_extract(value,'$[0].instance_id')=? "
+                    "AND json_extract(value,'$[0].persona_id')=? "
+                    "AND json_extract(value,'$[0].scene_id')=? "
+                    "AND json_extract(value,'$[0].adapter_id')=?)",
+                    (now, context.instance_id, context.persona_id, context.scene_id, context.adapter_id))
                 for table in ("states", "events", "body_window", "relationship_ledger",
                               "experiences", "event_traces"):
                     db.execute(f"DELETE FROM {table} WHERE scope_key=?", (context.scope_key,))
                 db.execute("DELETE FROM energy_events WHERE source_scope_key=?",
                            (context.scope_key,))
+                # Clear source names physically; late accepted-message callbacks cannot restore them.
+                db.execute("DELETE FROM runtime_meta WHERE key LIKE 'console.qq.nickname.v1:%' "
+                           "AND json_extract(value,'$.scope_key')=?", (context.scope_key,))
+                # 删除来源时同步清空派生心理短句；保留周期墓碑避免重复付费生成。
+                db.execute(
+                    "UPDATE runtime_meta SET value=json_set(value,'$.text','',"
+                    "'$.generated_at',NULL,'$.run_id','','$.status','cancelled',"
+                    "'$.reason_code','source_cleared','$.sources',json('[]'),"
+                    "'$.pending_sources',json('[]')) "
+                    "WHERE key LIKE 'console.feeling.v1:%' AND (EXISTS "
+                    "(SELECT 1 FROM json_each(runtime_meta.value,'$.sources') WHERE value=?) "
+                    "OR EXISTS (SELECT 1 FROM json_each(runtime_meta.value,'$.pending_sources') WHERE value=?))",
+                    (context.scope_key, context.scope_key))
                 # Keep non-body intent tombstones and all quota consumption.
                 db.execute(
                     """UPDATE intents SET status=CASE WHEN status='sending' THEN 'unknown'
@@ -888,9 +964,17 @@ class SQLiteStore(StateScopeStore, NightStore):
     async def transition_intent(self, context: Context, intent_id: str,
                                 expected_generation: int, *, expected_status: str,
                                 status: str, reason_code: str,
-                                reservation_id: str | None = None) -> dict[str, Any]:
+                                reservation_id: str | None = None,
+                                transport_receipt: dict | None = None) -> dict[str, Any]:
         if status not in INTENT_TRANSITIONS.get(expected_status, set()):
             return {"status": "rejected", "reason_code": "invalid_transition"}
+        if transport_receipt is not None and (
+                set(transport_receipt) != {"status", "receipt_id"}
+                or transport_receipt["status"] not in ("confirmed", "rejected", "unknown")
+                or (transport_receipt["receipt_id"] is not None and (
+                    not isinstance(transport_receipt["receipt_id"], str)
+                    or not 1 <= len(transport_receipt["receipt_id"]) <= 512))):
+            raise ValueError("invalid transport receipt")
         now = self._now()
 
         def transition(db: sqlite3.Connection) -> dict[str, Any]:
@@ -941,6 +1025,11 @@ class SQLiteStore(StateScopeStore, NightStore):
                        WHERE intent_id=?""",
                     (status, now, reason_code, reservation_id, status, now, intent_id),
                 )
+                if transport_receipt is not None:
+                    value = json.loads(row["value_json"])
+                    value["transport_receipt"] = transport_receipt
+                    db.execute("UPDATE intents SET value_json=? WHERE intent_id=?",
+                               (canonical_json(value), intent_id))
                 return {"status": "updated", "reason_code": reason_code}
             try:
                 return self._transaction(db, mutate)
@@ -972,8 +1061,12 @@ class SQLiteStore(StateScopeStore, NightStore):
         return await self._run(recover)
 
     async def save_experience(self, experience: Experience,
-                              expected_generation: int) -> dict[str, Any]:
-        """Private content persistence only; callers own generation/authorization."""
+                              expected_generation: int, *, replace_existing: bool = False,
+                              ) -> dict[str, Any]:
+        """Private content persistence only; callers own generation/authorization.
+
+        replace_existing=True：手动重写同一天时覆盖旧内容（默认仍保留第一份）。
+        """
         context = experience.context
         owner = stable_key(context.instance_id, context.bot_id, context.persona_id,
                            context.adapter_id, context.platform)
@@ -984,8 +1077,9 @@ class SQLiteStore(StateScopeStore, NightStore):
         def save(db: sqlite3.Connection) -> dict[str, Any]:
             def mutate() -> dict[str, Any]:
                 self._check_generation(db, context, expected_generation)
+                verb = "INSERT OR REPLACE" if replace_existing else "INSERT OR IGNORE"
                 cursor = db.execute(
-                    "INSERT OR IGNORE INTO experiences VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    verb + " INTO experiences VALUES(?,?,?,?,?,?,?,?,?,?)",
                     (experience.experience_id, context.scope_key, owner, expected_generation,
                      experience.kind.value, experience.period, experience.created_at,
                      experience.expires_at, int(experience.pinned), payload),
@@ -1065,6 +1159,8 @@ class SQLiteStore(StateScopeStore, NightStore):
                 versions = self._write_states(db, context, expected_generation, (
                     StateWrite("relationship", {
                         **to_dict(result["relationship"]), "_runtime": value.get("_runtime", {}),
+                        **({"_account_affect": value["_account_affect"]}
+                           if "_account_affect" in value else {}),
                     }, version, context.account_id),
                 ), now)
                 event_key = stable_key("management", context.account_key,
@@ -1269,7 +1365,8 @@ class SQLiteStore(StateScopeStore, NightStore):
 
     async def save_experience_guarded(self, experience: Experience,
                                      generations: Sequence[tuple[Context, int]], *,
-                                     watermarks: Sequence[tuple[Context, int]] = ()) -> dict[str, Any]:
+                                     watermarks: Sequence[tuple[Context, int]] = (),
+                                     replace_existing: bool = False) -> dict[str, Any]:
         """All source clear-generations and the entry are checked in one transaction."""
         context = experience.context
         payload = canonical_json(experience)
@@ -1289,8 +1386,9 @@ class SQLiteStore(StateScopeStore, NightStore):
                 if not any(source.scope_key == context.scope_key for source, _ in generations):
                     raise ValueError("missing target generation")
                 generation = self._generation(db, context)
+                verb = "INSERT OR REPLACE" if replace_existing else "INSERT OR IGNORE"
                 cursor = db.execute(
-                    "INSERT OR IGNORE INTO experiences VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    verb + " INTO experiences VALUES(?,?,?,?,?,?,?,?,?,?)",
                     (experience.experience_id, context.scope_key, owner, generation,
                      experience.kind.value, experience.period, experience.created_at,
                      experience.expires_at, int(experience.pinned), payload),
@@ -1341,6 +1439,79 @@ class SQLiteStore(StateScopeStore, NightStore):
             except _Rejected as exc:
                 return {"status": "rejected", "reason_code": exc.reason}
         return await self._run(commit)
+
+    async def replace_external_memories(self, persona_id: str, provider: str,
+                                        rows: Sequence[dict], *, synced_at: float,
+                                        truncated: bool = False) -> dict[str, Any]:
+        """Replace the local mirror of one persona's external memories atomically.
+
+        The mirror is a read-only copy for the admin page; LivingMemory remains
+        the source of truth. Replacing (not merging) keeps deletions visible.
+        """
+        if not isinstance(persona_id, str) or not persona_id or len(persona_id) > 512:
+            raise ValueError("invalid persona id")
+        if not isinstance(provider, str) or not provider or len(provider) > 128:
+            raise ValueError("invalid provider")
+        finite(synced_at, "synced_at", 0)
+        prepared = []
+        for row in rows:
+            if not isinstance(row, dict):
+                raise ValueError("invalid memory row")
+            memory_id = row.get("memory_id")
+            if type(memory_id) is not int or memory_id <= 0:
+                raise ValueError("invalid memory id")
+            body = row.get("text")
+            if not isinstance(body, str):
+                raise ValueError("invalid memory body")
+            created = row.get("created_at")
+            if created is not None:
+                finite(created, "created_at", 0)
+            prepared.append((memory_id, persona_id, body[:4000],
+                             created, str(row.get("session_id") or "")[:512],
+                             canonical_json(row.get("metadata") or {}), synced_at))
+
+        def write(db: sqlite3.Connection) -> dict[str, Any]:
+            def mutate():
+                db.execute("DELETE FROM external_memories WHERE persona_id=?", (persona_id,))
+                db.executemany(
+                    "INSERT OR REPLACE INTO external_memories"
+                    "(memory_id,persona_id,body,created_at,session_id,metadata_json,synced_at)"
+                    " VALUES(?,?,?,?,?,?,?)", prepared)
+                db.execute(
+                    "INSERT OR REPLACE INTO external_memory_sync"
+                    "(persona_id,provider,synced_at,stored,truncated) VALUES(?,?,?,?,?)",
+                    (persona_id, provider, synced_at, len(prepared), int(bool(truncated))))
+                return {"stored": len(prepared), "truncated": bool(truncated)}
+            return self._transaction(db, mutate)
+        return await self._run(write)
+
+    async def external_memory_mirror(self, persona_id: str, *,
+                                     limit: int = 5) -> dict[str, Any]:
+        """Mirror summary for the console; body text is never logged."""
+        if not isinstance(persona_id, str) or len(persona_id) > 512:
+            raise ValueError("invalid persona id")
+        if type(limit) is not int or not 1 <= limit <= 20:
+            raise ValueError("invalid mirror limit")
+
+        def read(db: sqlite3.Connection) -> dict[str, Any]:
+            meta = db.execute(
+                "SELECT provider,synced_at,stored,truncated FROM external_memory_sync "
+                "WHERE persona_id=?", (persona_id,)).fetchone()
+            total = db.execute("SELECT COUNT(*) FROM external_memories WHERE persona_id=?",
+                               (persona_id,)).fetchone()[0]
+            items = []
+            if persona_id:
+                items = [{"memory_id": row["memory_id"], "text": row["body"],
+                          "created_at": row["created_at"], "session_id": row["session_id"]}
+                         for row in db.execute(
+                             "SELECT memory_id,body,created_at,session_id FROM external_memories "
+                             "WHERE persona_id=? ORDER BY memory_id DESC LIMIT ?",
+                             (persona_id, limit))]
+            return {"total": total, "provider": meta["provider"] if meta else "",
+                    "synced_at": meta["synced_at"] if meta else None,
+                    "truncated": bool(meta["truncated"]) if meta else False,
+                    "items": items}
+        return await self._run(read)
 
     async def health(self) -> dict[str, Any]:
         def read(db: sqlite3.Connection) -> dict[str, Any]:

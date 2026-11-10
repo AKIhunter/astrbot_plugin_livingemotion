@@ -64,7 +64,6 @@ class LocalVectorMemory:
         if (not self.write_enabled or self._closed or self.embedding is None
                 or not material_allowed(material, request.context, self.store.clock())
                 or ref.provider != "livingemotion" or ref.holder_id != request.context.bot_id
-                or ref.kind not in (ContentKind.INTERACTION, ContentKind.FACT, ContentKind.BOT_ACTION)
                 or not ref.source_ids or ref.expires_at is None
                 or ref.expires_at - ref.occurred_at > self.retention_days * 86400):
             return None, "local_source_invalid_or_write_disabled"

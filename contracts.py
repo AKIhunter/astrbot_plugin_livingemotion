@@ -487,6 +487,7 @@ class Experience:
     expires_at: float | None = None
     pinned: bool = False
     clarity: float = 1.0
+    dream_profile: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "kind", ContentKind(self.kind))
@@ -544,6 +545,7 @@ class BehaviorPreview:
     reason_codes: tuple[str, ...] = ("autonomy_disabled",)
     model_calls: int = 0
     sends: int = 0
+    score: float | None = None
 
 
 # Explicit compatibility names for modules which call the event a domain event.

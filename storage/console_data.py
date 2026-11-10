@@ -10,10 +10,57 @@ import json
 import math
 
 from ..contracts import ActorRole, ContentKind, Context, Event, Relationship, canonical_json, stable_key, to_dict
-from ..domain.relationship import relationship_stage
+from ..domain.relationship import initial_relationship, relationship_stage, relationship_stage_dto
 from ..domain.relationship_inference import RelationshipStatement, infer_relationships
 
 OVERRIDE_PREFIX = "console.relationship.override.v1:"
+NICKNAME_PREFIX = "console.qq.nickname.v1:"
+
+
+async def remember_qq_nickname(store, context, nickname, generation, *, occurred_at):
+    """Cache a native QQ sender name only after accepted ingestion, with clear fencing."""
+    if (context.platform != "qq" or context.scene_kind.value not in ("private", "group")
+            or not isinstance(nickname, str) or not nickname.strip()):
+        return
+    nickname = "".join(char for char in nickname.strip() if ord(char) >= 32)[:80]
+    if not nickname:
+        return
+    def write(db):
+        row = db.execute("SELECT generation FROM scopes WHERE scope_key=?",
+                         (context.scope_key,)).fetchone()
+        if not row or row[0] != generation:
+            return
+        key = NICKNAME_PREFIX + context.account_key
+        old = db.execute("SELECT value FROM runtime_meta WHERE key=?", (key,)).fetchone()
+        if old and json.loads(old[0])["occurred_at"] > occurred_at:
+            return
+        value = {"scope_key": context.scope_key, "account_key": context.account_key,
+                 "nickname": nickname, "generation": generation, "occurred_at": occurred_at,
+                 "qq_name_verified": True}
+        db.execute("INSERT INTO runtime_meta(key,value) VALUES(?,?) "
+                   "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                   (key, canonical_json(value)))
+    await store._run(write)
+
+
+def _qq_nickname(db, sources):
+    candidates = []
+    for context in sources:
+        if context.platform != "qq":
+            continue
+        row = db.execute(
+            "SELECT r.value FROM runtime_meta r JOIN scopes s "
+            "ON s.scope_key=json_extract(r.value,'$.scope_key') "
+            "AND s.generation=json_extract(r.value,'$.generation') WHERE r.key=?",
+            (NICKNAME_PREFIX + context.account_key,),
+        ).fetchone()
+        if row:
+            value = json.loads(row[0])
+            # Older group caches used the adapter's card-first display name.
+            if context.scene_kind.value != "group" or value.get("qq_name_verified") is True:
+                candidates.append(value)
+    latest = max(candidates, key=lambda n: n["occurred_at"], default=None)
+    return latest["nickname"] if latest else ""
 
 
 class ConsoleDataConflict(ValueError):
@@ -37,10 +84,11 @@ async def read_relationship_override(store, context):
     return await store._run(lambda db: _override(db, context))
 
 
-def _apply_override(context, relationship, override):
+def _apply_override(context, relationship, override, *, applied_version=0):
     if relationship is None or override is None:
         return relationship
-    score = override.get("score", relationship.score)
+    score = (relationship.score if applied_version == override["version"]
+             else override.get("score", relationship.score))
     return replace(relationship, score=score, stage=relationship_stage(score),
                    frozen=override.get("frozen", relationship.frozen),
                    updated_at=max(relationship.updated_at, override["updated_at"]),
@@ -53,8 +101,11 @@ async def apply_relationship_override(store, context, relationship):
     """Call after a live authorized projection; None remains fail-closed."""
     if relationship is None:
         return None
+    record = await store.get_state(context, "relationship", context.account_id)
     return _apply_override(context, relationship,
-                           await read_relationship_override(store, context))
+                           await read_relationship_override(store, context),
+                           applied_version=(record.value.get("_relationship_override_version", 0)
+                                            if record else 0))
 
 
 def _score(value):
@@ -67,15 +118,17 @@ def _score(value):
 
 
 async def write_relationship_override(store, context, *, expected_version,
-                                      actor_id, reason, score=None, frozen=None):
+                                      actor_id, reason, score=None, frozen=None, note=None):
     """CAS override and audit together; never edit external/local plugin state."""
     if (not context.account_id or type(expected_version) is not int
             or not 0 <= expected_version <= 2**63 - 1
             or not isinstance(actor_id, str) or not actor_id.strip() or len(actor_id) > 512
             or not isinstance(reason, str) or not reason.strip() or len(reason) > 1000
-            or (score is None and frozen is None)
+            or (score is None and frozen is None and note is None)
             or (frozen is not None and type(frozen) is not bool)):
         raise ValueError("invalid relationship override")
+    if note is not None:
+        validate_relationship_note(note)
     raw_score = _score(score) if score is not None else None
     now = store.clock()
 
@@ -94,6 +147,8 @@ async def write_relationship_override(store, context, *, expected_version,
                 value["score"] = raw_score
             if frozen is not None:
                 value["frozen"] = frozen
+            if note is not None:
+                value["note"] = note
             db.execute(
                 "INSERT INTO runtime_meta(key,value) VALUES(?,?) "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -111,9 +166,17 @@ async def write_relationship_override(store, context, *, expected_version,
             )
             sources = [c for c in _contexts(db, context.instance_id)
                        if relationship_account_key(c) == relationship_account_key(context)]
-            return {**value, "node": _relationship_node(db, sources or [context])}
+            return {**value, "node": _relationship_node(
+                db, sources or [context], getattr(store, "config", None))}
         return store._transaction(db, mutate)
     return await store._run(commit)
+
+
+def validate_relationship_note(note):
+    if (not isinstance(note, str) or len(note) > 1000
+            or any((ord(c) < 32 and c not in "\n\r\t") or 127 <= ord(c) < 160 for c in note)):
+        raise ValueError("invalid relationship note")
+    return note
 
 
 def context_dto(context):
@@ -163,7 +226,7 @@ async def query_scopes(store, instance_id, selection):
             "platforms": sorted({c.platform for c in contexts
                                  if not selection.get("persona_id")
                                  or c.persona_id == selection["persona_id"]}),
-            "contexts": [context_dto(c) for c in selected],
+            "contexts": [{**context_dto(c), "nickname": _qq_nickname(db, [c])} for c in selected],
             "counts": {"global": len(selected),
                        **{kind: sum(c.scene_kind.value == kind for c in selected)
                           for kind in ("private", "group")}},
@@ -171,7 +234,7 @@ async def query_scopes(store, instance_id, selection):
     return await store._run(read)
 
 
-def _relationship_node(db, sources):
+def _relationship_node(db, sources, config=None):
     context = sources[0]
     records = []
     for source in sources:
@@ -185,48 +248,77 @@ def _relationship_node(db, sources):
             records.append(row)
     row = max(records, key=lambda r: r["updated_at"], default=None)
     raw = json.loads(row["value_json"]) if row else {}
-    relation = Relationship(**{key: raw[key] for key in Relationship.__dataclass_fields__
-                               if key in raw})
+    relation = (Relationship(**{key: raw[key] for key in Relationship.__dataclass_fields__
+                                if key in raw}) if row else
+                initial_relationship())
     override = _override(db, context)
-    relation = _apply_override(context, relation, override)
+    relation = _apply_override(context, relation, override,
+                              applied_version=raw.get("_relationship_override_version", 0))
+    stage = relationship_stage_dto(relation.score, config)
     return {
         "id": relationship_account_key(context), "persona_id": context.persona_id,
         "platform": context.platform, "account_id": context.account_id,
-        "label": context.account_id, "raw": relation.score, "score": relation.score / 10,
-        "normalized": relation.normalized, "stage": relation.stage,
+        "label": _qq_nickname(db, sources) or context.account_id,
+        "raw": relation.score, "score": relation.score / 10,
+        "normalized": relation.normalized, **stage,
         **{name: getattr(relation, name) for name in ("trust", "familiarity", "boundary", "frozen")},
         "source_completeness": "complete" if row and relation.evidence_complete else "partial",
         "sources": [{"context_id": c.account_key, "platform": c.platform,
                      "view_scope": c.scene_kind.value, "scene_id": c.scene_id} for c in sources],
         "version": override["version"] if override else 0, "updated_at": relation.updated_at,
+        "note": (override or {}).get("note", ""),
     }
 
 
 async def query_relationships(store, instance_id, selection, *, page=1, page_size=10,
-                              query="", limit=200):
+                              query="", limit=200, config=None, graph_scope="matched",
+                              extra=(), memory_generation=None):
     if (type(page) is not int or not 1 <= page <= 1000000 or type(page_size) is not int
             or page_size != 10 or type(limit) is not int or not 1 <= limit <= 200
-            or not isinstance(query, str) or len(query) > 200):
-        raise ValueError("invalid relationship query")
+            or not isinstance(query, str) or len(query) > 200
+            or graph_scope not in ("matched", "neighbors")):
+            raise ValueError("invalid relationship query")
+    config = config or getattr(store, "config", None)
     def read(db):
         groups = {}
         contexts = _selected(_contexts(db, instance_id), selection)
         for context in contexts:
-            if context.account_id and query.casefold() in context.account_id.casefold():
+            if context.account_id:
                 groups.setdefault(relationship_account_key(context), []).append(context)
-        nodes = [_relationship_node(db, sources) for sources in groups.values()]
+        nodes = [_relationship_node(db, sources, config) for sources in groups.values()]
         nodes.sort(key=lambda n: (n["updated_at"], n["id"]), reverse=True)
+        term = query.strip()
+        exact = [n for n in nodes if n["account_id"] == term] if term else []
+        matched = exact or [n for n in nodes if term.casefold() in
+                           (n["account_id"] + " " + n["label"]).casefold()]
         center = {"id": stable_key(instance_id, selection["persona_id"]),
                   "persona_id": selection["persona_id"]}
-        visible = nodes[:limit]
         statements = _relationship_statements(db, store, contexts)
+        known = {c.account_key: c for c in contexts}
+        generation = (db.execute("SELECT generation FROM scopes WHERE scope_key=?",
+                                (memory_generation[0],)).fetchone() if memory_generation else None)
+        valid = not memory_generation or generation and generation[0] == memory_generation[1]
+        statements.extend(s for s in extra if valid and known.get(s.context.account_key) == s.context)
+        # Infer before search/cap: a reliable neighbor may be outside the first 200.
+        peers = infer_relationships(nodes, statements)
+        focus = {n["id"] for n in matched}
+        graph = matched
+        if graph_scope == "neighbors" and term:
+            neighbors = {end for edge in peers if edge["source"] in focus or edge["target"] in focus
+                         for end in (edge["source"], edge["target"])} - focus
+            graph = [*matched, *(n for n in nodes if n["id"] in neighbors)]
+        visible = graph[:limit]
+        visible_ids = {n["id"] for n in visible}
         return {"center": center, "nodes": visible,
                 "edges": [{"source": center["id"], "target": n["id"], "score": n["score"]}
                           for n in visible],
-                "items": nodes[(page - 1) * page_size:page * page_size],
-                "total": len(nodes), "displayed": len(visible), "page": page,
+                "items": matched[(page - 1) * page_size:page * page_size],
+                "total": len(matched), "displayed": len(visible), "page": page,
                 "page_size": page_size,
-                "peer_edges": infer_relationships(visible, statements)}
+                "graph_scope": graph_scope, "focus_ids": list(n["id"] for n in matched) if term else [],
+                "graph_total": len(graph), "graph_truncated": len(graph) > limit,
+                "peer_edges": [e for e in peers if e["source"] in visible_ids
+                               and e["target"] in visible_ids]}
     return await store._run(read)
 
 
