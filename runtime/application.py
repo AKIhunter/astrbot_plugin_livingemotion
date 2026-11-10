@@ -28,10 +28,12 @@ from ..contracts import (
     to_dict,
 )
 from ..domain.emotion import expression_context
+from ..livinghello_coupling import reply_freshness_window
 from ..services.behavior import BehaviorHistory, BehaviorPolicy, BehaviorService, BehaviorSnapshot
 from ..services.experience import LENIENT_SAVE
 from ..services.catchup import FullCatchupService
 from ..storage.catchup import CatchupArchive
+from ..storage.proactivity import last_activity
 from .background import BackgroundRuntime
 from .console import ApplicationError as ApplicationError
 from .console import Console
@@ -555,6 +557,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             event.set_extra("livingemotion:reply_lease", {
                 "attempt_id": attempt, "revision": self.revision, "generation": generation,
                 "watermark": await self.store.human_watermark(context),
+                "started_at": self.store.clock(),
             })
             state = source_affect(current_affect(
                 await self.store.get_state(context, "bot"), now=self.store.clock()), context)
@@ -658,10 +661,22 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             self._host_submissions.popitem(last=False)
         return True
 
+    @staticmethod
+    def _discard(event, reason):
+        """丢弃已生成回复时留下具体原因，供 at_guard 归到 cancelled。
+
+        只补第一个原因：更底层的检查已经说明为什么失效，后续复检不再改写。
+        """
+        if event is None:
+            return
+        if not event.get_extra("_at_guard_delivery_blocked"):
+            event.set_extra("_at_guard_delivery_blocked", reason)
+
     async def _native_freshness_valid(self, event, context, lease):
         watermark = await self.store.human_watermark(context)
         # 群聊发送由 LivingHello 复核撤回、黑名单与有效期；新群消息本身
-        # 不撤销已生成的回复。私聊、未接管的事件仍使用严格水位保护。
+        # 不撤销已生成的回复。私聊按 LivingHello 下发的水位窗口做弱校验，
+        # 未安装/未启用时为 0，仍使用严格水位保护。
         policy = event.get_extra("_livinghello_policy_send_check")
         freshness = event.get_extra("_at_guard_send_check")
         if (context.scene_kind == SceneKind.GROUP
@@ -671,25 +686,72 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             if event.get_extra("_at_guard_delivery_blocked"):
                 return False
             try:
-                return policy() in ("", None) and freshness() in ("", None)
+                blocked = policy() or freshness()
             except Exception:
+                self._discard(event, "send_check_error")
                 return False
-        return watermark == lease["watermark"]
+            if blocked:
+                self._discard(event, str(blocked))
+                return False
+            return True
+        if context.scene_kind == SceneKind.PRIVATE:
+            return await self._private_freshness_valid(event, context, lease, watermark)
+        if watermark != lease["watermark"]:
+            # 没有 LivingHello 复核时沿用严格水位；群水位推进来自新消息。
+            self._discard(event, "new_message")
+            return False
+        return True
+
+    async def _private_freshness_valid(self, event, context, lease, watermark):
+        if watermark == lease["watermark"]:
+            return True
+        window = reply_freshness_window(getattr(self.bridge, "host", None))
+        started = lease.get("started_at")
+        if window <= 0:
+            # 严格水位：水位一变就说明确实来了新私聊。
+            self._discard(event, "superseded_by_new_message")
+            return False
+        if not isinstance(started, (int, float)):
+            self._discard(event, "watermark_unverified")
+            return False
+        latest = await last_activity(self.store, context)
+        if not isinstance(latest, (int, float)):
+            self._discard(event, "watermark_unverified")
+            return False
+        # 生成开始后 window 秒内到达的新私聊视为同一轮连发，旧回复照常发送。
+        if latest - started > window:
+            self._discard(event, "superseded_by_new_message")
+            return False
+        return True
 
     async def _native_reply_valid(self, event, context, lease, *, memory=True):
-        if (lease["revision"] != self.revision
-                or not await self.validate_context(context, lease["generation"])
-                or not await self._native_freshness_valid(event, context, lease)):
+        if lease["revision"] != self.revision:
+            self._discard(event, "configuration_changed")
+            return False
+        if not await self.validate_context(context, lease["generation"]):
+            self._discard(event, "context_changed")
+            return False
+        if not await self._native_freshness_valid(event, context, lease):
+            if not event.get_extra("_at_guard_delivery_blocked"):
+                self._discard(event, "superseded_by_new_message")
             return False
         memory_lease = event.get_extra("livingemotion:memory_lease")
         if memory and memory_lease:
             request, materials = memory_lease
             validated = await self.memory.validate_evidence(request, materials, event=event)
             if not validated.valid or validated.materials != materials:
+                self._discard(event, "memory_evidence_changed")
                 return False
-        return (lease["revision"] == self.revision and self.effective_mode(context) == "active"
-                and await self.validate_context(context, lease["generation"])
-                and await self._native_freshness_valid(event, context, lease))
+        if lease["revision"] != self.revision:
+            self._discard(event, "configuration_changed")
+            return False
+        if self.effective_mode(context) != "active":
+            self._discard(event, "mode_inactive")
+            return False
+        if not await self.validate_context(context, lease["generation"]):
+            self._discard(event, "context_changed")
+            return False
+        return await self._native_freshness_valid(event, context, lease)
 
     async def _inject_recalled_memory(self, event, request, context):
         event.set_extra("livingemotion:memory_lease", None)
@@ -731,12 +793,14 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             return None
         if content_type == "STREAMING_RESULT" or getattr(result, "async_stream", None) is not None:
             # A competing hook cannot restore output before the final checks.
+            self._discard(event, "streaming_conflict")
             return False
         raw = event.get_extra("livingemotion:context")
         lease = event.get_extra("livingemotion:reply_lease")
         if not raw or not lease or self.closed or not self.config.enabled:
             return None
         if callable(getattr(event, "is_stopped", None)) and event.is_stopped():
+            self._discard(event, "event_stopped")
             return False
         context = Context.from_dict(raw)
         if not await self._native_reply_valid(event, context, lease, memory=False):
@@ -752,6 +816,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             return None
         text = "".join(str(getattr(part, "text", "")) for part in chain)
         if not await self.record_host_submission(context, lease["attempt_id"], text):
+            self._discard(event, "duplicate")
             return False
         await self.catchup_archive.mark_consumed(
             context, lease["generation"], str(event.message_obj.message_id),
