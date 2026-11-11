@@ -286,6 +286,24 @@ class BehaviorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.store.quota_usage(period="2026-11-05", pool="send"), 1)
         self.assertEqual(self.model_requests[0].snapshot.persona_prompt, "Synthetic native persona")
 
+    async def test_log_keeps_generation_emotion_after_current_affect_changes(self):
+        original = self.snapshots[self.context.scope_key]
+        self.snapshots[self.context.scope_key] = replace(
+            original, affect=replace(original.affect, labels=("happy", "excited")))
+        async def change_mood(request):
+            self.snapshots[self.context.scope_key] = replace(
+                original, affect=replace(original.affect, labels=("sad",)))
+            self.now += 3
+            return "Synthetic generated text."
+        self.on_model = change_mood
+        result = await self.execute()
+        self.assertEqual(result.status, "succeeded")
+        row = await self.store.get_intent(self.context, "i")
+        self.assertEqual(row["value"]["emotion_snapshot"], "happy,excited")
+        self.assertEqual(row["attempted_at"], row["created_at"] + 3)
+        self.assertEqual(self.snapshots[self.context.scope_key].affect.labels, ("sad",))
+        self.assertEqual(self.model_requests[0].snapshot.affect.labels, ("happy", "excited"))
+
     async def test_typed_wake_intent_preserves_watermark_generation_and_deadline(self):
         watermark = await self.store.human_watermark(self.context)
         proposal = BehaviorIntent("wake", self.context, "wake_catchup", self.now - 1,

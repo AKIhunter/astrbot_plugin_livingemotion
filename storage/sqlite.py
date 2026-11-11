@@ -965,7 +965,14 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
                                 expected_generation: int, *, expected_status: str,
                                 status: str, reason_code: str,
                                 reservation_id: str | None = None,
-                                transport_receipt: dict | None = None) -> dict[str, Any]:
+                                transport_receipt: dict | None = None,
+                                content: str | None = None,
+                                emotion_snapshot: str | None = None) -> dict[str, Any]:
+        if content is not None and (not isinstance(content, str) or len(content) > 2000):
+            raise ValueError("invalid intent content")
+        if emotion_snapshot is not None and (
+                not isinstance(emotion_snapshot, str) or len(emotion_snapshot) > 512):
+            raise ValueError("invalid intent emotion snapshot")
         if status not in INTENT_TRANSITIONS.get(expected_status, set()):
             return {"status": "rejected", "reason_code": "invalid_transition"}
         if transport_receipt is not None and (
@@ -1025,9 +1032,14 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
                        WHERE intent_id=?""",
                     (status, now, reason_code, reservation_id, status, now, intent_id),
                 )
-                if transport_receipt is not None:
+                if transport_receipt is not None or content is not None or emotion_snapshot is not None:
                     value = json.loads(row["value_json"])
-                    value["transport_receipt"] = transport_receipt
+                    if transport_receipt is not None:
+                        value["transport_receipt"] = transport_receipt
+                    if content is not None:
+                        value["content"] = content
+                    if emotion_snapshot is not None:
+                        value["emotion_snapshot"] = emotion_snapshot
                     db.execute("UPDATE intents SET value_json=? WHERE intent_id=?",
                                (canonical_json(value), intent_id))
                 return {"status": "updated", "reason_code": reason_code}
@@ -1244,7 +1256,9 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
             return {"items": [
                 {**{k: row[k] for k in row.keys() if k != "value_json"},
                  "id": row[id_col], "created_at": row[time_col],
-                 "value": json.loads(row["value_json"])} for row in rows
+                 # 正文只由鉴权控制台的专用日志查询读取；通用诊断仍不带正文。
+                 "value": {k: v for k, v in json.loads(row["value_json"]).items()
+                           if kind != "behavior" or k != "content"}} for row in rows
             ], "page": page, "page_size": page_size, "total": total}
         return await self._run(read)
 

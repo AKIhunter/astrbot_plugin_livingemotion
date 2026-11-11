@@ -192,6 +192,7 @@ class _Attempt:
     guard_called: bool = False
     guard_reason: str | None = None
     transport_receipt: dict | None = None
+    content: str | None = None
 
 
 class _Lane:
@@ -574,6 +575,9 @@ class BehaviorService:
             expected_status=old, status=new, reason_code=reason,
             reservation_id=attempt.reservations[0] if attempt.reservations else None,
             transport_receipt=attempt.transport_receipt if new in TERMINAL else None,
+            content=attempt.content if new == "sending" else None,
+            # 留存模型生成时的情绪；发送前的最新状态不能改写这份快照。
+            emotion_snapshot=",".join(attempt.snapshot.affect.labels) if new == "sending" else None,
         )
 
     def _result(
@@ -740,6 +744,8 @@ class BehaviorService:
             reason = await self._review(attempt, manual=manual)
             if reason:
                 return await self._settle(attempt, "cancelled", reason)
+            # 正文随 sending 标记一起持久化，发送失败或服务中断仍可回查。
+            attempt.content = text.strip()
             transition = await self._transition(attempt, "generating", "sending", "dispatch_claimed")
             if transition["status"] != "updated":
                 return await self._settle(attempt, "cancelled", transition["reason_code"])
