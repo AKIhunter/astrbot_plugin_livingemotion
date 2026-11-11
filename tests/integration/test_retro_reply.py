@@ -152,13 +152,31 @@ async def test_deep_sleep_preempts_already_started_reply(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_new_human_cancels_old_final_result(tmp_path):
-    app, host, _, _ = await at_time(tmp_path, 12, config={"night_schedule_enabled": False})
+@pytest.mark.parametrize("new_count", [0, 1, 2])
+async def test_private_new_messages_never_cancel_inflight_reply(tmp_path, new_count):
+    app, host, _, clock = await at_time(tmp_path, 12, config={"night_schedule_enabled": False})
     try:
-        old, new = FinalMessage(identifier="old"), FinalMessage(identifier="new")
+        old = FinalMessage(identifier="old")
         await app.on_llm_request(old, SimpleNamespace(extra_user_content_parts=[]))
-        await app.on_message(new)
-        assert await app.on_reply_submitted(old) is False
+        newer = []
+        for index in range(new_count):
+            # 超过 LivingHello 旧版 15 秒连发窗口，确认时间差不再驱动丢弃。
+            clock[0] += 16
+            message = FinalMessage(identifier=f"new-{index}")
+            await app.on_message(message)
+            await app.on_llm_request(message, SimpleNamespace(extra_user_content_parts=[]))
+            newer.append(message)
+        context = Context.from_dict(old.extra["livingemotion:context"])
+        # 旧回复照常投递；同一个事件重复回调不会产生第二次投递。
+        assert await app.on_reply_submitted(old) is True
+        assert await app.on_reply_submitted(old) is True
+        # 生成期间进来的每条新消息也按自己的轮次得到回复。
+        for message in newer:
+            assert await app.on_reply_submitted(message) is True
+        assert old.result.chain and all(message.result.chain for message in newer)
+        history = await app.store.energy_history(context, category="reply")
+        assert history["total"] == 1 + new_count
+        assert len(app._host_submissions) == 1 + new_count
         assert host.sends == 0
     finally:
         await app.terminate()

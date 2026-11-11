@@ -25,16 +25,3 @@ def policy(context):
 def allowed(context, kind):
     value = policy(context)
     return value is None or value.get("integrations", {}).get(kind, {}).get("effective") is True
-
-
-def reply_freshness_window(context):
-    """LivingHello 下发的私聊水位宽限；未安装/未启用时返回 0（严格水位）。"""
-    value = policy(context)
-    row = (value or {}).get("reply_freshness")
-    if not isinstance(row, dict) or row.get("contract") != "livinghello.reply-freshness.v1":
-        return 0.0
-    try:
-        seconds = float(row.get("private_watermark_window_seconds", 0))
-    except (TypeError, ValueError, OverflowError):
-        return 0.0
-    return seconds if 0 < seconds <= 60 else 0.0

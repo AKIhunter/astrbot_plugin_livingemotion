@@ -69,16 +69,17 @@ async def test_closing_model_wait_cannot_reuse_revoked_memory_authorization(tmp_
 
 
 @pytest.mark.asyncio
-async def test_new_message_during_random_closing_cancels_old_result(tmp_path):
+async def test_new_message_during_random_closing_keeps_old_result_without_closing_line(tmp_path):
     app, host, _, _, message, context = await prepared(tmp_path, random=True)
     try:
         async def generate(*args, **kwargs):
             await app.on_message(FinalMessage(identifier="newer"))
             return "晚安。"
         app.purpose_model = generate
-        assert await app.on_reply_submitted(message) is False
+        # 新消息撤销的是这次临时的晚安合并，不撤销已经生成好的正文。
+        assert await app.on_reply_submitted(message) is True
         assert len(message.result.chain) == 1 and host.sends == 0
-        assert (await app.store.energy_history(context, category="reply"))["total"] == 0
+        assert (await app.store.energy_history(context, category="reply"))["total"] == 1
     finally:
         await app.terminate()
 

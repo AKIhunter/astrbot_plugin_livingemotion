@@ -28,12 +28,10 @@ from ..contracts import (
     to_dict,
 )
 from ..domain.emotion import expression_context
-from ..livinghello_coupling import reply_freshness_window
 from ..services.behavior import BehaviorHistory, BehaviorPolicy, BehaviorService, BehaviorSnapshot
 from ..services.experience import LENIENT_SAVE
 from ..services.catchup import FullCatchupService
 from ..storage.catchup import CatchupArchive
-from ..storage.proactivity import last_activity
 from .background import BackgroundRuntime
 from .console import ApplicationError as ApplicationError
 from .console import Console
@@ -675,8 +673,8 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
     async def _native_freshness_valid(self, event, context, lease):
         watermark = await self.store.human_watermark(context)
         # 群聊发送由 LivingHello 复核撤回、黑名单与有效期；新群消息本身
-        # 不撤销已生成的回复。私聊按 LivingHello 下发的水位窗口做弱校验，
-        # 未安装/未启用时为 0，仍使用严格水位保护。
+        # 不撤销已生成的回复。私聊同理：生成期间到达的新消息不撤销在飞回复，
+        # 每条消息各自持有 lease，旧回复照常投递，新消息按自己的轮次生成。
         policy = event.get_extra("_livinghello_policy_send_check")
         freshness = event.get_extra("_at_guard_send_check")
         if (context.scene_kind == SceneKind.GROUP
@@ -695,32 +693,11 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                 return False
             return True
         if context.scene_kind == SceneKind.PRIVATE:
-            return await self._private_freshness_valid(event, context, lease, watermark)
+            # 私聊水位只用于归因，不再决定已生成回复是否投递。
+            return True
         if watermark != lease["watermark"]:
             # 没有 LivingHello 复核时沿用严格水位；群水位推进来自新消息。
             self._discard(event, "new_message")
-            return False
-        return True
-
-    async def _private_freshness_valid(self, event, context, lease, watermark):
-        if watermark == lease["watermark"]:
-            return True
-        window = reply_freshness_window(getattr(self.bridge, "host", None))
-        started = lease.get("started_at")
-        if window <= 0:
-            # 严格水位：水位一变就说明确实来了新私聊。
-            self._discard(event, "superseded_by_new_message")
-            return False
-        if not isinstance(started, (int, float)):
-            self._discard(event, "watermark_unverified")
-            return False
-        latest = await last_activity(self.store, context)
-        if not isinstance(latest, (int, float)):
-            self._discard(event, "watermark_unverified")
-            return False
-        # 生成开始后 window 秒内到达的新私聊视为同一轮连发，旧回复照常发送。
-        if latest - started > window:
-            self._discard(event, "superseded_by_new_message")
             return False
         return True
 

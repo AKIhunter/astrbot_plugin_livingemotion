@@ -1,4 +1,4 @@
-"""群聊新消息不误撤销，但接管者与记忆授权仍须逐次复核。无平台发送。"""
+"""新消息不误撤销在飞回复；接管者与记忆授权仍须逐次复核。无平台发送。"""
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -11,6 +11,18 @@ from test_retro_reply import FinalMessage, at_time
 def delegate(event, *, policy="", freshness=""):
     event.extra["_livinghello_policy_send_check"] = lambda: policy
     event.extra["_at_guard_send_check"] = lambda: freshness
+
+
+def install_window(host, seconds):
+    guard = SimpleNamespace(get_function_coupling=lambda: {
+        "contract": "livinghello.function-coupling.v1", "managed": True,
+        "integrations": {"livingemotion": {"effective": True}},
+        "reply_freshness": {"contract": "livinghello.reply-freshness.v1",
+                            "private_watermark_window_seconds": seconds},
+    })
+    host.get_registered_star = lambda name: (
+        SimpleNamespace(activated=True, star_cls=guard)
+        if name in ("astrbot_plugin_livinghello", "astrbot_plugin_LivingHello") else None)
 
 
 @pytest.mark.asyncio
@@ -32,18 +44,35 @@ async def test_two_group_messages_during_generation_preserve_owned_reply(tmp_pat
 
 
 @pytest.mark.asyncio
+async def test_private_reply_survives_new_messages_beyond_livinghello_window(tmp_path):
+    app, host, _, clock = await at_time(tmp_path, 12, config={"night_schedule_enabled": False})
+    install_window(host, 15)
+    try:
+        old = FinalMessage(identifier="old")
+        await app.on_llm_request(old, SimpleNamespace(extra_user_content_parts=[]))
+        clock[0] += 16
+        newer = FinalMessage(identifier="new")
+        await app.on_message(newer)
+        await app.on_llm_request(newer, SimpleNamespace(extra_user_content_parts=[]))
+        assert await app.on_reply_submitted(old) is True
+        assert await app.on_reply_submitted(newer) is True
+        assert host.sends == 0
+    finally:
+        await app.terminate()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("case", [
-    "private", "no_owner", "missing_policy", "recall", "expired", "blacklist",
+    "no_owner", "missing_policy", "recall", "expired", "blacklist",
     "policy_changed", "blocked", "callback_error", "revision", "generation", "mode",
     "memory_invalid", "policy_changes_during_memory",
 ])
 async def test_delegation_does_not_bypass_final_protections(tmp_path, case):
     app, host, native, _ = await at_time(tmp_path, 12, config={"night_schedule_enabled": False})
     try:
-        group = "" if case == "private" else "group"
-        old = FinalMessage(identifier="old", group=group)
+        old = FinalMessage(identifier="old", group="group")
         await app.on_llm_request(old, SimpleNamespace(extra_user_content_parts=[]))
-        await app.on_message(FinalMessage(identifier="new", group=group))
+        await app.on_message(FinalMessage(identifier="new", group="group"))
         delegate(old)
         if case == "no_owner":
             old.extra.pop("_at_guard_send_check")
