@@ -53,6 +53,13 @@ class ModelUnavailable(ValueError):
     pass
 
 
+def _text_upper_bound(system, data):
+    # Upper bound, NOT an estimate using another model's tokenizer. Plain-text
+    # byte/subword tokenizers cannot need more tokens than UTF-8 bytes; reserve
+    # 256 more for the two-message template. No tools/images/history are sent.
+    return len(data.encode("utf-8")) + (len(system.encode("utf-8")) + 256 if system else 0)
+
+
 class OpenAIBinding:
     """A request-local Provider copy, never mutation of the host's live provider.
 
@@ -71,10 +78,7 @@ class OpenAIBinding:
         self.fingerprint = stable_key(provider.provider_config, model)
 
     def count(self, system, data):
-        # Upper bound, NOT an estimate using another model's tokenizer. Plain-text
-        # byte/subword tokenizers cannot need more tokens than UTF-8 bytes; reserve
-        # 256 more for the two-message template. No tools/images/history are sent.
-        return len(data.encode("utf-8")) + (len(system.encode("utf-8")) + 256 if system else 0)
+        return _text_upper_bound(system, data)
 
     async def generate(self, system, data, output_tokens, timeout):
         if type(output_tokens) is not int or not 1 <= output_tokens <= 8192:
@@ -113,6 +117,52 @@ class OpenAIBinding:
         return text
 
 
+class RouterBinding:
+    """Budgeted binding for multi_api_router pinned upstreams.
+
+    The router owns its upstream transport, keys and retries; only the
+    per-request output budget and timeout are imposed here. Never touches the
+    OpenAI source contract (provider.client / api_keys / custom_extra_body).
+    """
+
+    def __init__(self, provider):
+        if type(provider).__name__ != "MultiApiRouterProvider":
+            raise ModelUnavailable("provider_budget_contract_unsupported")
+        meta = provider.meta()
+        identifier = getattr(meta, "id", "")
+        if (not isinstance(identifier, str)
+                or not identifier.startswith("multi_api_router:upstream_")):
+            raise ModelUnavailable("provider_budget_contract_unsupported")
+        model = provider.get_model()
+        if not isinstance(model, str) or not model.strip():
+            raise ModelUnavailable("model_unavailable")
+        self.provider = provider
+        self.fingerprint = stable_key(identifier, model)
+
+    def count(self, system, data):
+        return _text_upper_bound(system, data)
+
+    async def generate(self, system, data, output_tokens, timeout):
+        if type(output_tokens) is not int or not 1 <= output_tokens <= 8192:
+            raise ModelUnavailable("invalid_output_budget")
+        response = await asyncio.wait_for(self.provider.text_chat(
+            prompt=data, system_prompt=system, contexts=[], func_tool=None,
+            max_tokens=output_tokens, request_max_retries=1,
+        ), timeout)
+        if getattr(response, "role", None) != "assistant":
+            raise ModelResultUnknown("model_response_invalid")
+        text = getattr(response, "completion_text", None)
+        if not isinstance(text, str) or not text.strip() or self.count("", text) > output_tokens:
+            raise ModelResultUnknown("model_output_invalid")
+        return text
+
+
+def _provider_binding(provider):
+    if type(provider).__name__ == "MultiApiRouterProvider":
+        return RouterBinding(provider)
+    return OpenAIBinding(provider)
+
+
 class Generation:
     async def model_binding(self, context, purpose=""):
         if not await self.validate_context(context) or self.effective_mode(context) != "active":
@@ -148,7 +198,7 @@ class Generation:
                 # Host managers and existing asynchronous fixtures both occur.
                 if inspect.isawaitable(provider):
                     provider = await provider
-                return OpenAIBinding(provider)
+                return _provider_binding(provider)
             except ModelUnavailable as exc:
                 failure = (str(exc) if str(exc) in (
                     "provider_budget_contract_unsupported", "model_unavailable")

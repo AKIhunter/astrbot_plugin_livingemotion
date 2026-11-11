@@ -358,15 +358,33 @@ async def test_settings_options_use_native_lists_and_never_secrets(le_store, le_
             return "native-model"
     class DashScopeEmbeddingProvider(ProviderOpenAIOfficial):
         pass
+    class MultiApiRouterProvider:
+        def __init__(self, identifier, model="router-model"):
+            self.identifier, self.model = identifier, model
+
+        def meta(self):
+            return SimpleNamespace(id=self.identifier)
+
+        def get_model(self):
+            return self.model
     app.host = SimpleNamespace(
         persona_manager=SimpleNamespace(get_all_personas=lambda: [
             SimpleNamespace(persona_id="native-persona", prompt="NEVER_RETURN")]),
-        get_all_providers=lambda: [ProviderOpenAIOfficial()],
+        get_all_providers=lambda: [
+            ProviderOpenAIOfficial(),
+            MultiApiRouterProvider("multi_api_router:upstream_12"),
+            # 整体 router 没有 pinned 上游语义，必须继续被过滤。
+            MultiApiRouterProvider("multi_api_router", "automatic"),
+        ],
         get_all_embedding_providers=lambda: [DashScopeEmbeddingProvider()],
     )
     result = await app.console_settings_options()
     assert result["personas"] == [{"value": "native-persona", "label": "native-persona"}]
     assert result["chat_providers"] == [
+        {"value": "native-provider", "label": "native-provider / native-model"},
+        {"value": "multi_api_router:upstream_12",
+         "label": "multi_api_router:upstream_12 / router-model"},
+    ]
+    assert result["embedding_providers"] == [
         {"value": "native-provider", "label": "native-provider / native-model"}]
-    assert result["embedding_providers"] == result["chat_providers"]
     assert "NEVER_RETURN" not in str(result)

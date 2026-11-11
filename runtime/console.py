@@ -1287,13 +1287,16 @@ class Console:
         async def providers(method, supported):
             options = []
             for provider in await listing(host, method):
-                if type(provider).__name__ not in supported:
+                # 类型名 -> 允许的 ID 前缀；空串表示该类型不限制前缀。
+                prefix = supported.get(type(provider).__name__)
+                if prefix is None:
                     continue
                 try:
                     meta = provider.meta()
                     identifier = meta.id
                     model = provider.get_model()
-                    if isinstance(identifier, str) and identifier and isinstance(model, str):
+                    if (isinstance(identifier, str) and identifier and isinstance(model, str)
+                            and identifier.startswith(prefix)):
                         options.append({"value": identifier, "label": f"{identifier} / {model}"})
                 except Exception:
                     continue
@@ -1301,9 +1304,13 @@ class Console:
 
         return {
             "api_version": 1, "personas": personas,
-            "chat_providers": await providers("get_all_providers", {"ProviderOpenAIOfficial"}),
+            "chat_providers": await providers("get_all_providers", {
+                "ProviderOpenAIOfficial": "",
+                # 只放行「指定上游」实例，整体 router 仍留在列表外。
+                "MultiApiRouterProvider": "multi_api_router:upstream_",
+            }),
             "embedding_providers": await providers("get_all_embedding_providers", {
-                "OpenAIEmbeddingProvider", "DashScopeEmbeddingProvider",
+                "OpenAIEmbeddingProvider": "", "DashScopeEmbeddingProvider": "",
             }),
             "groups": self._settings_groups(), "reasons": reasons,
         }
