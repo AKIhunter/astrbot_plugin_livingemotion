@@ -373,6 +373,9 @@ async def test_settings_options_use_native_lists_and_never_secrets(le_store, le_
         get_all_providers=lambda: [
             ProviderOpenAIOfficial(),
             MultiApiRouterProvider("multi_api_router:upstream_12"),
+            # 宿主按持久化配置实例化一次，路由插件启动时又注册一次：同一 ID 会出现两份。
+            MultiApiRouterProvider("multi_api_router:upstream_12"),
+            ProviderOpenAIOfficial(),
             # 整体 router 没有 pinned 上游语义，必须继续被过滤。
             MultiApiRouterProvider("multi_api_router", "automatic"),
         ],

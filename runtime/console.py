@@ -1285,7 +1285,7 @@ class Console:
                 personas.append({"value": identifier, "label": identifier})
 
         async def providers(method, supported):
-            options = []
+            options, seen = [], set()
             for provider in await listing(host, method):
                 # 类型名 -> 允许的 ID 前缀；空串表示该类型不限制前缀。
                 prefix = supported.get(type(provider).__name__)
@@ -1295,8 +1295,12 @@ class Console:
                     meta = provider.meta()
                     identifier = meta.id
                     model = provider.get_model()
+                    # 宿主会按持久化配置实例化一遍，路由插件启动时又注册同一批
+                    # 指定上游，provider 列表里因此出现两份相同 ID；按 ID 去重，
+                    # 保留首次出现的顺序与标签。
                     if (isinstance(identifier, str) and identifier and isinstance(model, str)
-                            and identifier.startswith(prefix)):
+                            and identifier.startswith(prefix) and identifier not in seen):
+                        seen.add(identifier)
                         options.append({"value": identifier, "label": f"{identifier} / {model}"})
                 except Exception:
                     continue
