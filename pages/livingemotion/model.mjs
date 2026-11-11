@@ -65,12 +65,13 @@ export function modelDiagnosticText(code) {
   return t(labels[code] || "分析未完成，请核对模型与运行设置");
 }
 
-export function date(value, timeZone) {
+export function date(value, timeZone, options = {}) {
   if (value === undefined || value === null || value === "") return t("未提供");
   const parsed = new Date(typeof value === "number" ? value * 1000 : value);
   return Number.isNaN(parsed.getTime()) ? t("时间无效") : new Intl.DateTimeFormat(locale(), {
     month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
     ...(timeZone ? { timeZone } : {}),
+    ...options,
   }).format(parsed);
 }
 export function expired(value, now = Date.now()) {

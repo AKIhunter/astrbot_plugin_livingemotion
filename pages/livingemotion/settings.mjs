@@ -56,6 +56,59 @@ function orderedFields(fields) {
   fields.forEach(add);
   return result;
 }
+const PERSONA_DESCRIPTION_CLAMP_CHARS = 60;
+// 只读人格说明：默认折叠 3 行，超长可展开；内容在 AstrBot 人格管理中编辑。
+function personaDescriptionBlock(select, loader) {
+  const holder = node("div", undefined, "persona-description-preview");
+  const body = node("p", undefined, "persona-description-text");
+  const meta = node("p", undefined, "persona-description-meta");
+  const toggle = button(t("展开全文"), () => {
+    const expanded = holder.classList.toggle("is-expanded");
+    toggle.textContent = expanded ? t("收起") : t("展开全文");
+    body.scrollTop = 0;
+  }, "persona-description-toggle");
+  toggle.hidden = true;
+  holder.append(body, meta, toggle);
+  function reset() {
+    holder.classList.remove("is-expanded");
+    toggle.hidden = true;
+    toggle.textContent = t("展开全文");
+    body.classList.remove("is-empty");
+  }
+  function empty(message) {
+    body.textContent = message;
+    body.classList.add("is-empty");
+  }
+  async function render() {
+    const personaId = text(select.value, "");
+    reset();
+    meta.textContent = t("只读 · 在 AstrBot 人格管理中编辑");
+    if (!personaId) {
+      empty(t("跟随当前会话人格，说明随会话不同；保存后可在「人格」页查看。"));
+      return;
+    }
+    empty(t("正在读取人格说明…"));
+    try {
+      const description = text(await loader(personaId), "");
+      if (text(select.value, "") !== personaId) return;
+      if (!description) {
+        empty(t("该人格未填写说明。"));
+        meta.textContent = t("0 字 · 在 AstrBot 人格管理中编辑，本页只读");
+        return;
+      }
+      body.textContent = description;
+      body.classList.remove("is-empty");
+      meta.textContent = t("共 {0} 字 · 在 AstrBot 人格管理中编辑，本页只读", [String(description.length)]);
+      toggle.hidden = description.length <= PERSONA_DESCRIPTION_CLAMP_CHARS;
+    } catch (_) {
+      if (text(select.value, "") !== personaId) return;
+      empty(t("人格说明读取失败；不影响其他设置。"));
+    }
+  }
+  select.addEventListener("change", render);
+  void render();
+  return holder;
+}
 function setExpandedGroup(root, state, group, toggle = true) {
   const target = [...root.querySelectorAll("[data-task-group]")].find(section => section.dataset.taskGroup === group);
   if (!target) return;
@@ -126,7 +179,7 @@ export function schedulePreview(values) {
   const clock = value => `${value >= 1440 ? t("次日 ") : t("当日 ")}${String(Math.floor(value / 60) % 24).padStart(2, "0")}:${String(Math.floor(value) % 60).padStart(2, "0")}${value % 1 ? ":30" : ""}`;
   return t("本地 {0}：夜间 {1} → 恍惚转困 {2} → 沉睡 {3} → 基础起床 {4}。实际起床另加本周期持久赖床值，不在页面重抽。", [text(values.timezone, t("时区未配置")), clock(start), clock((start + deepAt) / 2), clock(deepAt), clock(wakeAt)]);
 }
-export function renderSettings(root, state, options, updateControls) {
+export function renderSettings(root, state, options, updateControls, descriptionLoader) {
   const experienceOnly = state.section === "experience";
   root.replaceChildren(); root.hidden = state.section !== "settings" && !experienceOnly;
   if (root.hidden) return;
@@ -339,7 +392,12 @@ export function renderSettings(root, state, options, updateControls) {
         control = node("div", undefined, "number-list-control"); control.append(input, suggestions);
       }
       wrapper.append(description, control);
-      (field.advanced || advancedPattern.test(field.key) ? advancedBody : common).append(wrapper);
+      const body = field.advanced || advancedPattern.test(field.key) ? advancedBody : common;
+      body.append(wrapper);
+      // 人格说明只读展示：内容来自宿主 personas.system_prompt，本页不写入。
+      if (field.key === "persona_id" && typeof descriptionLoader === "function") {
+        body.append(personaDescriptionBlock(input, descriptionLoader));
+      }
     }
     section.append(common);
     if (group === "persona") {

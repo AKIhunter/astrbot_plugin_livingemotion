@@ -964,13 +964,23 @@ class Console:
                 self._context(context_id).persona_id if context_id else
                 (await self.manual_persona())[0])}
             context = None
+        elif kind == "behavior":
+            if not persona_id and not context_id:
+                persona_id = (await self.manual_persona())[0]
+            selection = {"persona_id": persona_id or self._context(context_id).persona_id,
+                         "view_scope": view_scope or "global", "context_id": context_id,
+                         "platform": platform}
+            context = None
         elif persona_id or view_scope or platform:
             selection, _ = await self._selection(persona_id, view_scope, context_id, platform)
             context = None
         else:
             context = self._context(context_id)
         try:
-            result = (await self.store.query_persona_experiences(
+            from ..storage.behavior_logs import query_behavior_logs
+            result = (await query_behavior_logs(
+                self.store, self.instance_id, selection, page=page, page_size=page_size, query=query,
+            ) if kind == "behavior" else await self.store.query_persona_experiences(
                 self.instance_id, selection["persona_id"], kind,
                 page=page, page_size=page_size, query=query,
             ) if kind in ("diary", "dream") else await query_console_records(
@@ -1001,6 +1011,17 @@ class Console:
                             purpose=value.get("purpose", ""),
                             transport_status=value.get("transport_receipt", {}).get("status", "uncollected"),
                             receipt_id=value.get("transport_receipt", {}).get("receipt_id"))
+                item.update(send_id=row["id"], content=row.get("content", ""),
+                            timestamp=row.get("timestamp", row["created_at"]),
+                            emotion_snapshot=value.get("emotion_snapshot", ""),
+                            replied=row.get("replied", False), simulated=row.get("simulated", False),
+                            emotion=value.get("emotion", ""), emotion_label=value.get("emotion_label", ""),
+                            target_id="" if row.get("simulated") else (
+                                source_context.scene_id if source_context.scene_kind == SceneKind.GROUP
+                                else source_context.account_id),
+                            target_label="模拟" if row.get("simulated") else (
+                                "QQ群号" if source_context.scene_kind == SceneKind.GROUP else "QQ号"
+                                ) if source_context.platform == "qq" else source_context.platform)
             else:
                 loaded = await self.store.load_experience(row["id"])
                 if loaded is None:
@@ -1028,7 +1049,8 @@ class Console:
         except ValueError:
             raise ApplicationError("validation_error", "Invalid scope query") from None
         options = await self.console_settings_options()
-        known = {p["id"]: p for p in result["personas"]}
+        # 历史会话保留在库中，但不能把已经删除的人格重新加入可选目录。
+        known = {}
         for p in options["personas"]:
             known.setdefault(p["value"], {"id": p["value"], "name": p["label"]})
         result["personas"] = list(known.values())
@@ -1208,6 +1230,26 @@ class Console:
                 "window_start": max(0, now - 86400), "window_end": now,
                 "timezone": self.config.timezone or "UTC", **result}
 
+    async def console_persona_description(self, persona_id):
+        """只读返回指定人格的 system_prompt；人格不存在或超长时标记不可用，不报错。"""
+        self._open()
+        manager = getattr(getattr(self, "host", None), "persona_manager", None)
+        getter = getattr(manager, "get_persona", None)
+        description, available = "", False
+        if callable(getter):
+            try:
+                persona = getter(persona_id)
+                if inspect.isawaitable(persona):
+                    persona = await persona
+                prompt = getattr(persona, "system_prompt", None) if persona is not None else None
+                # 与 manual_experience.manual_persona 的上限保持一致；超长按不可用处理，不截断。
+                if isinstance(prompt, str) and len(prompt) <= 16000:
+                    description, available = prompt, True
+            except Exception:
+                description, available = "", False
+        return {"api_version": 1, "persona_id": persona_id, "description": description,
+                "characters": len(description), "available": available}
+
     async def console_settings_options(self):
         self._open()
         host = getattr(self, "host", None)
@@ -1325,13 +1367,10 @@ class Console:
                 "candidates": [],
                 "model_calls": 0, "sends": 0}
 
-    async def console_simulate(self, context_id):
-        """模拟一条主动发言：不判时机、不发送、不落库，只把文本给页面展示。"""
-        self._open()
-        context = self._context(context_id)
-        result = await self.behavior.simulate(context)
-        return {"api_version": 1, **result, "model_calls": int(result["status"] != "unavailable"),
-                "sends": 0}
+    async def console_behavior_simulate(self, context_id="", persona_id="", emotion="current",
+                                        request_id="", *, actor_id):
+        from .behavior_simulation import simulate
+        return await simulate(self, context_id, persona_id, emotion, request_id, actor_id=actor_id)
 
     async def console_action(self, context_id, action, *, expected_revision, reason,
                              actor_id, confirmed, entry_id="", pinned=None, expected_pinned=None):

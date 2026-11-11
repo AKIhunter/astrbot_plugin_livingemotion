@@ -23,6 +23,7 @@ QUERY_FIELDS = {
     "relationships": SCOPE_FIELDS | {"page", "page_size", "query", "limit", "graph_scope"},
     "energy": SCOPE_FIELDS | {"page", "page_size", "event_type"},
     "settings-options": frozenset(),
+    "persona-description": frozenset({"persona_id"}),
     "emotion-images": frozenset(),
     "emotion-image": frozenset({"mood", "index"}),
     "experience-task": frozenset({"request_id"}),
@@ -35,7 +36,7 @@ BODY_FIELDS = {
     "relationship": frozenset({"persona_id", "platform", "account_id", "context_id",
                                "score", "frozen", "note", "expected_version", "reason"}),
     "memory-sync": frozenset({"context_id"}),
-    "behavior-simulate": frozenset({"context_id"}),
+    "behavior-simulate": frozenset({"context_id", "persona_id", "emotion", "request_id"}),
     "emotion-image-save": frozenset({"mood", "data_url", "index", "remove"}),
     "experience-generate": frozenset({"request_id", "persona_id", "kind"}),
 }
@@ -85,6 +86,8 @@ def query_parameters(operation: str, query) -> dict:
         values[key] = items[0]
     if operation == "settings-options":
         return {}
+    if operation == "persona-description":
+        return {"persona_id": text(values.get("persona_id"), 512)}
     if operation == "experience-task":
         return {"request_id": request_identity(values.get("request_id"))}
     if operation == "emotion-images":
@@ -215,6 +218,14 @@ async def body_parameters(operation: str, request) -> dict:
             invalid()
         return {"request_id": request_identity(values.get("request_id")),
                 "persona_id": text(values.get("persona_id"), 512), "kind": values["kind"]}
+    if operation == "behavior-simulate":
+        emotion = values.get("emotion", "current")
+        if emotion not in ("current", "calm", "joy", "sadness", "anger", "fear", "surprise", "disgust"):
+            invalid()
+        return {"context_id": text(values.get("context_id", ""), 512, required=False),
+                "persona_id": text(values.get("persona_id", ""), 512, required=False),
+                "emotion": emotion, "request_id": request_identity(values["request_id"])
+                if "request_id" in values else ""}
     if operation == "emotion-image-save":
         mood = values.get("mood")
         if mood not in MOODS:

@@ -25,7 +25,10 @@ const state = {
   loading: false, writing: false, generation: 0, recordGeneration: 0, preview: null,
   uncertain: new Set(), invalidFields: new Map(),
   selection: {}, scopes: null, options: {}, dispose: null, expandedSettingsGroup: null,
+  bootstrapped: false,
   experienceRequests: {}, expandedExperience: "",
+  expandedNight: {},
+  behaviorLogSequence: 0, behaviorLogLoading: false,
 };
 try {
   const saved = object(JSON.parse(sessionStorage.getItem(uiKey) || "{}"));
@@ -188,6 +191,10 @@ function updateControls() {
   }
   $("content").querySelectorAll("[data-operation]").forEach(control => {
     const id = control.dataset.operation;
+    if (id === "behavior.simulate") {
+      control.disabled = !canWrite() || !state.data?.capabilities.includes("behavior.preview");
+      return;
+    }
     if (id === "diary.generate" || id === "dream.generate") {
       control.disabled = !canWrite() || !state.data?.actions.some(action => action.id === id && action.enabled) ||
         EXPERIENCE_ACTIVE.has(object(state.data?.experience[id.split(".")[0]]).status);
@@ -278,7 +285,6 @@ function heroFacts() {
   for (const [key, value] of [
     [t("精力"), percent(night.energy)],
     [t("当前作息"), NIGHT_STATES[night.display_state] || text(night.state, t("未提供"))],
-    [t("状态归属"), emotionOwnership(state.data).label],
   ]) {
     const group = node("div", undefined, "hero-fact");
     group.append(node("dt", key), node("dd", value));
@@ -303,21 +309,20 @@ function botHero() {
   hero.setAttribute("aria-label", t("TA 当前感受"));
   const main = node("div", undefined, "hero-main");
   const moodLine = node("div", undefined, "hero-mood");
-  moodLine.append(node("p", "TA / LIVE EMOTION", "hero-label"),
-    node("p", text(state.data.persona.name, t("原生人格未提供")), "ta-identity"));
+  const identity = node("p", text(state.data.persona.name, t("原生人格未提供")), "ta-identity");
+  moodLine.append(node("p", "TA / LIVE EMOTION", "hero-label"));
   main.append(moodLine);
   if (isGlobalView() || bot.global_view === true) {
     const hasState = !!(bot.label || Object.values(object(bot.dimensions)).some(value => typeof value === "number"));
-    // 共享模式下标签就是这份共享状态的标签，可以直接展示；
-    // 拆分模式下后端不下发标签，这里显示中性标题并说明原因。
     const title = bot.label ? affectLabel(bot.label) : hasState ? t("共享人格情绪") : t("尚无 TA 状态");
-    main.append(node("h2", title, "hero-value"),
-      node("p", bot.reason || t("全局共享的是人格层面的数值；具体某个人、某个群的情绪请切换查看范围。"), "hero-note"),
-      node("span", t("全局 · 私聊与群聊共享同一份人格情绪"), "chip"),
-      heroFacts());
+    // 情绪为主，人格与作息集中在下方；全局页不重复解释状态归属。
+    const secondary = node("div", undefined, "hero-secondary");
+    secondary.append(identity, heroFacts());
+    main.append(node("h2", title, "hero-value"), secondary);
     hero.append(main, feelingCard());
     return hero;
   }
+  moodLine.append(identity);
   main.append(node("h2", affectLabel(bot.label, t("尚无 TA 状态")), "hero-value"),
     node("p", text(bot.reason, t("等待有来源的互动与状态评估。不会以对方情绪替代 TA 感受。")), "hero-note"));
   const chips = node("div", undefined, "hero-chips");
@@ -414,49 +419,67 @@ function personaText(description) {
   }
   return wrapper;
 }
-// 全局视图刻意不读取任何具体会话来源，所以那里拿不到 prompt。
-// 只有用户在这里点一次按钮，才按需读取已授权会话的人格说明（一次）。
-const personaLoadAttempts = new Set();
-async function loadPersonaDescription(container, personaId, control) {
-  if (personaLoadAttempts.has(personaId)) return;
-  const probe = list(state.data.contexts)[0]?.id;
-  if (!probe) return;
-  personaLoadAttempts.add(personaId);
-  if (control) { control.disabled = true; control.textContent = t("正在读取…"); }
-  const holder = container.querySelector("[data-persona-description]");
-  try {
-    const data = await api.state({ context_id: probe });
-    const description = object(data.persona).description;
-    if (holder) holder.replaceChildren(personaText(description));
-    if (description) state.data.persona.description = description;
-    if (control) control.remove();
-  } catch (error) {
-    if (holder) holder.replaceChildren(node("p", t("人格说明读取失败；不影响其他页面。"), "hint"));
+// 人格说明按需从宿主 personas.system_prompt 读取；缓存避免自动刷新时重复请求。
+const personaDescriptionCache = new Map();
+const personaDescriptionErrors = new Set();
+async function personaDescriptionLoader(personaId) {
+  const key = text(personaId, "");
+  if (!key) return "";
+  if (personaDescriptionCache.has(key)) return personaDescriptionCache.get(key);
+  const data = await api.personaDescription(key);
+  const description = text(data.description, "");
+  personaDescriptionCache.set(key, description);
+  return description;
+}
+function renderDescriptionFailure(holder, container, personaId) {
+  const retry = button(t("重新读取人格说明"), () => {
+    personaDescriptionErrors.delete(personaId);
     personaLoadAttempts.delete(personaId);
-    if (control) { control.disabled = false; control.textContent = t("读取人格说明"); }
+    holder.replaceChildren(node("p", t("正在读取人格说明…"), "empty"));
+    loadPersonaDescription(container, personaId);
+  });
+  holder.replaceChildren(node("p", t("人格说明读取失败；不影响其他页面。"), "hint"), retry);
+  const status = container.querySelector("[data-persona-status]");
+  if (status) status.textContent = t("读取失败");
+}
+const personaLoadAttempts = new Set();
+async function loadPersonaDescription(container, personaId) {
+  if (personaLoadAttempts.has(personaId)) return;
+  personaLoadAttempts.add(personaId);
+  const holder = container.querySelector("[data-persona-description]");
+  const status = container.querySelector("[data-persona-status]");
+  try {
+    const description = await personaDescriptionLoader(personaId);
+    if (holder) holder.replaceChildren(personaText(description));
+    if (status) status.textContent = description ? t("已读取 {0} 字", [String(description.length)]) : t("未提供");
+    if (description && state.data?.persona?.id === personaId) state.data.persona.description = description;
+  } catch (error) {
+    personaDescriptionErrors.add(personaId);
+    if (holder) renderDescriptionFailure(holder, container, personaId);
     handleError(error);
   }
 }
 function renderPersona(container) {
   const value = state.data.persona;
+  const personaId = text(value.id, text(state.selection.persona_id, ""));
   const description = node("div");
   description.dataset.personaDescription = "";
-  description.append(personaText(value.description));
-  container.append(personaPicker(),
-    block(t("当前人格"), pairs([
-      [t("人格"), text(value.name, text(value.id))], [t("来源"), text(value.source)],
-      [t("修订号"), text(value.revision)],
-      [t("说明状态"), value.description ? t("已读取 {0} 字", [String(value.description).length]) : t("未提供")],
-    ])),
+  const known = text(value.description, "") || text(personaDescriptionCache.get(personaId), "");
+  if (known) description.append(personaText(known));
+  else if (personaId && personaDescriptionErrors.has(personaId)) renderDescriptionFailure(description, container, personaId);
+  else description.append(personaId ? node("p", t("正在读取人格说明…"), "empty") : personaText(""));
+  const status = node("dd", known ? t("已读取 {0} 字", [String(known.length)]) : t("未提供"));
+  status.dataset.personaStatus = "";
+  const meta = pairs([
+    [t("人格"), text(value.name, text(value.id))], [t("来源"), text(value.source)],
+    [t("修订号"), text(value.revision)],
+  ]);
+  meta.append(node("dt", t("说明状态")), status);
+  container.append(personaPicker(), block(t("当前人格"), meta),
     block(t("人格说明"), description),
     node("p", t("人格由 AstrBot 当前范围解析。切换页面主题不会切换人格；模型提供者也不代表 TA 身份。"), "hint"),
     button(t("前往设置修改人格相关选项"), () => navigateToSettings("persona")));
-  if (!value.description) {
-    const load = button(t("读取人格说明"), () =>
-      loadPersonaDescription(container, text(value.id, "persona"), load));
-    load.dataset.operation = "persona-description";
-    container.append(load);
-  }
+  if (!known && personaId && !personaDescriptionErrors.has(personaId)) loadPersonaDescription(container, personaId);
 }
 function analysisBlock({ includeHuman = true, data = state.data, title = t("TA 情绪分析"),
   showDimensions = true } = {}) {
@@ -658,140 +681,114 @@ function renderPreview(root) {
   root.append(node("p", t("模型调用 0 · 消息发送 0"), "hint"));
   if (list(preview.candidates).length) root.append(clientList(list(preview.candidates), candidate, ""));
 }
-function behaviorRecordRow(item) {
-  const row = node("div", undefined, "record compact");
-  row.append(node("h3", resultLabel(item.result ?? item.status)),
-    node("p", text(item.reason), "hint"), node("p", date(item.created_at), "micro"));
-  return row;
-}
+const SIMULATION_EMOTIONS = [["current", "当前情绪"], ["calm", "平静"], ["joy", "喜悦"],
+  ["sadness", "悲伤"], ["anger", "愤怒"], ["fear", "恐惧"], ["surprise", "惊讶"], ["disgust", "厌恶"]];
 async function loadBehaviorOutcome(root) {
-  if (!root) return;
-  if (!state.data?.context_id) { root.replaceChildren(node("p", t("选择具体会话后可查看执行记录。"), "hint")); return; }
-  root.replaceChildren(node("p", t("正在读取最近执行…"), "hint"));
+  if (!root || !state.data || state.section !== "behavior") return;
+  const sequence = ++state.behaviorLogSequence;
+  const scope = JSON.stringify(selectedScope());
+  const filter = { ...state.filters.behavior };
+  root.setAttribute("aria-busy", "true");
+  state.behaviorLogLoading = true;
   try {
     const response = normalizeRecords(await api.records({
-      ...scopeParams(selectedScope()), kind: "behavior", page: 1, page_size: PAGE_SIZE, query: "",
-    }), 1);
-    if (!response.items.length) { root.replaceChildren(node("p", t("还没有执行记录。"), "hint")); return; }
-    root.replaceChildren(...response.items.slice(0, 3).map(behaviorRecordRow));
+      ...scopeParams(selectedScope()), kind: "behavior", page: filter.page, page_size: PAGE_SIZE, query: filter.query,
+    }), filter.page);
+    if (!root.isConnected || sequence !== state.behaviorLogSequence || scope !== JSON.stringify(selectedScope())) return;
+    if (filter.page > 1 && !response.items.length && response.total <= (filter.page - 1) * PAGE_SIZE) {
+      state.filters.behavior.page = Math.max(1, Math.ceil(response.total / PAGE_SIZE));
+      return void loadBehaviorOutcome(root);
+    }
+    const table = node("table", undefined, "behavior-log-table");
+    const head = node("thead"), titles = node("tr");
+    const labels = [t("时间"), t("发送 ID"), t("当时情绪"), t("目标 ID（QQ号）"), t("发送内容"), t("是否回应")];
+    for (const label of labels) { const th = node("th", label); th.scope = "col"; titles.append(th); }
+    head.append(titles); table.append(head);
+    const body = node("tbody");
+    for (const item of response.items) {
+      const row = node("tr"); row.dataset.sendId = text(item.send_id ?? item.id, "");
+      const time = node("td");
+      const timestamp = node("time", date(item.timestamp ?? item.created_at,
+        state.data.config.values.timezone, { year: "numeric", second: "2-digit" }));
+      time.append(timestamp);
+      const id = node("td"); id.append(node("code", row.dataset.sendId));
+      // 旧记录不能用当前情绪补填，「当前情绪」也不是历史快照。
+      const emotion = node("td", item.emotion_snapshot ? affectLabel(item.emotion_snapshot) :
+        item.emotion_label && item.emotion_label !== "当前情绪" ? controlled(item.emotion_label) : t("未记录"));
+      const target = node("td", item.simulated ? t("模拟") :
+        `${text(item.target_label, "")} ${text(item.target_id, "")}`.trim());
+      const content = node("td");
+      const fallback = item.simulated && item.status === "running" ? t("生成中…") :
+        item.simulated && item.status === "failed" ? t("生成失败") : t("内容未留存");
+      content.append(node("p", text(item.content, "") || fallback, "body"));
+      const replied = node("td", String(item.replied === true));
+      [time, id, emotion, target, content, replied].forEach((cell, index) => { cell.dataset.label = labels[index]; row.append(cell); });
+      body.append(row);
+    }
+    table.append(body);
+    root.replaceChildren(response.items.length ? table : node("p", filter.query ? t("没有匹配日志。") : t("暂无发送日志。"), "hint"));
+    if (response.total > PAGE_SIZE || filter.page > 1) {
+      const pager = node("div", undefined, "pager");
+      const change = page => { state.filters.behavior.page = page; remember(); void loadBehaviorOutcome(root); };
+      const previous = button(t("上一页"), () => change(filter.page - 1));
+      const next = button(t("下一页"), () => change(filter.page + 1));
+      previous.disabled = filter.page <= 1; next.disabled = filter.page * PAGE_SIZE >= response.total;
+      pager.append(previous, node("span", `${filter.page} / ${Math.max(1, Math.ceil(response.total / PAGE_SIZE))}`), next);
+      root.append(pager);
+    }
   } catch (error) {
-    root.replaceChildren(node("p", t("执行记录读取失败，不代表没有发送。"), "error-text"));
-    handleError(error);
+    if (root.isConnected && sequence === state.behaviorLogSequence) handleError(error);
+  } finally {
+    if (sequence === state.behaviorLogSequence) { state.behaviorLogLoading = false; root.setAttribute("aria-busy", "false"); }
   }
 }
 function renderBehavior(container) {
-  const value = state.data.behavior;
-  // 两处都可能有：原生配置在 data.config.values，运行快照在 behavior.config。
-  // 缺一边时互相补，避免整页铺「未提供」。
-  const config = { ...object(state.data.config?.values), ...object(value.config) };
-  const span = (a, b) => (text(a, "") && text(b, "")) ? `${text(a)}–${text(b)}` : null;
-  const scopeText = (() => {
-    const groups = text(config.autonomy_qq_group_ids, "").trim();
-    const users = text(config.autonomy_qq_ids, "").trim();
-    if (!groups && !users) return t("全部已授权会话（未限定 QQ 号或群号）");
-    return [groups ? t("群：{0}", [groups]) : "", users ? t("私聊：{0}", [users]) : ""]
-      .filter(Boolean).join(" · ");
-  })();
-  const head = sectionHead("PROACTIVE BEHAVIOR", t("主动行为状态"),
-    t("这里只展示当前真实运行状态；要改节奏、模型和联系人，请到设置里的主动行为分组。"), [
-      [`${t("自主发送")} · ${yesno(value.enabled)}`, value.enabled ? "on" : "off"],
-      [`${t("此刻")} · ${controlled(behaviorReason(value.last_reason_text ?? value.last_reason))}`],
-      ...(text(value.style, "") ? [`${t("风格")} · ${text(value.style)}`] : []),
-    ]);
-  container.append(head);
-  container.append(modelDiagnostic("behavior"));
-  if (isGlobalView()) container.append(node("p", actionTargetText(), "hint scope-hint"));
-
-  const stats = node("dl", undefined, "stat-line");
-  for (const [key, value_] of [
-    [t("今日额度"), text(value.daily_used) === t("未提供") ? null : `${value.daily_used} / ${config.behavior_daily_limit}`],
-    [t("本会话额度"), text(value.scope_used) === t("未提供") ? null : `${value.scope_used} / ${config.behavior_scope_daily_limit}`],
-    [t("剩余可发"), text(value.remaining)],
-    [t("未回应"), text(value.backoff)],
-  ].filter(([, row]) => !missingValue(row))) {
-    const group = node("div"); group.append(node("dt", key), node("dd", value_)); stats.append(group);
+  const panel = node("div"); panel.id = "behavior-panel";
+  panel.dataset.persona = state.data.scope_selection?.persona_id || state.data.experience.persona_id;
+  const dialog = node("dialog", undefined, "behavior-simulation-dialog");
+  dialog.id = "behavior-simulation-dialog";
+  const title = node("h2", t("测试发送")); title.id = "simulation-title";
+  dialog.setAttribute("aria-labelledby", title.id);
+  const label = node("label", t("情绪")); label.htmlFor = "simulation-emotion";
+  const select = node("select"); select.id = "simulation-emotion";
+  for (const [key, name] of SIMULATION_EMOTIONS) {
+    const option = node("option", t(name)); option.value = key; select.append(option);
   }
-  if (stats.children.length) container.append(stats);
-
-  const missing = missingValue;
-  const runtimeRows = [
-    [t("是否满足发送条件"), value.eligible === true ? t("满足") : value.eligible === false ? t("暂不满足") : null],
-    [t("时机分数"), typeof value.score === "number"
-      ? `${Math.round(value.score * 100) / 100}${typeof value.min_score === "number" ? ` / ${value.min_score}` : ""}` : null],
-    [t("下次随机检查"), date(value.next_check_at)],
-    [t("最近检查"), date(value.last_check_at)],
-    [t("最近结果"), resultLabel(value.last_outcome)],
-    [t("冷却截止"), date(value.cooldown_until)],
-    [t("最近动机"), text(value.last_motive, "")],
-  ].filter(([, row]) => !missing(row));
-  if (runtimeRows.length) container.append(block(t("运行状态"), pairs(runtimeRows)));
-  if (list(value.reasons).length) {
-    const reasonsList = node("ul", undefined, "gate-list");
-    for (const reason of list(value.reasons)) reasonsList.append(node("li", controlled(behaviorReason(reason))));
-    container.append(block(t("当前阻塞原因"), reasonsList));
-  }
-  // 与设置一一对应：这些值都来自原生配置，这里只做只读回显，避免「设置里有、页面看不到」。
-  // 这些是配置，不是运行状态：统一归到「对应设置项」，要改就去设置页。
-  const configRows = [
-    [t("检查间隔"), t("{0} 分钟", [list(value.random_interval).join("–") || t("未配置")])],
-    [t("联系范围"), scopeText],
-    [t("群聊主动"), yesno(config.group_autonomy_enabled)],
-    [t("活跃时段"), span(config.active_start, config.active_end)],
-    [t("免打扰"), span(config.dnd_start, config.dnd_end)],
-  ].filter(([, row]) => !missing(row));
-  container.append(block(t("对应设置项 · 只读回显"), pairs([
-    ...configRows,
-    [t("冷却时长"), text(config.behavior_cooldown_seconds, "") === "" ? null
-      : t("{0} 秒", [text(config.behavior_cooldown_seconds)])],
-    [t("每日总额度"), text(config.behavior_daily_limit)],
-    [t("每会话额度"), text(config.behavior_scope_daily_limit)],
-    [t("未回应上限"), text(config.behavior_unanswered_limit)],
-    [t("随机等待"), t("{0} 分钟", [list(value.random_interval).join("–") || t("未配置")])],
-    [t("聊天后安静"), text(config.behavior_idle_minutes, "") === "" ? null
-      : t("{0} 分钟", [text(config.behavior_idle_minutes)])],
-    [t("节奏风格"), controlled(behaviorReason(value.style))],
-    [t("生成模型"), text(config.behavior_provider_id, t("跟随默认模型"))],
-  ]), node("p", t("改这些值请到「设置 → 主动行为」，保存后立即生效。"), "hint")));
-  container.append(block(t("自然地开口"),
-    node("p", t("想起聊过的事，就问问后续；关系熟悉时，关心近况或轻轻分享心情。每次只留一个容易接住的话头。")),
-    node("p", t("随机等待 {0} 分钟后再次检查。对方没回应时放慢节奏，睡着或正在聊天时先安静。",
-      [list(value.random_interval).join("–") || t("未配置")]), "hint"),
-    node("p", t("在「设置 → 主动行为」调整节奏、模型与联系范围，保存后自动开始等待。"), "hint")));
-
-  const control = button(t("模拟一条 · 不发送"), async () => {
+  const generate = button(t("生成"), async () => {
     if (!canWrite()) return;
-    const generation = state.generation;
-    state.writing = true; updateControls();
+    state.writing = true; generate.disabled = true; updateControls();
+    const requestId = crypto.randomUUID();
     try {
-      // 模拟只看「现在这样会说什么」：不判时机/冷却/额度，也不发出去。
-      const result = await api.simulate(actionTarget());
-      if (generation !== state.generation) return;
-      if (result.api_version !== 1 || result.sends !== 0) {
-        throw new PageError("invalid_preview", t("模拟响应异常：没有证明零发送，不能作为安全结果。"));
-      }
-      state.preview = { ...result, simulated: true };
-      renderPreview(preview);
-      notify(result.status === "ok" ? t("已生成一条模拟内容，未发送。")
-        : t("模拟没有生成内容：{0}", [text(result.reason_code, t("未知原因"))]), result.status === "ok" ? "" : "warning");
-    } catch (error) { if (generation === state.generation) handleError(error); }
-    finally { state.writing = false; updateControls(); }
+      const result = await api.simulate({ persona_id: panel.dataset.persona, emotion: select.value, request_id: requestId });
+      if (result.api_version !== 1 || result.sends !== 0) throw new PageError("invalid_response", t("测试结果无效"));
+      dialog.close();
+      state.filters.behavior.page = 1; state.filters.behavior.query = ""; query.value = ""; remember();
+      await loadBehaviorOutcome(outcome);
+      notify(result.status === "completed" ? t("测试内容已写入日志。") : t("测试未完成，请查看日志。"),
+        result.status === "completed" ? "" : "warning");
+    } catch (error) { dialog.close(); handleError(error); await loadBehaviorOutcome(outcome); }
+    finally { state.writing = false; generate.disabled = false; updateControls(); }
   }, "primary");
-  control.dataset.operation = "preview";
-  const preview = node("div"); preview.id = "preview-result"; preview.setAttribute("aria-live", "polite");
-  renderPreview(preview);
-  container.append(block(t("行为模拟"),
-    node("p", t("用当前人格、情绪与最近素材生成一条「现在会说什么」，只在这里展示，不发到聊天、不写发送记录。会调用一次模型。"), "hint"),
-    control, preview));
-  if (!state.data.capabilities.includes("behavior.preview")) container.append(node("p", t("宿主未提供无费用模拟能力。"), "hint"));
-
-  const outcome = node("div", undefined, "outcome-body"); outcome.id = "behavior-outcome";
-  container.append(block(t("真实发送与最近执行"),
-    node("p", t("真实发送会调用模型并向当前范围发消息。管理员手动发送会跳过时机分数、冷却与未回应退避，但静音范围、免打扰、额度、身份与来源校验仍然生效。结果写入记录；结果不明时不要重复执行。"), "hint"),
-    value.model_ready === false ? node("p", t("当前没有可用的主动行为模型绑定：发送时会在执行阶段失败并给出原因，请到设置里检查「主动聊天模型」。"), "hint warn-text") : node("span", "", "micro"),
-    actionControls(["behavior.send"]),
-    outcome));
-  container.append(button(t("刷新最近执行"), () => loadBehaviorOutcome(outcome)));
-  loadBehaviorOutcome(outcome);
+  const cancel = button(t("取消"), () => dialog.close());
+  const actions = node("div", undefined, "simulation-actions"); actions.append(cancel, generate);
+  dialog.append(title, label, select, actions);
+  const test = button(t("测试发送"), () => { select.value = "current"; dialog.showModal(); });
+  test.dataset.operation = "behavior.simulate";
+  panel.append(block(t("测试发送"), node("p", t("按人格、所选情绪和现有素材生成；无素材也生成，结果写入下方日志。"), "hint"), test));
+  const send = button(t("真实发送"), () => runAction("behavior.send"));
+  send.dataset.operation = "behavior.send";
+  panel.append(block(t("真实发送"), node("p", t("根据当前人格、情绪、关系和聊天素材生成，发送到当前会话。"), "hint"), send));
+  const query = node("input"); query.type = "search"; query.maxLength = 200;
+  query.id = "behavior-log-query"; query.placeholder = t("查询 ID、号码或内容");
+  query.setAttribute("aria-label", query.placeholder); query.value = state.filters.behavior.query;
+  let debounce;
+  query.addEventListener("input", () => {
+    state.filters.behavior.query = query.value; state.filters.behavior.page = 1; remember();
+    clearTimeout(debounce); debounce = setTimeout(() => loadBehaviorOutcome(outcome), 250);
+  });
+  const outcome = node("div"); outcome.id = "behavior-outcome"; outcome.setAttribute("aria-live", "polite");
+  panel.append(block(t("发送日志"), query, outcome), dialog); container.append(panel);
+  void loadBehaviorOutcome(outcome);
 }
 async function submitNightAction(action) {
   if (!canWrite()) return;
@@ -839,6 +836,16 @@ async function enableNightSchedule() {
 function clockText(value) {
   return typeof value === "string" && /^\d{2}:\d{2}$/.test(value) ? value : text(value);
 }
+function nightDetails(key, title, child) {
+  const panel = details(title, child);
+  panel.dataset.nightPanel = key;
+  // 首次默认收起；刷新重建页面时保留用户的展开选择，不存储业务数据。
+  panel.open = state.expandedNight[key] === true;
+  panel.addEventListener("toggle", () => {
+    if (panel.isConnected) state.expandedNight[key] = panel.open;
+  });
+  return panel;
+}
 function renderNight(container) {
   const value = state.data.night;
   const catchUp = object(value.catch_up);
@@ -855,18 +862,11 @@ function renderNight(container) {
       [`${t("聊天可用")} · ${plan.allow_sleep ? t("受作息影响") : t("不受作息影响")}`],
     ]);
   container.append(head);
-  if (isGlobalView()) container.append(node("p", actionTargetText(), "hint scope-hint"));
+  // 长夜页精简：移除会话提示和周期详情，页头后直接展示精力。
+  container.append(block(t("精力"), metric(t("当前精力"), value.energy)));
 
-  container.append(block(t("当前周期"), pairs([
-    [t("周期类型"), value.cycle_kind === "nap" ? t("午休") : value.cycle_kind === "manual" ? t("手动入睡") : value.cycle_kind === "night" ? t("夜间睡眠") : t("清醒")],
-    [t("入睡时刻"), date(value.cycle_started_at ?? value.sleep_at)],
-    [t("预计醒来"), date(value.wake_at)],
-    [t("深睡时刻"), date(value.deep_sleep_at)],
-    [t("赖床"), value.lie_in_minutes === null || value.lie_in_minutes === undefined ? t("未抽到") : t("{0} 分钟", [value.lie_in_minutes])],
-    [t("变化原因"), text(value.reason)],
-  ])), block(t("精力"), metric(t("当前精力"), value.energy)));
-
-  const schedule = block(t("作息计划 · 来自设置"),
+  const schedule = node("div");
+  schedule.append(
     node("p", t("以下时间来自「设置 → 长夜」，与实际周期对应；改完设置保存后立即生效。"), "hint"),
     pairs([
       [t("夜间疲劳开始 / 结束"), `${clockText(plan.fatigue_start)} → ${clockText(plan.fatigue_end)}`],
@@ -884,16 +884,17 @@ function renderNight(container) {
     enable.dataset.operation = "enable-night-schedule";
     schedule.append(enable);
   }
-  container.append(schedule);
+  container.append(nightDetails("schedule", t("作息计划 · 来自设置"), schedule));
 
-  container.append(block(t("醒后补课"), pairs([
+  container.append(nightDetails("catch-up", t("醒后补课"), pairs([
     [t("功能开关"), yesno(catchUp.enabled)],
     [t("补答开关"), yesno(catchUp.reply_enabled)],
     [t("已处理"), text(catchUp.completed)], [t("本次有界窗口"), text(catchUp.total)],
     [t("进度说明"), text(catchUp.reason)],
   ])));
 
-  const manual = block(t("手动作息"),
+  const manual = node("div");
+  manual.append(
     node("p", t("手动入睡会直接进入睡眠；手动叫醒立即醒来，且不会修改精力值。两项都只执行一次。"), "hint"));
   for (const action of ["night.sleep", "night.wake"]) {
     const allowed = state.data.actions.find(item => item.id === action);
@@ -908,7 +909,7 @@ function renderNight(container) {
     row.append(description, control);
     manual.append(row);
   }
-  container.append(manual);
+  container.append(nightDetails("manual", t("手动作息"), manual));
 
   const energy = block(t("精力日志")); container.append(energy);
   if (state.selection.persona_id) state.dispose = mountEnergy(energy, { api, selection: selectedScope(), onError: handleError });
@@ -1152,7 +1153,7 @@ const renderers = {
 };
 
 function renderSettings() {
-  settingsView($("settings"), state, state.options, updateControls);
+  settingsView($("settings"), state, state.options, updateControls, personaDescriptionLoader);
 }
 function navigateToSettings(group) {
   navigate("settings");
@@ -1179,6 +1180,10 @@ function render(preserveSettings = false) {
   if (preserveSettings && state.section === "settings") {
     syncSettingsValues($("settings"), state); updateControls(); return;
   }
+  if (state.section === "behavior" && $("behavior-panel")?.dataset.persona ===
+      (state.data.scope_selection?.persona_id || state.data.experience.persona_id)) {
+    void loadBehaviorOutcome($("behavior-outcome")); updateControls(); return;
+  }
   const experienceScope = JSON.stringify([state.data.experience.persona_id, scopeParams(selectedScope())]);
   if (state.section === "experience" && experienceViewScope === experienceScope && $("experience-panel")) {
     if (preserveSettings) syncSettingsValues($("settings"), state);
@@ -1204,7 +1209,7 @@ function selectedKind() {
     state.section === "experience" && state.kind !== "settings" ? state.kind : null;
 }
 function renderRecordsShell() {
-  if (state.section === "experience") { $("records").hidden = true; return; }
+  if (["experience", "behavior"].includes(state.section)) { $("records").replaceChildren(); $("records").hidden = true; return; }
   state.recordGeneration++;
   const root = $("records"); root.replaceChildren();
   const kind = selectedKind();
@@ -1411,7 +1416,7 @@ function applyData(raw, preserveSettings = false) {
       notify(t("有 {0} 项也在别处修改。请核对下方内容，再选择保留我的修改或放弃更改。", [reconciled.conflicts.length]), "warning");
     }
   }
-  state.data = data; state.contextId = data.context_id; state.stale = false;
+  state.data = data; state.contextId = data.context_id; state.stale = false; state.bootstrapped = true;
   if (!state.expandedExperience && ["diary", "dream"].includes(state.kind)) {
     state.expandedExperience = data.experience[state.kind + "_today"]?.experience_id || "";
   }
@@ -1532,20 +1537,35 @@ async function refreshState(automatic) {
   state.recordGeneration++;
   if (!automatic) { state.loading = true; updateControls(); notify(""); }
   try {
-    if (!automatic) {
-      const optional = await Promise.allSettled([api.scopes(), api.settingsOptions()]);
+    {
+      // 手动与自动刷新都更新原生人格目录，删除的人格不能停留在旧选项中。
+      const optional = await Promise.allSettled([api.scopes(), ...(!automatic ? [api.settingsOptions()] : [])]);
       if (generation !== state.generation) return;
       for (const result of optional) {
         if (result.status === "rejected" && ["unauthorized", "forbidden", "bridge_error"].includes(pageError(result.reason).code)) {
           handleError(result.reason); return;
         }
       }
-      if (optional[0].status === "fulfilled") state.scopes = optional[0].value;
-      if (optional[1].status === "fulfilled") state.options = optional[1].value;
-      if (!state.selection.persona_id && list(state.scopes?.personas).length) {
-        state.selection = {
-          persona_id: state.scopes.personas[0].id, view_scope: "global",
-        };
+      if (optional[0].status === "rejected") throw optional[0].reason;
+      state.scopes = optional[0].value;
+      if (optional[1]?.status === "fulfilled") state.options = optional[1].value;
+      const personas = list(state.scopes?.personas);
+      const known = id => Boolean(id) && personas.some(item => item.id === id);
+      // 首屏或当前选择已不在目录里：用已持久化的人格配置决定视图。
+      // 旧实现读取 state.data?.config.values.persona_id，而首屏 state.data 恒为 null，
+      // 于是永远回落到目录第一项（线上即 default），刷新后人格看起来被改回默认。
+      // 配置为空（跟随会话）时才沿用缓存里的有效选择，最后才回落到目录第一项。
+      if (personas.length && (!state.bootstrapped || !known(state.selection.persona_id))) {
+        const probe = await readStateConfig();
+        if (generation !== state.generation) return;
+        const preferred = text(probe.config?.values?.persona_id, "");
+        const target = (known(preferred) ? personas.find(item => item.id === preferred) : null)
+          || (known(state.selection.persona_id) ? personas.find(item => item.id === state.selection.persona_id) : null)
+          || personas[0];
+        if (target && target.id !== state.selection.persona_id) {
+          state.selection = { persona_id: target.id, view_scope: "global" };
+          state.contextId = ""; state.preview = null;
+        }
       }
     }
     const data = await readStateConfig();
@@ -1584,6 +1604,7 @@ async function saveConfig() {
       notify(t("最新配置已包含你的修改。")); return;
     }
     submitted = true;
+    const previousPersona = text(state.data?.config?.values?.persona_id, "");
     const result = await api.save({
       context_id: state.contextId, expected_revision: state.baseRevision, patch: { ...state.draft }, reason,
       ...(compact ? { receipt: "config" } : {}),
@@ -1595,6 +1616,13 @@ async function saveConfig() {
     state.invalidFields.clear();
     state.configConflicts = [];
     state.data.config = config; state.baseRevision = config.revision; state.baseValues = { ...config.values }; state.conflict = false;
+    // 设置页刚改了人格：当前视图立即跟随，避免保存后仍停在旧人格、要刷新一次才正确。
+    const savedPersona = text(config.values.persona_id, "");
+    if (savedPersona && savedPersona !== previousPersona &&
+        list(state.scopes?.personas).some(item => item.id === savedPersona)) {
+      state.selection = { persona_id: savedPersona, view_scope: "global" };
+      state.contextId = ""; state.preview = null;
+    }
     saved = true;
     state.stale = false;
     syncSettingsValues($("settings"), state);
@@ -1750,8 +1778,13 @@ async function boot() {
   await loadState();
   // 固定节奏仅在启动时建立一次，手动刷新不重置计时；后台页不发请求。
   const autoUpdate = setInterval(() => { void loadState({ automatic: true }); }, 60000);
+  // 新日志独立自动读取；查询条件一直保留，也不重置页面的默认刷新计时。
+  const behaviorUpdate = setInterval(() => {
+    if (!document.hidden && state.section === "behavior" && state.data &&
+        !state.behaviorLogLoading) void loadBehaviorOutcome($("behavior-outcome"));
+  }, 5000);
   window.addEventListener("pagehide", () => {
-    clearInterval(autoUpdate); clearInterval(environmentClock);
+    clearInterval(autoUpdate); clearInterval(behaviorUpdate); clearInterval(environmentClock);
     state.generation++; state.recordGeneration++;
   }, { once: true });
 }

@@ -11,7 +11,7 @@ ROUTES = (
     ("state", "GET"), ("records", "GET"), ("config", "POST"), ("configuration", "GET"),
     ("preview", "POST"), ("action", "POST"),
     ("scopes", "GET"), ("relationships", "GET"), ("relationship", "POST"),
-    ("energy", "GET"), ("settings-options", "GET"),
+    ("energy", "GET"), ("settings-options", "GET"), ("persona-description", "GET"),
     ("memory-sync", "POST"), ("behavior-simulate", "POST"),
     ("emotion-images", "GET"), ("emotion-image", "GET"), ("emotion-image-save", "POST"),
     ("experience-generate", "POST"), ("experience-task", "GET"),
@@ -70,6 +70,9 @@ class PageAPI:
     async def settings_options(self):
         return await self._dispatch("settings-options")
 
+    async def persona_description(self):
+        return await self._dispatch("persona-description")
+
     async def memory_sync(self):
         return await self._dispatch("memory-sync")
 
@@ -105,7 +108,7 @@ class PageAPI:
                 parameters = query_parameters(operation, request.query)
             else:
                 parameters = await body_parameters(operation, request)
-            if operation in ("config", "action", "relationship", "memory-sync", "experience-generate"):
+            if operation in ("config", "action", "relationship", "memory-sync", "experience-generate", "behavior-simulate"):
                 parameters["actor_id"] = actor_id
             # Parsing may yield; never start business work on a stopped instance.
             if self._closed:
@@ -141,6 +144,8 @@ class PageAPI:
         if operation == "preview":
             if result.get("model_calls") != 0 or result.get("sends") != 0:
                 raise ConsoleError("unavailable")
+        if operation == "behavior-simulate" and result.get("sends") != 0:
+            raise ConsoleError("unavailable")
         if operation in ("records", "relationships", "energy"):
             items, total = result.get("items"), result.get("total")
             if (

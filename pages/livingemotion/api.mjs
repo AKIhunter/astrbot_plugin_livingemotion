@@ -25,7 +25,7 @@ export function unwrap(response) {
   return response;
 }
 export function createApi(resolveBridge, timeout = 15000) {
-  async function call(method, path, payload) {
+  async function call(method, path, payload, wait = timeout) {
     const bridge = resolveBridge();
     if (!bridge || typeof bridge[method] !== "function") {
       throw new PageError("missing_bridge", t("未检测到 AstrBot 页面连接。请从已登录的宿主插件详情页打开。"));
@@ -36,7 +36,7 @@ export function createApi(resolveBridge, timeout = 15000) {
         Promise.resolve().then(() => bridge[method](path, payload)),
         new Promise((_, reject) => {
           timer = setTimeout(() => reject(new PageError("timeout",
-            method === "apiPost" ? t("请求超时，执行结果不明。请核对记录，不要重复提交。") : t("读取超时，请手动刷新。"))), timeout);
+            method === "apiPost" ? t("请求超时，执行结果不明。请核对记录，不要重复提交。") : t("读取超时，请手动刷新。"))), wait);
         }),
       ]);
       return unwrap(response);
@@ -49,13 +49,15 @@ export function createApi(resolveBridge, timeout = 15000) {
     config: selection => call("apiGet", "console/config", scopeParams(selection)),
     configuration: selection => call("apiGet", "console/configuration", scopeParams(selection)),
     settingsOptions: () => call("apiGet", "console/settings-options", {}),
+    personaDescription: personaId => call("apiGet", "console/persona-description",
+      { persona_id: String(personaId) }),
     relationships: params => call("apiGet", "console/relationships", params),
     relationship: body => call("apiPost", "console/relationship", body),
     energy: params => call("apiGet", "console/energy", params),
     records: params => call("apiGet", "console/records", params),
     save: body => call("apiPost", "console/config", body),
     preview: contextId => call("apiPost", "console/preview", { context_id: contextId }),
-    simulate: contextId => call("apiPost", "console/behavior-simulate", { context_id: contextId }),
+    simulate: body => call("apiPost", "console/behavior-simulate", body, 100000),
     action: body => call("apiPost", "console/action", body),
     experienceGenerate: body => call("apiPost", "console/experience-generate", body),
     experienceTask: requestId => call("apiGet", "console/experience-task", { request_id: requestId }),

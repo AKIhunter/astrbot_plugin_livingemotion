@@ -28,6 +28,10 @@ class ConsoleApplication(Protocol):
 
     async def console_preview(self, context_id: str) -> dict: ...
 
+    async def console_behavior_simulate(self, context_id: str = "", persona_id: str = "",
+                                        emotion: str = "current", request_id: str = "",
+                                        *, actor_id: str) -> dict: ...
+
     async def console_action(
         self, context_id: str, action: str, *, expected_revision: str | int,
         reason: str, actor_id: str, confirmed: bool, entry_id: str = "",
@@ -55,6 +59,8 @@ class ConsoleApplication(Protocol):
     ) -> dict: ...
 
     async def console_settings_options(self) -> dict: ...
+
+    async def console_persona_description(self, persona_id: str) -> dict: ...
 
 
 class HostContext(Protocol):
