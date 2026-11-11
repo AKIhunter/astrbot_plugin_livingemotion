@@ -50,34 +50,73 @@ function legendItem(kind, label) {
   item.append(node("i", undefined, "legend-mark"), node("span", label));
   return item;
 }
-// 六维说明的字段名与 charts/emotion.mjs 的 data-emotion-line、model.mjs 的中文名一致。
-// 换算公式取自 domain/dreaming.py:six_emotions，权重取自 domain/emotion.py:RULES。
+// 六维指标与事件信号用「人话」解释：只说什么时候升、什么时候降，不暴露规则名、字段名或权重公式。
+// 数值仍保留在表格里，问号只负责补充含义。
 const EMOTION_NOTES = [
-  ["joy", "喜悦", "max(0,p) × (1 − 0.35s)", "愉悦↑、压力↓", "愉悦↓、压力↑"],
-  ["anger", "愤怒", "max(0,−p) × a × (0.35 + 0.65s)", "负向愉悦↑、唤起↑、压力↑", "愉悦↑、唤起↓、压力↓"],
-  ["sadness", "悲伤", "max(0,−p) × (1 − 0.55a) × (1 − 0.35s)", "负向愉悦↑、唤起↓、压力↓", "愉悦↑、唤起↑、压力↑"],
-  ["fear", "恐惧", "s × (0.35 + 0.65a)", "压力↑、唤起↑", "压力↓、唤起↓"],
-  ["surprise", "惊讶", "a × (0.25 + 0.35 × (1 − |p|))", "唤起↑、|愉悦|↓", "唤起↓、|愉悦|↑"],
-  ["affection", "关爱", "(0.35n + 0.65 × max(0,p)) × (1 − 0.4s)", "社交需要↑、愉悦↑、压力↓", "社交需要↓、愉悦↓、压力↑"],
+  ["joy", "喜悦", "被夸、收到好消息、聊得开心", "一段时间没有新的开心事"],
+  ["anger", "愤怒", "被冒犯、被贬低", "气氛缓和、心情变好"],
+  ["sadness", "悲伤", "被冷落、听到难过的事", "被安慰、心情转好"],
+  ["fear", "恐惧", "不确定、坏消息、压迫感", "确认安全、放松下来"],
+  ["surprise", "惊讶", "突然的意外、没预料到的消息", "弄明白之后很快回落"],
+  ["affection", "关爱", "被感谢、被关心、互动变多", "长时间没互动、压力大"],
 ];
+const EMOTION_HELP = {
+  joy: "被夸、收到好消息、聊得开心时会升高；过一阵子没有新的开心事，它会自己慢慢降下来。",
+  anger: "被冒犯、被贬低时升高；对方态度转好、气氛缓和，或者过一阵子会降下来。",
+  sadness: "被冷落、听到难过的事时升高；被安慰、心情转好，或者过一阵子会降下来。",
+  fear: "遇到不确定、突然的坏消息或压迫感时升高；确认安全、放松下来后会降下来。",
+  surprise: "突然发生意外、听到没预料到的消息时升高；弄明白之后很快回落。",
+  affection: "被感谢、被关心、互动变多时升高；长时间没互动或压力大时会降下来。",
+};
 const RULE_NOTES = [
-  ["insult 侮辱", "本地正则", "−0.14", "+0.12", "+0.14", "+0.04"],
-  ["praise 称赞", "本地正则", "+0.12", "+0.05", "−0.04", "−0.02"],
-  ["constructive_criticism 建设性批评", "本地正则", "+0.04", "+0.03", "−0.02", "−0.01"],
-  ["teaching 教导", "本地正则", "+0.06", "+0.04", "−0.03", "−0.01"],
-  ["care 关心", "本地正则", "+0.12", "−0.02", "−0.06", "−0.06"],
-  ["gratitude 感谢", "本地正则", "+0.10", "+0.02", "−0.04", "−0.05"],
-  ["apology 道歉", "本地正则", "+0.05", "−0.04", "−0.08", "−0.02"],
-  ["sadness 低落", "模型细化", "0", "+0.03", "+0.02", "−0.02"],
-  ["anxiety 焦虑", "模型细化", "0", "+0.04", "+0.03", "−0.02"],
-  ["joy 开心", "模型细化", "+0.08", "+0.04", "−0.02", "−0.03"],
-  ["surprise 惊讶", "模型细化", "+0.02", "+0.12", "+0.02", "+0.01"],
-  ["interaction 普通互动", "无信号兜底", "+0.01", "+0.01", "0", "−0.01"],
-  ["reply_succeeded 回复成功", "TA 的成功动作", "+0.01", "0", "0", "−0.02"],
+  ["insult", "侮辱", "关键词识别", "−0.14", "+0.12", "+0.14", "+0.04"],
+  ["praise", "称赞", "关键词识别", "+0.12", "+0.05", "−0.04", "−0.02"],
+  ["constructive_criticism", "建设性批评", "关键词识别", "+0.04", "+0.03", "−0.02", "−0.01"],
+  ["teaching", "教导", "关键词识别", "+0.06", "+0.04", "−0.03", "−0.01"],
+  ["care", "关心", "关键词识别", "+0.12", "−0.02", "−0.06", "−0.06"],
+  ["gratitude", "感谢", "关键词识别", "+0.10", "+0.02", "−0.04", "−0.05"],
+  ["apology", "道歉", "关键词识别", "+0.05", "−0.04", "−0.08", "−0.02"],
+  ["sadness", "低落", "模型补充", "0", "+0.03", "+0.02", "−0.02"],
+  ["anxiety", "焦虑", "模型补充", "0", "+0.04", "+0.03", "−0.02"],
+  ["joy", "开心", "模型补充", "+0.08", "+0.04", "−0.02", "−0.03"],
+  ["surprise", "惊讶", "模型补充", "+0.02", "+0.12", "+0.02", "+0.01"],
+  ["interaction", "普通互动", "默认信号", "+0.01", "+0.01", "0", "−0.01"],
+  ["reply_succeeded", "回复成功", "TA 发出回复", "+0.01", "0", "0", "−0.02"],
 ];
-function explainerRow(values) {
+const RULE_HELP = {
+  insult: "被骂或被贬低：心情变差、压力上升，也更想有人陪。",
+  praise: "被夸或被认可：心情变好，压力下降。",
+  constructive_criticism: "对方认真指出问题但态度友善：会有一点不舒服，但整体仍算良性互动。",
+  teaching: "被耐心讲解或指导：会感到被重视，压力略降。",
+  care: "被问候、被照顾：心情变好，压力明显下降。",
+  gratitude: "被感谢：心情和陪伴需求都会上升。",
+  apology: "对方道歉：压力和负面情绪下降。",
+  sadness: "对方说难过的事：会跟着有点低落，也更想陪伴。",
+  anxiety: "对方焦虑：会跟着紧张，压力上升。",
+  joy: "对方分享开心的事：会一起开心。",
+  surprise: "听到意外消息：会短暂惊讶、警觉。",
+  interaction: "普通聊天：会有一点点正面影响，不会大幅波动。",
+  reply_succeeded: "TA 成功发出回复：陪伴需求略降，压力也降一点。",
+};
+// 问号同时支持悬浮（title）与点开（内联展开），不引入额外弹层依赖。
+function helpCell(label, explanation) {
+  const cell = node("td", undefined, "explainer-help");
+  const tip = node("span", explanation, "help-text");
+  tip.hidden = true;
+  const control = button("?", () => {
+    const open = control.getAttribute("aria-expanded") === "true";
+    control.setAttribute("aria-expanded", String(!open));
+    tip.hidden = open;
+  }, "help-button");
+  control.setAttribute("aria-label", t("查看{0}的说明", [label]));
+  control.title = explanation;
+  cell.append(control, tip);
+  return cell;
+}
+function explainerRow(cells, label, explanation) {
   const row = node("tr");
-  for (const value of values) row.append(node("td", value));
+  for (const value of cells) row.append(node("td", value));
+  row.append(helpCell(label, explanation));
   return row;
 }
 function explainerTable(headers, rows) {
@@ -86,44 +125,29 @@ function explainerTable(headers, rows) {
   for (const header of headers) headRow.append(node("th", header));
   head.append(headRow);
   const body = node("tbody");
-  for (const row of rows) body.append(explainerRow(row));
+  for (const row of rows) body.append(explainerRow(row.cells, row.label, row.help));
   table.append(head, body);
   const wrapper = node("div", undefined, "table-wrap"); wrapper.append(table);
   return wrapper;
 }
-function relationshipExplainer() {
-  const section = node("section", undefined, "relationship-explainer");
-  section.setAttribute("aria-label", t("情绪与六维指标说明"));
-  section.append(node("h2", t("情绪与六维指标说明")));
-  section.append(node("p", t("六维不是独立状态：由底层四维换算后只用于展示。p=愉悦（−1…1）、a=唤起、s=压力、n=社交需要（0…1）；情绪页折线图（data-emotion-line）的字段名就是下表第一列。"), "hint"));
-  section.append(explainerTable([t("字段"), t("名称"), t("换算"), t("增加"), t("减少")], EMOTION_NOTES));
-  section.append(node("h3", t("什么时候触发变化")));
-  const triggers = node("ul");
-  for (const line of [
-    t("真实人类消息：来源可信、发送者就是该会话账号本人，且事件在 2 小时内。"),
-    t("机器人成功动作：bot_action_succeeded 记为 reply_succeeded。"),
-    t("不算情绪事件：dream、diary、summary、fact、observation、legacy_unknown。"),
-    t("规则情绪随事件计算（插件停用时除外）；情绪细化模型默认关闭，开启后仅在 active 模式、同一范围至少间隔 300 秒、并受每日模型额度（默认 48 次）约束。"),
-    t("没有新互动时，情绪也会按半衰期自然回落；打开页面不会调用模型。"),
-  ]) triggers.append(node("li", line));
-  section.append(triggers);
-  section.append(node("h3", t("事件权重（底层四维，单事件每维最多 ±0.15）")));
-  section.append(explainerTable([t("信号"), t("来源"), t("愉悦"), t("唤起"), t("压力"), t("社交需要")], RULE_NOTES));
-  section.append(node("p", t("未接入：conflict、boundary_respected、boundary_violated、promise_kept、promise_broken 在 RULES 里有权重，但当前消息链路不会产生这些信号，常规聊天不会按它们变化。"), "hint"));
-  section.append(node("h3", t("权重、冷却、衰减与上下限")));
-  const mechanics = node("ul");
-  for (const line of [
-    t("实际增量 = 规则值 × 事件置信度 × 敏感度(1.0) × 关系系数(0.75 + 0.25 × 关系归一值)；关系分 ≥450 且含 sadness/anxiety/care 时再 ×2。"),
-    t("同类刺激 300 秒内最多计 3 次、累计 0.30；超出后本次不增加。迟到但仍新鲜的事件先按半衰期衰减。"),
-    t("夜间唤起增益按精力缩放：×(0.5 + 精力/200)；其余维度不受夜间影响。"),
-    t("自然回落半衰期：愉悦 30 分钟、唤起 20 分钟、压力 40 分钟、社交需要 60 分钟，回落到基准 (0, 0.3, 0, 0.3)。"),
-    t("上下限：愉悦 [−1,1]，其余 [0,1]；六维换算后再夹到 [0,1]。"),
-    t("规则情绪没有每日次数上限，也没有独立冷却（只有上面的同类刺激限流）；每日 48 次与 300 秒间隔只约束模型细化。"),
-    t("天气只给六维展示值加成：晴 joy +0.2、雨 sadness +0.2、雪 affection +0.4、雷暴/冰雹/灾害 fear +0.25、多云全维 +0.1，不写回底层四维。"),
-    t("未接入：六维独立存储、独立冷却、独立每日上限；它们每次都由底层四维现算。"),
-  ]) mechanics.append(node("li", line));
-  section.append(mechanics);
-  return section;
+// TA 页底部的可折叠说明；默认收起，不打断主阅读路径。
+export function emotionExplainer() {
+  const wrapper = node("details", undefined, "relationship-explainer emotion-explainer");
+  wrapper.dataset.emotionExplainer = "";
+  wrapper.append(node("summary", t("情绪与六维指标说明")));
+  const body = node("div", undefined, "details-content");
+  body.append(node("p", t("数字表示 TA 当前情绪的强弱。点每行右侧的问号，可以看到这个数值为什么会升降。"), "hint"));
+  body.append(explainerTable([t("指标"), t("什么情况下升高"), t("什么情况下回落"), t("说明")],
+    EMOTION_NOTES.map(([key, name, up, down]) => ({
+      cells: [name, up, down], label: name, help: EMOTION_HELP[key],
+    }))));
+  body.append(explainerTable([t("信号"), t("识别方式"), t("愉悦"), t("唤起"), t("压力"), t("社交需要"), t("说明")],
+    RULE_NOTES.map(([key, name, source, ...weights]) => ({
+      cells: [name, source, ...weights], label: name, help: RULE_HELP[key],
+    }))));
+  body.append(node("p", t("没有新的互动时，这些数值会随着时间慢慢回落到平常水平。"), "hint"));
+  wrapper.append(body);
+  return wrapper;
 }
 export function graphData(raw) {
   const data = object(raw);
@@ -239,9 +263,8 @@ export function mountRelationships(root, {
   const stage = node("div", undefined, "graph-stage");
   stage.append(svg, detail);
   device.append(stage, zones);
-  const explainer = relationshipExplainer();
-  // 筛选放在 3D 力图和列表之间；说明栏固定在页面最底部。
-  root.append(count, device, form, tableRoot, editor, explainer);
+  // 筛选放在 3D 力图和列表之间；情绪说明已移到 TA 页底部，这里不再重复。
+  root.append(count, device, form, tableRoot, editor);
   let draw = () => {};
   // 供画布级点击命中使用：当前这次布局的节点列表。
   let dataNodes = [];

@@ -15,6 +15,17 @@ try {
     await page.clock.install();
     await page.goto(`${url}?scenario=native-dto`);
     await page.locator("#content[aria-busy=false]").waitFor();
+    // TA 页底部：六维说明默认收起，点开后每行都有可展开的人话问号。
+    const explainer = page.locator("details[data-emotion-explainer]");
+    assert.equal(await explainer.count(), 1);
+    assert.equal(await explainer.getAttribute("open"), null);
+    await explainer.locator("summary").click();
+    assert.equal(await explainer.getAttribute("open"), "");
+    assert.equal(await explainer.locator("tbody tr").count(), 19);
+    const help = explainer.locator(".help-button").first();
+    await help.click();
+    assert.equal(await help.getAttribute("aria-expanded"), "true");
+    assert.equal(await explainer.locator(".help-text").first().isVisible(), true);
     await page.evaluate(() => {
       const bridge = window.AstrBotPluginView;
       const get = bridge.apiGet, post = bridge.apiPost;
@@ -45,6 +56,10 @@ try {
     await page.locator("[data-section=behavior]").click();
     await page.getByText("真实发送的正文", { exact: true }).waitFor();
     assert.equal(await page.locator("#behavior-panel .block").count(), 3);
+    // 真实发送必须常驻在主动行为页最上方；是否可点由当前范围决定。
+    assert.equal(await page.locator("#behavior-real-send").isVisible(), true);
+    const realSend = page.locator("#behavior-real-send [data-operation='behavior.send']");
+    assert.equal(await realSend.isVisible(), true);
     assert.equal(await page.locator("#records").isVisible(), false);
     assert.deepEqual(await page.locator(".behavior-log-table th").allTextContents(),
       ["时间", "发送 ID", "当时情绪", "目标 ID（QQ号）", "发送内容", "是否回应"]);

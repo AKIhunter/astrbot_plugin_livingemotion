@@ -7,7 +7,7 @@ import {
   experienceStatus, reasonExplanation, resultLabel, AFFECT_LABELS, modelDiagnosticText,
 } from "./model.mjs";
 import { radar3d } from "./charts/radar3d.mjs";
-import { mountRelationships } from "./charts/relationships.mjs";
+import { mountRelationships, emotionExplainer } from "./charts/relationships.mjs";
 import { mountEnergy } from "./charts/energy.mjs";
 import { emotionChart } from "./charts/emotion.mjs";
 import { renderSettings as settingsView, jumpToSettingsGroup, syncSettingsValues } from "./settings.mjs";
@@ -386,6 +386,8 @@ function renderOverview(container) {
   if (state.selection.view_scope === "global" && ["scene", "context"].includes(emotionOwnership(state.data).kind)) {
     container.append(node("p", t("全局页面展示最近活跃会话的人格状态。"), "hint"));
   }
+  // 六维与信号说明收在 TA 页底部，默认收起，避免挤占主视图。
+  container.append(emotionExplainer());
 }
 function personaPicker() {
   const personas = list(state.scopes?.personas);
@@ -792,12 +794,15 @@ function renderBehavior(container) {
   const cancel = button(t("取消"), () => dialog.close());
   const actions = node("div", undefined, "simulation-actions"); actions.append(cancel, generate);
   dialog.append(title, label, select, actions);
+  // 真实发送是主动行为页的主操作，固定在最上方，避免被其它区块挤到视野外。
+  const send = button(t("真实发送"), () => runAction("behavior.send"), "primary");
+  send.dataset.operation = "behavior.send";
+  const sendBlock = block(t("真实发送"), node("p", t("根据当前人格、情绪、关系和聊天素材生成，发送到当前会话。"), "hint"), send);
+  sendBlock.id = "behavior-real-send";
+  panel.append(sendBlock);
   const test = button(t("测试发送"), () => { select.value = "current"; dialog.showModal(); });
   test.dataset.operation = "behavior.simulate";
   panel.append(block(t("测试发送"), node("p", t("按人格、所选情绪和现有素材生成；无素材也生成，结果写入下方日志。"), "hint"), test));
-  const send = button(t("真实发送"), () => runAction("behavior.send"));
-  send.dataset.operation = "behavior.send";
-  panel.append(block(t("真实发送"), node("p", t("根据当前人格、情绪、关系和聊天素材生成，发送到当前会话。"), "hint"), send));
   const query = node("input"); query.type = "search"; query.maxLength = 200;
   query.id = "behavior-log-query"; query.placeholder = t("查询 ID、号码或内容");
   query.setAttribute("aria-label", query.placeholder); query.value = state.filters.behavior.query;

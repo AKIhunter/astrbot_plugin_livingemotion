@@ -90,12 +90,14 @@ body[data-le-section="experience"] #notice[hidden] { display: block !important; 
 .relationship-pager { padding: 12px 0 0; }
 .relationship-empty { padding: 12px 0; }
 .relationship-explainer { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--line); }
-.relationship-explainer h2 { font-size: 16px; margin-bottom: 6px; }
-.relationship-explainer h3 { font-size: 13px; margin: 16px 0 6px; }
+.relationship-explainer summary { font-size: 14px; font-weight: 600; }
 .relationship-explainer p, .relationship-explainer li { font-size: 12px; line-height: 1.7; }
-.relationship-explainer ul { margin: 4px 0; padding-left: 18px; }
 .relationship-explainer-table { width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; }
 .relationship-explainer-table th, .relationship-explainer-table td { padding: 3px 10px 3px 0; vertical-align: top; }
+.relationship-explainer-table .explainer-help { width: 24px; padding-right: 0; white-space: nowrap; }
+.help-button { width: 18px; height: 18px; min-height: 18px; padding: 0; border-radius: 50%; font-size: 11px; line-height: 1; vertical-align: middle; }
+.help-text { display: block; margin-top: 4px; white-space: normal; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.help-text[hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) { .experience-tab-indicator { transition: none; } }
 body[data-le-section="experience"] #records,
 body[data-le-section="experience"] #settings { backface-visibility: hidden; }
