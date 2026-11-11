@@ -133,6 +133,10 @@ class ManualExperienceRuntime:
         self._open()
         self._actor(actor_id, "控制台手动生成/重写")
         await self.refresh_config()
+        # 手动梦境是强制生成：睡眠时长、REM、夜间窗口、每晚次数上限一律不拦，
+        # 唯一前提是「梦境生成」这个开关开着（手动链路本来也不走自动门禁）。
+        if kind == "dream" and not self.config.dream_enabled:
+            raise ApplicationError("validation_error", "梦境生成已在设置里关闭，请先开启梦境生成。")
         try:
             identifier, _, _ = await self.manual_persona()
             if identifier != persona_id:

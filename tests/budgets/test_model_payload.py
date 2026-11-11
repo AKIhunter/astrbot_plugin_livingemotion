@@ -103,8 +103,8 @@ async def test_active_generation_caller_cancel_reaches_transport(rig, wire, reco
 
 
 def night(rig):
-    return NightState(phase="asleep", updated_at=rig.now, sleep_started_at=rig.now - 100,
-                      wake_at=rig.now + 3600, sleep_stage="REM")
+    return NightState(phase="asleep", updated_at=rig.now, sleep_started_at=rig.now - 3700,
+                      wake_at=rig.now + 3600, sleep_stage="N3")
 
 
 async def queue_entry(app, rig, purpose):

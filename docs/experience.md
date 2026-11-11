@@ -49,7 +49,7 @@
 | --- | --- | --- |
 | 日记 | 本地真实互动、Bot 成功行为、Bot/作息状态、授权外部材料和记得的梦；无材料跳过 | 默认关闭；单来源可直接使用真实 SQLite 保存 |
 | 唯一性与补写 | instance/Bot/人格/时区/日期稳定 ID；默认 23:00，仅显式允许补昨天 | 不自动扫描历史日期；时区切换的存储限制见下文 |
-| 梦 | 仅当前 REM、每夜最多两次尝试、清晰度衰减、过期、置顶计算 | 必须提供实时 `night_guard`；离线恢复不补梦 |
+| 梦 | 睡着满 60 分钟（不再要求 REM）、每夜最多两次尝试、清晰度衰减、过期、置顶计算 | 必须提供实时 `night_guard`；离线恢复不补梦；手动生成只看 `dream_enabled` |
 | 私人读取 | 宿主授权后读取；普通聊天和 `admin=true` 不构成授权 | 当前 SQLite 缺读取接口，必须注入 `load` |
 | 置顶 | 权限检查、冻结当前清晰度、比较旧快照的更新接点 | 当前 SQLite 缺更新接口；没有 `write_pin` 明确 unsupported |
 | 分享 | 当前合格来源重新生成、最终再复核、一次性有期限草稿 | 默认关闭；没有发送代码，不能返回私人全文替代分享 |
@@ -166,8 +166,9 @@ queued 不是已保存，也不是已发送。`outcome(job_id)` 只返回状态/
    多来源时不提供它，返回 `multi_scope_commit_unsupported`，不调用模型。
    只在事务外循环检查再调用单来源 save 不是这个回调的合格实现。
 7. `night_guard(context, original_night)` 必须从 T5 当前输入/快照重新判断：
-   同一 `sleep_started_at`、仍为 ASLEEP/REM、未醒来且非恢复补梦。
-   服务还验证原输入时间新鲜度、wake_at 和 REM；入队、模型调用前、保存前都检查。
+   同一 `sleep_started_at`、仍为 ASLEEP、未醒来且非恢复补梦。
+   服务还验证原输入时间新鲜度、wake_at 和「已睡够 `dream_start_after_minutes`」；
+   入队、模型调用前、保存前都检查。不再要求 REM 阶段。
    缺回调返回 `night_revalidation_unavailable`。没有 import T5 的领域实现，
    不拥有作息状态写者、不创建晚安/叫醒/发送逻辑。
 8. 生命周期推荐先停接收并 `await runtime.stop()`，再 `await service.close()`、

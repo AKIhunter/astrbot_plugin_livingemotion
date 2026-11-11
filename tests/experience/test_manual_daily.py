@@ -50,7 +50,7 @@ async def make_app(tmp_path, settings=None):
         return SimpleNamespace(system_prompt="Synthetic persona " + identifier, begin_dialogs=[])
     host.get_persona = get_persona
     native = NativeConfig({"enabled": False, "mode": "observe_only",
-                           "diary_enabled": False, "dream_enabled": False,
+                           "diary_enabled": False, "dream_enabled": True,
                            "persona_mode": "explicit", "persona_id": "native",
                            "timezone": "Asia/Shanghai", "model_daily_limit": 1,
                            **(settings or {})})
@@ -100,6 +100,42 @@ async def test_disabled_empty_direct_and_daily_overwrite_pin(tmp_path):
         assert (await app.console_records(kind="dream", persona_id="native"))["total"] == 1
         assert model.calls == 3 and host.sends == 0
         assert (await app.store.quota_usage(period="2026-11-09", pool="model")) == 3
+    finally:
+        await app.terminate()
+
+
+@pytest.mark.asyncio
+async def test_manual_dream_only_needs_enabled_switch(tmp_path):
+    # 手动梦境是强制生成：开关关着时按钮置灰且拒绝提交；开关打开后不看睡眠/REM/额度。
+    app, model, _, _ = await make_app(tmp_path, {"dream_enabled": False})
+    try:
+        state = await app.console_state()
+        action = next(a for a in state["actions"] if a["id"] == "dream.generate")
+        assert not action["enabled"] and action["reason_code"] == "dream_disabled"
+        with pytest.raises(Exception) as raised:
+            await submit(app, "dream")
+        assert getattr(raised.value, "code", "") == "validation_error"
+        assert model.calls == 0
+    finally:
+        await app.terminate()
+
+
+@pytest.mark.asyncio
+async def test_saving_dream_model_while_generating_is_refused(tmp_path):
+    # 保存梦境模型会重载执行器并取消在跑任务；生成期间先拒绝，任务不受影响。
+    app, model, _, _ = await make_app(tmp_path)
+    try:
+        model.release.clear()
+        task = await submit(app, "dream")
+        await model.started.wait()
+        with pytest.raises(Exception) as raised:
+            await app.update_config(
+                {"dream_provider_id": "another"}, expected_revision=app.config_revision,
+                reason="", actor_id="verified-admin", receipt="config")
+        assert getattr(raised.value, "code", "") == "generation_in_progress"
+        model.release.set()
+        await finish(app)
+        assert (await app.console_experience_task(task["request_id"]))["status"] == "succeeded"
     finally:
         await app.terminate()
 

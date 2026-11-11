@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 from contextvars import ContextVar
 import json
+import logging
 import math
 import random
 import re
@@ -50,6 +51,26 @@ PROMPT_VERSION = "experience-2"
 # 不该让昨天的日记失败。置位后，保存阶段改用写入瞬间的版本号、且不再
 # 要求人类消息水位不变（水位只对仍在增长的那一天有意义）。
 LENIENT_SAVE: ContextVar[bool] = ContextVar("livingemotion_lenient_save", default=False)
+# 梦境被门禁静默拒绝时只留在返回值里，页面之外无从发现；这里补一条日志。
+# 调度器每 60 秒会重试同一条梦，按 key 去重，只在原因发生变化时打一行。
+_DREAM_SKIP: dict[str, str] = {}
+
+
+def log_dream_skip(reason: str, *, key: str = "auto") -> None:
+    if _DREAM_SKIP.get(key) == reason:
+        return
+    _DREAM_SKIP[key] = reason
+    try:
+        from astrbot.api import logger
+    except ImportError:  # 离线测试/独立运行没有宿主 logger。
+        logger = logging.getLogger("astrbot_plugin_livingemotion")
+    logger.info("dream skipped: %s (scope=%s)", reason, key)
+
+
+def clear_dream_skip(key: str = "auto") -> None:
+    _DREAM_SKIP.pop(key, None)
+
+
 SYSTEM_PROMPT = (
     "Write a short subjective entry for the supplied bot persona, using only DATA. "
     "The narrator and first-person subject is the BOT, not the human correspondent. "
@@ -348,20 +369,32 @@ def parse_entry(raw: Any, *, allowed_sources: set[str], max_chars: int = 2000) -
 DEFAULT_POLICY = ExperiencePolicy()
 
 
+def dream_gate(
+    night: NightState | None, *, now: float, start_after_seconds: float = 3600,
+) -> str | None:
+    """返回 None 表示允许自动做梦，否则返回拦截原因。
+
+    规则只有一条：睡着、还没到起床时间、并且已睡够 start_after_seconds。
+    不再要求「正好处在 REM」——REM 窗口太窄，自动调度几乎命中不了。
+    """
+    if night is None:
+        return "night_state_unavailable"
+    if night.phase != NightPhase.ASLEEP:
+        return "not_asleep"
+    if night.sleep_started_at is None or night.wake_at is None:
+        return "sleep_window_missing"
+    if now >= night.wake_at:
+        return "sleep_window_ended"
+    if now - night.sleep_started_at < max(0.0, start_after_seconds):
+        return "sleep_too_short"
+    return None
+
+
 def dream_ready(
     night: NightState | None, *, now: float, start_after_seconds: float = 3600,
 ) -> bool:
-    """睡眠中且（处在 REM 或已睡够 start_after_seconds）才允许做梦。
-
-    这是 DTO 判定与生成服务共用的唯一标准，避免「按钮能点但生成被拒」。
-    """
-    if night is None or night.phase != NightPhase.ASLEEP:
-        return False
-    if night.sleep_started_at is None or night.wake_at is None or now >= night.wake_at:
-        return False
-    if getattr(night, "sleep_stage", None) == "REM":
-        return True
-    return now - night.sleep_started_at >= max(0.0, start_after_seconds)
+    """睡眠中且已睡够 start_after_seconds 才允许做梦（DTO 与生成服务共用）。"""
+    return dream_gate(night, now=now, start_after_seconds=start_after_seconds) is None
 
 
 def dream_clarity(
@@ -915,20 +948,35 @@ class ExperienceService:
             datetime.combine(selected + timedelta(days=1), time.min, zone).timestamp(),
         )
 
-    def _night_allowed(self, night: NightState, *, offline_recovery: bool) -> bool:
+    def _night_gate(self, night: NightState, *, offline_recovery: bool) -> str | None:
+        """返回 None 表示夜间状态可用于做梦，否则返回具体拦截原因。"""
         now = self._now()
-        if offline_recovery or now - night.updated_at > self.policy.night_fresh_seconds:
-            return False
-        return dream_ready(night, now=now,
-                           start_after_seconds=self.policy.dream_start_after_minutes * 60)
+        if offline_recovery:
+            return "offline_recovery"
+        if now - night.updated_at > self.policy.night_fresh_seconds:
+            return "night_state_stale"
+        return dream_gate(
+            night, now=now, start_after_seconds=self.policy.dream_start_after_minutes * 60)
+
+    def _night_allowed(self, night: NightState, *, offline_recovery: bool) -> bool:
+        return self._night_gate(night, offline_recovery=offline_recovery) is None
+
+    async def _night_live_gate(
+        self, context: Context, night: NightState, *, offline_recovery: bool = False,
+    ) -> str | None:
+        """夜间实时复核；返回拦截原因，None 表示通过。"""
+        reason = self._night_gate(night, offline_recovery=offline_recovery)
+        if reason is not None:
+            return reason
+        if self.night_guard is None:
+            return "night_guard_unavailable"
+        try:
+            return None if await self.night_guard(context, night) is True else "night_guard_rejected"
+        except Exception:
+            return "night_guard_error"
 
     async def _night_live(self, context: Context, night: NightState) -> bool:
-        if self.night_guard is None or not self._night_allowed(night, offline_recovery=False):
-            return False
-        try:
-            return await self.night_guard(context, night) is True
-        except Exception:
-            return False
+        return await self._night_live_gate(context, night) is None
 
     async def queue_diary(
         self,
@@ -998,20 +1046,26 @@ class ExperienceService:
         materials: tuple[Material, ...] = (),
         manual: bool = False,
     ) -> dict[str, Any]:
+        # 自动调度每 60 秒重试同一场梦，按 scope 去重，只在拦截原因变化时打一行。
+        key = f"{'manual' if manual else 'auto'}:{context.scope_key}"
         if not self._enabled(ContentKind.DREAM):
+            log_dream_skip("generation_disabled", key=key)
             return _result("skipped", "generation_disabled")
         if not manual and await self.store.auto_daily_blocked(
                 context, "dream", datetime.fromtimestamp(
                     self._now(), ZoneInfo(self.policy.timezone)).date().isoformat()):
+            log_dream_skip("daily_content_preserved", key=key)
             return _result("skipped", "daily_content_preserved")
         # 手动触发不看「睡够没睡够」：梦的内容来自当晚已入库的素材，管理员点了
-        # 就说明现在要做。REM / 时长的门槛只用于自动调度，避免半夜反复生成。
+        # 就说明现在要做。睡眠时长 / REM 的门槛只用于自动调度，避免半夜反复生成。
         if not manual:
-            if not self._night_allowed(night, offline_recovery=offline_recovery):
-                return _result("skipped", "dream_requires_live_rem")
             if self.night_guard is None:
+                log_dream_skip("night_guard_unavailable", key=key)
                 return _result("unsupported", "night_revalidation_unavailable")
-            if not await self._night_live(context, night):
+            reason = await self._night_live_gate(
+                context, night, offline_recovery=offline_recovery)
+            if reason is not None:
+                log_dream_skip(reason, key=key)
                 return _result("skipped", "dream_requires_live_rem")
         anchor = night.sleep_started_at
         if anchor is None:
@@ -1026,10 +1080,11 @@ class ExperienceService:
         # 手动触发仍保留上限（防狂点烧额度），但比自动流程宽松一些。
         limit = max(self.policy.dream_per_night, 5) if manual else self.policy.dream_per_night
         if used >= limit:
+            log_dream_skip("experience_attempt_limit", key=key)
             return _result("skipped", "experience_attempt_limit")
         period = f"{night_id}:{used + 1}"
         entry_id = stable_key("dream", _owner(context), period)
-        return await self._queue_entry(
+        result = await self._queue_entry(
             context,
             ContentKind.DREAM,
             period,
@@ -1044,6 +1099,11 @@ class ExperienceService:
             manual=manual,
             relaxed=bool(manual),
         )
+        if result.get("status") == "queued":
+            clear_dream_skip(key)
+        else:
+            log_dream_skip(str(result.get("reason_code") or result.get("status")), key=key)
+        return result
 
     async def _queue_entry(
         self,

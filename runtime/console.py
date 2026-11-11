@@ -28,7 +28,8 @@ class ApplicationError(Exception):
     def __init__(self, code, message):
         self.code, self.message = code, message
         self.status_code = {"validation_error": 400, "unauthorized": 401, "forbidden": 403,
-                            "edit_disabled": 403, "version_conflict": 409, "unavailable": 503}[code]
+                            "edit_disabled": 403, "version_conflict": 409,
+                            "generation_in_progress": 409, "unavailable": 503}[code]
         super().__init__(message)
 
 def behavior_transport_health(application, context):
@@ -314,6 +315,11 @@ class Console:
         return contracts.stable_key(to_dict(self.config))
 
     async def _experience_action(self, context, kind, night):
+        # 梦境手动生成是强制指令：除了「梦境生成」开关，不因睡眠、REM、夜间
+        # 窗口或额度把按钮置灰。日记的既有判定保持不变。
+        if kind == "dream" and not self.config.dream_enabled:
+            return {"id": "dream.generate", "enabled": False, "reason_code": "dream_disabled",
+                    "reason": EXPERIENCE_ACTION_REASONS["dream_disabled"], "context_id": ""}
         code = ""
         try:
             await self.manual_persona()
@@ -336,7 +342,8 @@ class Console:
         try:
             value = await self.manual_experience_state()
             state["experience"].update(value)
-            state["experience"]["reason"] = "按当前人格保存。手动生成不受自动开关、作息和每日额度限制。"
+            state["experience"]["reason"] = ("按当前人格保存。手动生成不看作息、睡眠阶段和每日额度，"
+                                             "但需要先在设置里开启对应类型的生成。")
             if not state.get("persona"):
                 state["persona"] = {"id": value["persona_id"], "name": value["persona_id"]}
         except Exception:
@@ -1330,6 +1337,16 @@ class Console:
                              "lie_in_min_minutes", "lie_in_max_minutes", "timezone"}
             if patch.keys() & schedule_keys and "night_schedule_enabled" not in patch:
                 patch["night_schedule_enabled"] = True
+            # 改梦境模型会重建业务对象并关闭手动执行器：正在跑的梦会被取消并落成
+            # unknown / reload_after_dispatch。这里先拒绝并提示，等生成结束再保存
+            # （原生 AstrBot 配置页的外部修改走 _watch_config，无法在这一层拦）。
+            if (patch.get("dream_provider_id", self.config.dream_provider_id)
+                    != self.config.dream_provider_id):
+                executor = getattr(self, "manual_experience", None)
+                if executor is not None and not executor.closed and executor.active("dream"):
+                    raise ApplicationError(
+                        "generation_in_progress",
+                        "梦境正在生成，现在保存会中断这次生成并留下结果不明的任务。请等它结束后再改梦境模型。")
             try:
                 updated = Config.from_mapping({**to_dict(self.config), **patch})
             except (ValueError, TypeError, KeyError, OverflowError):

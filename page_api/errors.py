@@ -6,6 +6,7 @@ ERRORS = {
     "forbidden": (403, "Dashboard administration permission is required for this scope."),
     "edit_disabled": (403, "Relationship editing is disabled in settings."),
     "version_conflict": (409, "Revision changed; reload and review before submitting again."),
+    "generation_in_progress": (409, "A manual generation is running; wait for it to finish before saving."),
     "unavailable": (503, "Service or action unavailable; no success is confirmed. Do not retry writes."),
 }
 

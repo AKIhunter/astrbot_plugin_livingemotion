@@ -990,7 +990,7 @@ function renderExperience(container) {
     panel.setAttribute("role", "tabpanel"); panel.setAttribute("aria-labelledby", `experience-tab-${kind}`);
     book.append(panel);
   if (kind === "settings") {
-    panel.append(node("p", t("这里的开关、作息和额度只控制自动生成；手动按钮立即生成当日内容。"), "hint"));
+    panel.append(node("p", t("这里的作息和额度只控制自动生成；手动按钮立即生成当日内容，但梦境需要先开启「梦境生成」。"), "hint"));
     panel.append($("settings"));
   } else {
     const task = node("div"); task.dataset.experienceControls = kind; panel.append(task);

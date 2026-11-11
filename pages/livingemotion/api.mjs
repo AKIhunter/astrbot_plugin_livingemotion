@@ -8,7 +8,7 @@ export function pageError(error) {
   const status = error?.status ?? error?.statusCode ?? error?.response?.status;
   const message = typeof error?.message === "string" ? error.message : t("宿主请求失败，请检查插件连接。");
   // AstrBot's parent bridge serializes HTTP failures as message-only Errors.
-  const marker = message.match(/^\[livingemotion:(unauthorized|forbidden|edit_disabled|version_conflict|validation_error|unavailable)\]\s*/);
+  const marker = message.match(/^\[livingemotion:(unauthorized|forbidden|edit_disabled|version_conflict|generation_in_progress|validation_error|unavailable)\]\s*/);
   const httpStatus = status ?? Number(message.match(/^Request failed with status code (401|403|404|405|409)$/)?.[1]);
   const code = marker?.[1] || (httpStatus === 401 ? "unauthorized" : httpStatus === 403 ? "forbidden" :
     httpStatus === 409 ? "version_conflict" : httpStatus === 404 ? "not_found" : httpStatus === 405 ? "method_not_allowed" : error?.code || "bridge_error");

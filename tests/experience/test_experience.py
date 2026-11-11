@@ -101,7 +101,6 @@ class Harness:
         return (
             current is not None
             and current.phase == NightPhase.ASLEEP
-            and current.sleep_stage == "REM"
             and current.sleep_started_at == original.sleep_started_at
         )
 
@@ -457,10 +456,18 @@ async def test_cancelled_model_never_saves_and_keeps_charge(h):
     assert await h.store.quota_usage(period="2026-11-05") == 1
 
 
-@pytest.mark.parametrize("stage", ["N1", "N2", "N3", None])
-async def test_dream_requires_rem(h, stage):
+@pytest.mark.parametrize("stage", ["N1", "N2", "N3", None, "REM"])
+async def test_dream_any_sleep_stage_after_one_hour(h, stage):
     await h.event()
     result = await h.service.queue_dream(h.context, h.night(sleep_stage=stage))
+    assert result["status"] == "queued", result
+    await h.runtime.join()
+
+
+async def test_dream_rem_alone_is_not_enough(h):
+    await h.event()
+    result = await h.service.queue_dream(
+        h.context, h.night(sleep_stage="REM", sleep_started_at=h.now - 60))
     assert result["reason_code"] == "dream_requires_live_rem"
     assert not h.model.calls
 

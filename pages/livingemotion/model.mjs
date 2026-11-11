@@ -177,7 +177,7 @@ export const REASON_CODES = resource({
   autonomy_disabled: t("自主发送已关闭。"), observe_only: t("观察模式不自主发送。"), cooldown: t("仍在冷却时间内。"),
   sleeping: t("睡眠限制仍生效。"), conversation_active: t("聊天仍活跃，暂不插话。"),
   generation_disabled: "生成功能已关闭或当前模式不允许生成。",
-  dream_requires_live_rem: "自动做梦需要当前有效的 REM 睡眠阶段（入睡并睡够时长）；手动触发不看这一条。",
+  dream_requires_live_rem: "自动做梦需要睡着并睡满一小时（不再要求 REM 阶段）；手动触发不看这一条。",
   night_revalidation_unavailable: "无法重新验证睡眠状态，暂不生成梦境。",
   experience_attempt_limit: "已达到日记或本周期梦境的尝试上限。",
   experience_exists: "记录已存在，不重复生成。", experience_saved: "内容已保存。",

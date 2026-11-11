@@ -26,6 +26,7 @@ from ..domain.night import (
     wake_night,
 )
 from ..services.catchup import CatchupPolicy, build_catchup, catchup_intent
+from ..services.experience import log_dream_skip
 from .projector import snapshot
 
 
@@ -419,7 +420,9 @@ class NightRuntime:
             return False
         else:
             current = advance_night(persisted, now=now, enabled=self.config.night_enabled)
-        return (current.phase == NightPhase.ASLEEP and current.sleep_stage == "REM"
+        # 只复核「仍在同一段睡眠里且没到起床时间」；不再要求正好 REM。
+        # 自动做梦的时长门槛由 ExperienceService 按 dream_start_after_minutes 判定。
+        return (current.phase == NightPhase.ASLEEP
                 and current.sleep_started_at is not None
                 and current.sleep_started_at == original.sleep_started_at
                 and current.wake_at is not None and now < current.wake_at
@@ -504,7 +507,12 @@ class NightRuntime:
                 str(uuid4()), (await self.manual_persona())[0], kind, actor_id="console")
         day = datetime.fromtimestamp(self.store.clock(), ZoneInfo(
             self.config.timezone or "Asia/Shanghai")).date().isoformat()
+        # 自动梦境被前置门禁拦下时原本只剩一个返回值，页面之外看不到；补一条
+        # 去重日志。queue_dream 内部的门禁会按更细的原因自己记日志。
+        dream_key = f"auto:{context.scope_key}" if kind == "dream" else ""
         if await self.store.auto_daily_blocked(context, kind, day):
+            if dream_key:
+                log_dream_skip("daily_content_preserved", key=dream_key)
             return {"status": "skipped", "reason_code": "daily_content_preserved"}
         result = {"status": "skipped", "reason_code": "generation_disabled"}
         service = None
@@ -513,15 +521,21 @@ class NightRuntime:
                     and getattr(self.config, kind + "_enabled")):
                 if self.effective_mode(context) != "active":
                     result = {"status": "skipped", "reason_code": "observe_only"}
+                    if dream_key:
+                        log_dream_skip("observe_only", key=dream_key)
                 else:
                     source = await self.bridge.current(context)
                     # 自动流程仍然要求「现在有实时来源」；手动是管理员显式指令，
                     # 会话安静多久都能生成（依据是已入库的素材与已记录的人格）。
                     if source is None and not manual:
                         result = {"status": "rejected", "reason_code": "source_unavailable"}
+                        if dream_key:
+                            log_dream_skip("source_unavailable", key=dream_key)
                     elif not await (self.validate_context(context) if source is not None
                                     else self.validate_manual(context)):
                         result = {"status": "rejected", "reason_code": "context_changed"}
+                        if dream_key:
+                            log_dream_skip("context_changed", key=dream_key)
                     else:
                         persona_text = (source.persona.prompt if source is not None
                                         else await self._manual_persona_text(context))
@@ -538,6 +552,8 @@ class NightRuntime:
                             result = await service.queue_dream(
                                 context, night, persona_text=persona_text, manual=manual,
                             )
+            elif dream_key:
+                log_dream_skip("generation_disabled", key=dream_key)
         except ValueError as exc:
             # 只公开约定的诊断码，不把供应商异常消息传给控制台。
             code = str(exc)
@@ -547,8 +563,12 @@ class NightRuntime:
             }:
                 code = "experience_preparation_unavailable"
             result = {"status": "unavailable", "reason_code": code}
+            if dream_key:
+                log_dream_skip(code, key=dream_key)
         except Exception:
             result = {"status": "unavailable", "reason_code": "experience_preparation_unavailable"}
+            if dream_key:
+                log_dream_skip("experience_preparation_unavailable", key=dream_key)
         # 触发时间：页面用它显示「什么时候点的」，而不是让管理员自己猜。
         result.setdefault("attempted_at", self.store.clock())
         attempts = getattr(self, "_experience_attempts", None)

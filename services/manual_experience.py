@@ -40,6 +40,18 @@ class ManualExperienceService:
         self.worker = None
         self.closed = False
         self.lock = asyncio.Lock()
+        # 队列里 + 正在跑的按类型计数：保存模型配置前用它判断会不会打断生成。
+        self._pending: dict[str, int] = {}
+
+    def active(self, kind: str) -> bool:
+        return self._pending.get(kind, 0) > 0
+
+    def _count(self, kind: str, delta: int) -> None:
+        value = self._pending.get(kind, 0) + delta
+        if value > 0:
+            self._pending[kind] = value
+        else:
+            self._pending.pop(kind, None)
 
     async def submit(self, request_id, persona_id, kind):
         async with self.lock:
@@ -56,6 +68,7 @@ class ManualExperienceService:
                     await self.store.mark_experience_job(request_id, "cancelled", "queue_full")
                     return await self.store.experience_job(request_id, owner_key(
                         snapshot.context.instance_id, persona_id))
+                self._count(kind, 1)
                 if self.worker is None or self.worker.done():
                     self.worker = asyncio.create_task(self._work(), name="livingemotion-manual-experience")
             return result
@@ -144,6 +157,7 @@ class ManualExperienceService:
                     await self.store.finish_quota("manual:" + snapshot.request_id,
                                                  status=status, reason_code=reason)
             finally:
+                self._count(snapshot.kind, -1)
                 self.queue.task_done()
 
     async def close(self):
@@ -154,6 +168,7 @@ class ManualExperienceService:
         while not self.queue.empty():
             snapshot = self.queue.get_nowait()
             await self.store.mark_experience_job(snapshot.request_id, "cancelled", "reload_before_dispatch")
+            self._count(snapshot.kind, -1)
             self.queue.task_done()
 
 
