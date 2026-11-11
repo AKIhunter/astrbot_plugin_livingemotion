@@ -31,14 +31,18 @@ from ..contracts import (
 )
 
 FORMAT = 1
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 6
 # Reviewed full sqlite_master fingerprints, not a permissive version range.
-# V2/V3 remain importable offline; opening the runtime then adds V4 transactionally.
+# V2-V5 remain importable offline; the runtime upgrades them transactionally to V6.
 KNOWN_SCHEMAS = {
     2: "6a884b7faa9b138fce265e4dbcb18c109ded743e73a8bc97bb65003eb04b1ab6",
     3: "090194c3ce46a42faa4679d22eb4925088b1d3916734ba7c48f67326caa9779a",
     # V4 adds the read-only external memory mirror (LivingMemory sync).
     4: "6432dc83d892344ae2d550f7ca88162fe1592de50d77d1f7923c63f4ade50389",
+    # V5 adds daily experience jobs; legacy state/experience writes are unchanged.
+    5: "b4f5df277a3c25d8b461af3ae832e65dca5093f326dd97fd3df5bb6a13d3f293",
+    # V6 adds numeric emotion samples without changing the legacy import contract.
+    6: "2d6e3acfd39252592ff5c385b3d6b1a6a3b73db2d687239cae1db83be535f21c",
 }
 SCHEMA_HASH = KNOWN_SCHEMAS[SCHEMA_VERSION]
 MAX_ROWS = 500
