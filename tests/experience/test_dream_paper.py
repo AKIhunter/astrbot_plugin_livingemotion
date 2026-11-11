@@ -226,5 +226,7 @@ async def test_night_owner_guard_dedupe_unknown_and_wake(le_store, le_context, o
         assert after.display_state.value == "deep_sleep"
         intent = await le_store.get_intent(context, app.sent[0].intent_id)
         assert intent["status"] == ("succeeded" if outcome == "confirmed" else "unknown")
+        # 发送日志依赖这段正文；控制类发送也要在进入 sending 时落库。
+        assert intent["value"]["content"] == app.sent[0].text
     finally:
         await app.behavior.close()

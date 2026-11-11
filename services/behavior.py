@@ -879,6 +879,7 @@ class BehaviorService:
         result = "rejected"
 
         transport_receipt = None
+        sent_content = None
         async def transition(new, reason):
             nonlocal current_status
             outcome = await self.store.transition_intent(
@@ -886,6 +887,9 @@ class BehaviorService:
                 status=new, reason_code=reason,
                 reservation_id=key + ":send" if new == "reserved" else None,
                 transport_receipt=transport_receipt if new in TERMINAL else None,
+                # 与主动发送一致：正文随 sending 一起落库，发送日志才能显示内容。
+                # transition_intent 的正文上限是 2000 字符，超出按上限截断。
+                content=sent_content if new == "sending" and sent_content is not None else None,
             )
             if outcome["status"] != "updated":
                 raise ValueError("control_intent_changed")
@@ -917,6 +921,7 @@ class BehaviorService:
             # messages. An invalid model result cannot reach a platform.
             if not public_text_allowed(text):
                 raise ValueError("control_output_unsafe")
+            sent_content = text.strip()[:2000]
             await transition("sending", "control_submit")
 
             guard_called, guard_allowed = False, False
