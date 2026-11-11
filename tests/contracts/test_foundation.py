@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from astrbot_plugin_livingemotion.config import Config
+from astrbot_plugin_livingemotion.config import Config, LEGACY_FIELDS, qq_numbers
 from astrbot_plugin_livingemotion.contracts import (
     ActorRole, BotAffect, Event, HumanObservation, NightState, Relationship, canonical_json, to_dict,
 )
@@ -16,13 +16,26 @@ def test_safe_config_and_schema_defaults_match():
     root = Path(__file__).parents[2]
     schema = json.loads((root / "_conf_schema.json").read_text())
     defaults = Config()
-    assert {field.name for field in fields(defaults)} == set(schema)
+    assert {field.name for field in fields(defaults)} - LEGACY_FIELDS == set(schema)
     assert all(getattr(defaults, key) == value["default"] for key, value in schema.items())
+    current_native = Config.from_mapping({key: value["default"] for key, value in schema.items()})
+    assert current_native.night_policy_version == 2
+    assert Config.from_mapping({}).night_policy_version == 1
     assert defaults.memory_mode == "none"
     assert defaults.mode == "active"
     for name in ("autonomy_enabled", "group_autonomy_enabled", "emotion_model_enabled",
                  "dream_enabled", "diary_enabled", "memory_read", "memory_export"):
         assert getattr(defaults, name) is False
+
+
+def test_qq_lists_accept_separators_and_deduplicate_without_guessing():
+    assert qq_numbers("12345678，23456789\n12345678；34567890") == (
+        "12345678", "23456789", "34567890")
+    assert qq_numbers("") == ()
+    for value in ("@12345678", "群12345678", "01234567", "1234", "12345678 bad",
+                  "1" * 21, ",".join(str(10000 + i) for i in range(101))):
+        with pytest.raises(ValueError):
+            Config(autonomy_qq_ids=value)
 
 
 @pytest.mark.parametrize("kwargs", [

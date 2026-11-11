@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from astrbot_plugin_livingemotion.config import Config
+from astrbot_plugin_livingemotion.config import Config, LEGACY_FIELDS
 from astrbot_plugin_livingemotion.contracts import (
     HumanObservation, NightPhase, NightState, Relationship, StateWrite, to_dict,
 )
@@ -71,7 +71,7 @@ async def test_relationship_platform_keys_override_restart_version_and_audit(
     assert (await read_relationship_override(le_store, group))["score"] == 621
     projected = Relationship(score=5, trust=None, familiarity=0.25, boundary=None)
     effective = await apply_relationship_override(le_store, group, projected)
-    assert effective.score == 621 and effective.stage == "close"
+    assert effective.score == 621 and effective.stage == "stage_3"
     assert effective.trust is None and effective.familiarity == 0.25
     assert await apply_relationship_override(le_store, qq, None) is None
     # A separate store connection establishes persistence without in-memory cache.
@@ -182,7 +182,9 @@ async def test_state_baseline_and_global_no_action_route(le_store, le_context):
     await le_store.register_context(le_context)
     app = ConsoleDouble(le_store, le_context)
     state = await app.console_state(persona_id=le_context.persona_id, view_scope="global")
-    assert state["context_id"] == "" and state["actions"] == []
+    assert state["context_id"] == ""
+    assert state["action_target"]["context_id"] == le_context.account_key
+    assert not next(a for a in state["actions"] if a["id"] == "behavior.send")["enabled"]
     assert state["night"]["energy_percent"] == 74.1 and state["night"]["energy"] == 0.741
     assert state["bot_state"]["baseline"] == {
         "pleasure": 0.5, "arousal": 0.3, "stress": 0, "social_need": 0.3}
@@ -253,6 +255,10 @@ async def test_config_float_chinese_units_readonly_and_groups(le_store, le_conte
     assert all(f["value"] == dto["values"][f["key"]] for f in fields.values())
     quick = next(g for g in dto["groups"] if g["id"] == "quick_start")
     assert "home_city" in quick["field_keys"]
+    assert not (LEGACY_FIELDS & fields.keys() or LEGACY_FIELDS & dto["values"].keys())
+    assert all(f["help"] and f["details"] and f["example"] for f in dto["fields"])
+    assert fields["nap_start"]["level"] == 2
+    assert fields["nap_start"]["parent"] == "nap_enabled"
 
 
 async def test_energy_missing_port_is_unavailable_not_empty_history(le_store, le_context):

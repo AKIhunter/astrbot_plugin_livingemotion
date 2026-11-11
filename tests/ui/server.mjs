@@ -6,7 +6,8 @@ import path from "node:path";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const assets = new Map([
   ...["theme.js", "style.css", "model.mjs", "api.mjs", "app.mjs", "dom.mjs", "settings.mjs",
-    "charts/radar.mjs", "charts/relationships.mjs", "charts/energy.mjs", "vendor/d3-force.mjs"
+    "experience.mjs", "messages.mjs", "i18n.mjs", "config-resources.mjs", "emotion-image.mjs", "draft.mjs",
+    "charts/radar.mjs", "charts/radar3d.mjs", "charts/relationships.mjs", "charts/force3d.mjs", "charts/energy.mjs", "charts/emotion.mjs", "vendor/d3-force.mjs"
   ].map(name => [`/pages/livingemotion/${name}`, `pages/livingemotion/${name}`]),
   ...["fixture-bridge.mjs", "fixtures.mjs", "native-dto.mjs"].map(name => [`/tests/ui/${name}`, `tests/ui/${name}`]),
 ]);

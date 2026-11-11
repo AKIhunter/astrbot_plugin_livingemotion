@@ -91,7 +91,7 @@ async def product_http(core, client, token, e):
                 "state": {"context_id": context_id},
                 "records": {"context_id": context_id, "kind": "emotion",
                             "page": 1, "page_size": 10},
-                "config": {"context_id": context_id, "patch": {"memory_mode": "none"},
+                "config": {"context_id": context_id, "patch": {"memory_read": False},
                            "expected_revision": state["revision"], "reason": "Synthetic P8"},
                 "preview": {"context_id": context_id},
                 "action": {"context_id": context_id, "action": "night.wake",
@@ -108,6 +108,13 @@ async def product_http(core, client, token, e):
                 "settings-options": {},
             }
             payload = payloads[operation]
+            if operation == "config":
+                old = await client.post(base + "config", headers=auth, json={
+                    **payload, "patch": {"memory_mode": "none"},
+                })
+                e.check(f"http.{alias}.config.removed_legacy_rejected",
+                        old.status_code == 400 and old.json().get("code") ==
+                        "validation_error", layer="real_product_dashboard_http")
             kwargs = {"params" if method == "GET" else "json": payload}
             for label, value in tokens.items():
                 headers = {} if value is None else {"Authorization": f"Bearer {value}"}

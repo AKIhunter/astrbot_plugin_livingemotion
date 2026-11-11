@@ -4,7 +4,8 @@ import { readFile } from "node:fs/promises";
 import { normalizeState, normalizeRecords, percent, unit, fieldValue, safeKey, expired, scopeParams, baselineDimensions, energyValue } from "../../pages/livingemotion/model.mjs";
 import { createApi, unwrap, pageError } from "../../pages/livingemotion/api.mjs";
 import { makeState, nativeDTO, makeRelationships } from "./fixtures.mjs";
-import { graphData, NODE_CAP, spreadPeople, separatePeople, CENTER_CLEARANCE, PERSON_SPACING } from "../../pages/livingemotion/charts/relationships.mjs";
+import { graphData, NODE_CAP, spreadPeople, separatePeople, projectPoint, CENTER_CLEARANCE, PERSON_SPACING } from "../../pages/livingemotion/charts/relationships.mjs";
+import { createForce3D, MAX_RADIUS } from "../../pages/livingemotion/charts/force3d.mjs";
 import { energyPoints } from "../../pages/livingemotion/charts/energy.mjs";
 import { settingsGroups, schedulePreview } from "../../pages/livingemotion/settings.mjs";
 
@@ -73,18 +74,31 @@ test("关系真实DTO、平台同号隔离与200裁剪；能量不补缺失点",
   assert.equal(energyValue(null), null); assert.equal(energyValue(100), 100);
   assert.throws(() => energyPoints({ ...nativeDTO.energy, page_size: 11 }));
 });
-test("200人物自然分散、中心禁区与拖动后间距", () => {
-  const people = spreadPeople(makeRelationships().slice(0, 200));
-  assert.deepEqual(people, spreadPeople(makeRelationships().slice(0, 200)));
+test("20/80/200人物三轴受力、有界分散与正负深度透视", () => {
+  for (const count of [20, 80, 200]) {
+  const people = spreadPeople(makeRelationships().slice(0, count));
+  assert.deepEqual(people, spreadPeople(makeRelationships().slice(0, count)));
+  const before = people.map(p => p.depth);
+  createForce3D(people, []).tick(100);
+  assert.ok(people.some((p, i) => p.depth !== before[i]));
+  assert.ok(people.some(p => p.depth < -20) && people.some(p => p.depth > 20));
   people[0].x = 360; people[0].y = 210;
   people[1].x = people[2].x; people[1].y = people[2].y;
   separatePeople(people, 30);
   for (let i = 0; i < people.length; i++) {
-    assert.ok(Math.hypot(people[i].x - 360, people[i].y - 210) >= CENTER_CLEARANCE - .01);
-    assert.ok(people[i].x >= 22 && people[i].x <= 698 && people[i].y >= 22 && people[i].y <= 398);
+    const radius = Math.hypot(people[i].x - 360, people[i].y - 210, people[i].depth);
+    assert.ok(radius >= CENTER_CLEARANCE - .01 && radius <= MAX_RADIUS + .01);
+    for (const yaw of [0, .34, 1.2, 3.14]) for (const pitch of [-1.1, 0, 1.1]) {
+      const point = projectPoint(people[i].x, people[i].y, people[i].depth, { yaw, pitch, focal: 900 });
+      assert.ok(point.x >= 22 && point.x <= 698 && point.y >= 22 && point.y <= 398);
+    }
     for (let j = i + 1; j < people.length; j++) assert.ok(
-      Math.hypot(people[i].x - people[j].x, people[i].y - people[j].y) >= PERSON_SPACING - .1);
+      Math.hypot(people[i].x - people[j].x, people[i].y - people[j].y, people[i].depth - people[j].depth) >= PERSON_SPACING - .1);
   }
+  }
+  const view = { yaw: 0, pitch: 0, focal: 900 };
+  assert.ok(projectPoint(420, 210, -100, view).scale > 1);
+  assert.ok(projectPoint(420, 210, 100, view).scale < 1);
 });
 test("实际本地D3包包含布局所需力函数", async () => {
   const bundle = await import("../../pages/livingemotion/vendor/d3-force.mjs");
@@ -107,6 +121,7 @@ test("宿主响应包装、401、403和409保留语义", () => {
   assert.equal(pageError({ status: 403 }).code, "forbidden");
   assert.equal(pageError(new Error("[livingemotion:forbidden] 资产令牌不是管理身份")).code, "forbidden");
   assert.equal(pageError(new Error("[livingemotion:version_conflict] 请重新读取")).code, "version_conflict");
+  assert.equal(pageError(new Error("[livingemotion:edit_disabled] 编辑已关闭")).code, "edit_disabled");
   assert.equal(pageError(new Error("Request failed with status code 401")).code, "unauthorized");
   assert.equal(pageError(new Error("Token has expired")).code, "bridge_error");
   assert.throws(() => unwrap({ status: 409 }), error => error.code === "version_conflict");

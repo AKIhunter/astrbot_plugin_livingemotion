@@ -157,12 +157,17 @@ async def test_p4_diary_program_header_and_bot_narrator(h, mode):
     )
     await h.event(occurred=h.now - 86400)
     ticket = await h.diary(day="2026-11-04")
-    assert h.service.outcome(ticket["job_id"])["status"] == "created"
+    outcome = h.service.outcome(ticket["job_id"])
+    assert outcome["status"] == "created", outcome
     entry = h.records[ticket["experience_id"]][0]
     assert entry.body.startswith("日期：2026-11-04（UTC）\n城市：上海\n天气：")
     expected = "真实测试天气" if mode == "ok" else "未获取"
     assert f"天气：{expected}\n\n" in entry.body
-    assert weather.calls == [("上海", "2026-11-04", "UTC")]
+    # Current mood and the backfilled diary header use their own calendar dates.
+    assert weather.calls == [
+        ("上海", "2026-11-05", "UTC"),
+        ("上海", "2026-11-04", "UTC"),
+    ]
     data = json.loads(h.model.calls[0].data)
     assert data["narrator"] == "bot_first_person"
     assert data["program_header"]["date"] == "2026-11-04"

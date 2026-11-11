@@ -108,8 +108,11 @@ class Harness:
     async def load(self, entry_id):
         return self.records.get(entry_id)
 
-    async def save(self, experience, generation):
-        result = await self.original_save(experience, generation)
+    async def save(self, experience, generation, *, replace_existing=False):
+        # Match the store contract used by diary creation and explicit rewrites.
+        result = await self.original_save(
+            experience, generation, replace_existing=replace_existing,
+        )
         if result["status"] == "created":
             self.records[experience.experience_id] = (experience, generation)
         return result
@@ -429,7 +432,8 @@ async def test_shared_global_budget_with_other_model_purpose(h):
 async def test_input_output_budget_and_timeout(h):
     await h.event()
     h.service = h.make_service(count_tokens=lambda *_: 99999)
-    assert (await h.diary())["reason_code"] == "input_token_limit"
+    # Even an empty request cannot fit, so shrinking materials cannot resolve this.
+    assert (await h.diary())["reason_code"] == "input_budget_too_small"
     assert not h.model.calls
     h.service = h.make_service(count_tokens=lambda system, _: 10 if system else 99999)
     ticket = await h.diary()
@@ -614,6 +618,17 @@ async def test_summary_original_sources_and_unknown_perspective(h):
 async def test_multi_scope_write_requires_atomic_foundation_port(h):
     h.service = h.make_service(memory=MemoryStub())
     other = external_material(replace(h.context, scene_id="private-other"))
+    # Default memory authorization rejects another private scene before save checks.
+    assert (await h.diary(materials=(other,)))["reason_code"] == "no_qualified_material"
+    assert not h.model.calls
+
+    class AuthorizedMemory(MemoryStub):
+        async def validate_evidence(self, request, materials, **kwargs):
+            # Explicitly authorize only this synthetic source for the target request.
+            valid = request.context == h.context and materials == (other,)
+            return ValidationResult(valid, materials if valid else ())
+
+    h.service = h.make_service(memory=AuthorizedMemory())
     assert (await h.diary(materials=(other,)))["reason_code"] == "multi_scope_commit_unsupported"
     assert not h.model.calls
 

@@ -64,15 +64,15 @@ class RelationshipTransitionTests(unittest.TestCase):
         self.assertIsNone(result["relationship"].trust)
 
     def test_score_stages_and_bounds(self):
-        for score, stage in ((0, "unestablished"), (99.9, "unestablished"),
-                             (100, "acquainted"), (300, "familiar"),
-                             (600, "close"), (850, "trusted"), (1000, "trusted")):
+        for score, stage in ((0, "stage_0"), (99.9, "stage_0"),
+                             (110, "stage_1"), (300, "stage_2"),
+                             (600, "stage_3"), (850, "stage_3"), (1000, "stage_4")):
             self.assertEqual(relationship_stage(score), stage)
         positive = apply_relationship(Relationship(score=999), event(signals=("care",)),
                                       now=1000)
         negative = apply_relationship(Relationship(score=1), event(signals=("conflict",)),
                                       now=1000)
-        self.assertEqual(positive["relationship"].score, 1000)
+        self.assertEqual(positive["relationship"].score, 990)
         self.assertEqual(negative["relationship"].score, 0)
         self.assertEqual(positive["trace"]["charged"], 3)
         self.assertEqual(negative["trace"]["charged"], 5)
@@ -94,9 +94,10 @@ class RelationshipTransitionTests(unittest.TestCase):
         third = apply_relationship(second["relationship"],
                                    event(1800, "m3", ("care",)), now=1800,
                                    runtime=second["runtime"], policy=policy)
-        self.assertEqual(third["relationship"].score, 498)
-        self.assertEqual(third["runtime"]["days"]["1970-01-01"], 8)
-        self.assertEqual(third["reason_codes"], ("daily_budget_exhausted",))
+        self.assertEqual(third["relationship"].score, 501)
+        self.assertEqual(third["runtime"]["days"]["1970-01-01"], 6)
+        self.assertEqual(third["runtime"]["negative_days"]["1970-01-01"], 5)
+        self.assertEqual(third["reason_codes"], ("rule_care",))
 
     def test_opposing_signals_in_one_event_charge_absolute_motion(self):
         policy = RelationshipPolicy(daily_budget=6)
@@ -105,7 +106,7 @@ class RelationshipTransitionTests(unittest.TestCase):
                                     policy=policy)
         self.assertEqual(result["trace"]["charged"], 6)
         self.assertAlmostEqual(result["relationship"].score, 498.5)
-        self.assertEqual(result["runtime"]["days"]["1970-01-01"], 6)
+        self.assertEqual(result["runtime"]["negative_days"]["1970-01-01"], 6)
 
     def test_budget_survives_midnight_and_delayed_events_use_occurrence_day(self):
         policy = RelationshipPolicy(daily_budget=6)
@@ -114,12 +115,13 @@ class RelationshipTransitionTests(unittest.TestCase):
                                    now=86300, policy=policy)
         delayed = apply_relationship(first["relationship"], event(86301, "m2", ("care",)),
                                      now=86410, runtime=first["runtime"], policy=policy)
-        self.assertEqual(delayed["reason_codes"], ("daily_budget_exhausted",))
+        self.assertTrue(delayed["applied"])
         new_day = apply_relationship(delayed["relationship"],
                                      event(86411, "m3", ("gratitude",)), now=86411,
                                      runtime=delayed["runtime"], policy=policy)
         self.assertTrue(new_day["applied"])
-        self.assertEqual(new_day["runtime"]["days"]["1970-01-01"], 6)
+        self.assertEqual(new_day["runtime"]["days"]["1970-01-01"], 3)
+        self.assertEqual(new_day["runtime"]["negative_days"]["1970-01-01"], 6)
         self.assertEqual(new_day["runtime"]["days"]["1970-01-02"], 2)
 
     def test_budget_calendar_uses_configured_timezone(self):
@@ -215,10 +217,12 @@ class RelationshipTransitionTests(unittest.TestCase):
             state, runtime = result["relationship"], result["runtime"]
             self.assertTrue(math.isfinite(state.score))
             self.assertGreaterEqual(state.score, 0)
-            self.assertLessEqual(state.score, 1000)
-            for day, amount in runtime["days"].items():
-                self.assertGreaterEqual(amount, high_water.get(day, 0))
-                self.assertLessEqual(amount, 24)
+            self.assertLessEqual(state.score, 990)
+            for bucket in ("days", "negative_days"):
+                for day, amount in runtime.get(bucket, {}).items():
+                    self.assertGreaterEqual(amount, high_water.get((bucket, day), 0))
+                    self.assertLessEqual(amount, 24)
+                    high_water[bucket, day] = amount
                 high_water[day] = amount
             canonical_json(result)
 
@@ -255,7 +259,7 @@ class ManualCorrectionTests(unittest.TestCase):
                                       actor_id="admin", reason="restore", expected_version=1,
                                       current_version=1, score=500)
         result = apply_relationship(manual["relationship"],
-                                    event(1400, "m2", ("care",)), now=1400,
+                                    event(1400, "m2", ("promise_broken",)), now=1400,
                                     runtime=first["runtime"],
                                     policy=RelationshipPolicy(daily_budget=6))
         self.assertEqual(result["reason_codes"], ("daily_budget_exhausted",))

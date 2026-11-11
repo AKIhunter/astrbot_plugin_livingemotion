@@ -14,16 +14,17 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT.parent))
 
 from astrbot_plugin_livingemotion.config import Config
-from astrbot_plugin_livingemotion.contracts import Context, Event, NightState, SceneKind
+from astrbot_plugin_livingemotion.contracts import BotAffect, Context, Event, NightState, SceneKind, StateWrite, to_dict
 from astrbot_plugin_livingemotion.domain.emotion import EmotionPolicy
 from astrbot_plugin_livingemotion.runtime.console import Console
 from astrbot_plugin_livingemotion.storage import SQLiteStore
+from astrbot_plugin_livingemotion.storage.console_data import remember_qq_nickname
 
 
 class FixtureConsole(Console):
     def __init__(self, store, contexts):
         self.store, self.instance_id = store, "local"
-        self.config = Config(mode="observe_only", timezone="Asia/Shanghai")
+        self.config = Config(mode="observe_only", timezone="Asia/Shanghai", persona_shared_state=True)
         self.revision = "config-1"
         self.closed = False
         self._contexts = {c.account_key: c for c in contexts}
@@ -68,10 +69,26 @@ async def main():
                                     scene_id="synthetic-group"))
             for source in contexts:
                 await store.register_context(source)
+            owner = await store.initialize_state_mode(context, shared=True)
+            # Real writes into temporary storage; numeric synthetic examples only.
+            for index in range(13):
+                at = 1_800_000_001.0 - 86400 + index * 7200
+                store.clock = lambda at=at: at
+                old = await store.get_state(context, "bot")
+                affect = BotAffect(pleasure=(index % 5 - 2) * .35,
+                    arousal=.2 + index % 4 * .2, stress=index % 3 * .2,
+                    social_need=.3 + index % 4 * .15, updated_at=at)
+                result = await store.write_states(context, 0, (
+                    StateWrite("bot", to_dict(affect),
+                        expected_version=old.version if old else 0, owner=owner),))
+                assert result.accepted
+            store.clock = lambda: 1_800_000_001.0
             message = Event("fixture-relationship", "synthetic", "message", context, "human",
                             1_800_000_000.0, "synthetic-relationship-source",
                             actor_id=context.account_id, body="我和@10002是朋友")
             assert (await store.commit_event(message, 0)).accepted
+            await remember_qq_nickname(store, context, "小雨（合成QQ名字）", 0,
+                                       occurred_at=1_800_000_000.0)
             app = FixtureConsole(store, contexts)
             selection = {"persona_id": context.persona_id, "view_scope": "global"}
             options = await app.console_settings_options()
@@ -86,7 +103,7 @@ async def main():
                 "relationships": await app.console_relationships(**selection),
                 "energy": await app.console_energy(**selection),
             }
-            sources = ("config.py", "contracts.py", "runtime/console.py", "storage/schema.py",
+            sources = ("config.py", "contracts.py", "runtime/console.py", "runtime/config_help.py", "storage/schema.py",
                        "storage/sqlite.py", "storage/state_scope.py", "storage/console_data.py",
                        "domain/relationship_inference.py", "domain/proactivity.py",
                        "storage/proactivity.py")

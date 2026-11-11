@@ -33,17 +33,19 @@ from astrbot_plugin_livingemotion.config import Config
 from astrbot_plugin_livingemotion.page_api import PageAPI
 from astrbot_plugin_livingemotion.page_api.errors import ConsoleError
 from astrbot_plugin_livingemotion.page_api.guard import require_dashboard_user
-from astrbot_plugin_livingemotion.page_api.routes import PLUGIN_NAME
+from astrbot_plugin_livingemotion.page_api.routes import PLUGIN_NAME, ROUTES
 from astrbot_plugin_livingemotion.page_api.validation import ACTIONS, MAX_BODY_BYTES
 
 
 CONTEXT_ID = "synthetic-authorized"
 PREFIXES = (f"/api/plug/{PLUGIN_NAME}", f"/api/v1/plugins/extensions/{PLUGIN_NAME}")
 OPERATIONS = ("state", "records", "config", "preview", "action", "scopes", "relationships",
-              "relationship", "energy", "settings-options")
+              "relationship", "energy", "settings-options", "persona-description")
 
 
 def arguments(operation):
+    if operation == "persona-description":
+        return "GET", {"params": {"persona_id": "synthetic-persona"}}
     if operation in ("scopes", "relationships", "energy"):
         return "GET", {"params": {"persona_id": "synthetic-persona", "view_scope": "global",
                                   "context_id": CONTEXT_ID}}
@@ -138,8 +140,10 @@ class SyntheticApplication:
                 "candidates": [], "model_calls": 0, "sends": 0}
 
     async def console_action(self, context_id, action, *, expected_revision,
-                             reason, actor_id, confirmed):
-        self.check("action", locals_without_self(locals()))
+                             reason, actor_id, confirmed, **extras):
+        parameters = locals_without_self(locals())
+        parameters.update(parameters.pop("extras"))
+        self.check("action", parameters)
         return {"api_version": 1, "status": "queued", "request_id": "synthetic-job",
                 "reason": "synthetic queued, not a real send"}
 
@@ -170,6 +174,12 @@ class SyntheticApplication:
         self.check("settings-options", {})
         return {"api_version": 1, "personas": [], "chat_providers": [],
                 "embedding_providers": [], "groups": []}
+
+    async def console_persona_description(self, persona_id):
+        self.check("persona-description", {"persona_id": persona_id})
+        return {"api_version": 1, "persona_id": persona_id,
+                "description": "synthetic persona prompt", "characters": 23,
+                "available": True}
 
 
 def locals_without_self(values):
@@ -252,7 +262,7 @@ class ConsoleTests(unittest.IsolatedAsyncioTestCase):
                     self.assertNotIn("synthetic private entry", response.text)
         self.assertEqual(self.business.calls, [])
 
-    async def test_native_dashboard_all_ten_routes_legacy_and_v1(self):
+    async def test_native_dashboard_all_console_routes_legacy_and_v1(self):
         for prefix in PREFIXES:
             for operation in OPERATIONS:
                 with self.subTest(route=prefix, operation=operation):
@@ -262,9 +272,9 @@ class ConsoleTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(response.json()["status"], "ok")
                     self.assertEqual(response.headers["cache-control"], "no-store")
                     self.assertEqual(response.json()["data"]["api_version"], 1)
-        self.assertEqual(len(self.business.calls), 20)
+        self.assertEqual(len(self.business.calls), len(OPERATIONS) * len(PREFIXES))
 
-    async def test_native_desktop_dashboard_all_ten_routes(self):
+    async def test_native_desktop_dashboard_all_console_routes(self):
         token = AuthService.generate_jwt(
             SimpleNamespace(config=self.host.config), "synthetic-admin", auth_source="desktop",
         )
@@ -528,6 +538,8 @@ class ConsoleTests(unittest.IsolatedAsyncioTestCase):
                                ("expected_revision", -1), ("expected_revision", ""),
                                ("reason", ""), ("reason", " "), ("reason", "x" * 1001)):
                 with self.subTest(operation=operation, field=key, value_type=type(value).__name__):
+                    if operation == "config" and key == "reason" and not value.strip():
+                        continue  # Native config saves no longer require a reason.
                     body = arguments(operation)[1]["json"]
                     body[key] = value
                     response = await self.request(PREFIXES[1], operation, json=body)
@@ -551,13 +563,15 @@ class ConsoleTests(unittest.IsolatedAsyncioTestCase):
         for action in sorted(ACTIONS):
             body = arguments("action")[1]["json"]
             body["action"] = action
+            if action == "experience.pin":
+                body.update(entry_id="synthetic-entry", expected_pinned=False, pinned=True)
             response = await self.request(PREFIXES[1], "action", json=body)
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()["data"]["status"], "queued")
             name, parameters = self.business.calls[-1]
             self.assertEqual(name, "action")
             self.assertEqual(parameters, {**body, "actor_id": "synthetic-admin"})
-        self.assertEqual(len(self.business.calls), 5)
+        self.assertEqual(len(self.business.calls), len(ACTIONS))
 
     async def test_unwired_action_and_unknown_exceptions_never_claim_success_or_leak(self):
         for exception in (ConsoleError("unavailable"), RuntimeError("synthetic-secret-body")):
@@ -597,10 +611,10 @@ class ConsoleTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_registered_routes_replace_and_old_handlers_stay_closed(self):
         self.page.register()
-        self.assertEqual(len(self.host.registered_web_apis), 10)
+        self.assertEqual(len(self.host.registered_web_apis), len(ROUTES))
         self.assertEqual(
             {route for route, *_ in self.host.registered_web_apis},
-            {f"/{PLUGIN_NAME}/console/{name}" for name in OPERATIONS},
+            {f"/{PLUGIN_NAME}/console/{name}" for name, _ in ROUTES},
         )
         self.page.stop_accepting()
         self.page.stop_accepting()
@@ -611,7 +625,7 @@ class ConsoleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.business.calls, [])
         replacement = PageAPI(self.host, self.business)
         replacement.register()
-        self.assertEqual(len(self.host.registered_web_apis), 10)
+        self.assertEqual(len(self.host.registered_web_apis), len(ROUTES))
         self.assertEqual((await self.request(PREFIXES[1], "state")).status_code, 200)
 
     async def test_new_relationship_actor_schema_version_and_no_retry(self):

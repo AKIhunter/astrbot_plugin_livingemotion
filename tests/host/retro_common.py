@@ -64,9 +64,13 @@ def product_files(root):
 
 def source_identity(root):
     files = product_files(root)
+    # An isolated source candidate carries its origin separately; hash the
+    # actual tested tree, never pretend it is the origin repository worktree.
+    origin = Path(os.environ.get("LIVINGEMOTION_SOURCE_ORIGIN", str(root)))
     return {
-        "git_head": git(root, "rev-parse", "HEAD"),
-        "git_status": git(root, "status", "--porcelain").splitlines(),
+        "git_head": git(origin, "rev-parse", "HEAD"),
+        "git_status": git(origin, "status", "--porcelain").splitlines(),
+        "source_origin": str(origin), "tested_source": str(root),
         "files_sha256": files, "source_sha256": digest(files),
     }
 

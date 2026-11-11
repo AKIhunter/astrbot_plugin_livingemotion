@@ -37,7 +37,9 @@ export function makeState(contextId = "fixture-a") {
     night: { state: "清醒", display_state: "awake", stage: "不在睡眠窗口", energy: 0.76, energy_percent: 76, sleep_at: null, wake_at: null,
       schedule_preview: { summary: "跨午夜夜间，午休独立", drowsy_at: "次日 01:00", wake_at: "次日 08:00 + 本周期赖床" },
       reason: "按真实时间结算（合成输入）", catch_up: { completed: 8, total: 12, reason: "仅处理有界未读范围，不自动补发。" } },
-    experience: { diary_enabled: false, dream_enabled: false, reason: "手动生成未配置模型，自动任务默认关闭。" },
+    experience: { persona_id: "fixture-persona", day: "2026-11-09", timezone: "Asia/Shanghai",
+      diary: { status: "idle" }, dream: { status: "idle" },
+      diary_enabled: false, dream_enabled: false, reason: "手动生成未配置模型，自动任务默认关闭。" },
     memory: { mode: "local_vector", provider: "待配置 embedding", can_read: false, can_write: false, capabilities: [], reason: "未配置原生向量模型；情绪与作息继续运行。" },
     actions: [
       { id: "night.sleep", enabled: true }, { id: "night.wake", enabled: true },
@@ -73,7 +75,7 @@ export function makeScopes() {
   return { api_version: 1, personas: [{ id: "fixture-persona", name: "测试人格" }, { id: "fixture-persona-b", name: "第二人格（合成）" }],
     platforms: ["qq", "bilibili"], counts: { global: 2, private: 1, group: 1 },
     contexts: [
-      { id: "fixture-a", scope_key: "synthetic-scope-a", persona_id: "fixture-persona", platform: "qq", view_scope: "private", scene_id: "scene-a", account_id: "10001", label: "QQ / 私聊 / 合成 A" },
+      { id: "fixture-a", scope_key: "synthetic-scope-a", persona_id: "fixture-persona", platform: "qq", view_scope: "private", scene_id: "scene-a", account_id: "10001", nickname: "小雨", label: "QQ / 私聊 / 合成 A" },
       { id: "fixture-b", scope_key: "synthetic-scope-b", persona_id: "fixture-persona", platform: "bilibili", view_scope: "group", scene_id: "scene-b", account_id: "10001", label: "B站 / 群聊 / 合成 B" },
     ] };
 }

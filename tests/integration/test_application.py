@@ -82,6 +82,77 @@ async def application(tmp_path, config=None):
 
 
 @pytest.mark.asyncio
+async def test_native_qq_names_and_number_grants_keep_private_group_separate(tmp_path):
+    app, _, native = await application(tmp_path, {
+        "autonomy_qq_ids": "12345678", "autonomy_qq_group_ids": "34567890",
+    })
+    try:
+        cases = [
+            Message("private", account="12345678"),
+            Message("unlisted", account="23456789"),
+            Message("group", group="34567890", account="23456789"),
+            Message("same-number-wrong-kind", group="12345678", account="23456789"),
+        ]
+        for message in cases:
+            message.message_obj.sender = SimpleNamespace(nickname="原生QQ名字")
+            if message.group:
+                message.message_obj.sender.nickname = "群名片"
+                message.message_obj.raw_message = {
+                    "sender": {"user_id": message.account, "nickname": "真正QQ名字", "card": "群名片"},
+                }
+            await app.on_message(message)
+            assert message.extra["livingemotion:ingest"] == "accepted"
+        contexts = {c.scene_id: c for c in app._contexts.values() if c.scene_kind.value == "private"}
+        group_context = next(c for c in app._contexts.values() if c.scene_id == "34567890")
+        grants = app.behavior_policy().whitelist
+        assert contexts["12345678"].scope_key in grants
+        assert group_context.scope_key in grants
+        assert contexts["23456789"].scope_key not in grants
+        # Group number equal to an allowed private QQ does not authorize that group.
+        assert next(c for c in app._contexts.values() if c.scene_kind.value == "group"
+                    and c.scene_id == "12345678").scope_key not in grants
+        graph = await app.console_relationships(persona_id="native", view_scope="private", query="原生QQ")
+        assert graph["total"] == 2
+        group_graph = await app.console_relationships(persona_id="native", view_scope="group")
+        assert group_graph["nodes"][0]["label"] == "真正QQ名字"
+        native["autonomy_qq_ids"] = "99999999"
+        await app.refresh_config()
+        assert contexts["12345678"].scope_key not in app.behavior_policy().whitelist
+        assert len(app.behavior_policy().whitelist) == 1  # The real group remains.
+        native["autonomy_scopes"] = next(iter(app._contexts.values())).scope_key
+        await app.refresh_config()
+        await app.update_config({"autonomy_qq_ids": ""}, expected_revision=app.revision,
+                                actor_id="verified", reason="clear number grants")
+        assert native["autonomy_scopes"] == ""
+        assert len(app.behavior_policy().whitelist) == 1
+        with pytest.raises(ApplicationError, match="Unknown"):
+            await app.update_config({"night_block_chat": True}, expected_revision=app.revision,
+                                    actor_id="verified", reason="legacy setting rejected")
+    finally:
+        await app.terminate()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("raw_sender", [None, {"user_id": "99999999", "nickname": "别人的QQ名"}])
+async def test_group_card_or_mismatched_raw_sender_is_not_cached(tmp_path, raw_sender):
+    app, _, _ = await application(tmp_path)
+    try:
+        message = Message("unverified-name", group="34567890", account="12345678")
+        message.message_obj.sender = SimpleNamespace(nickname="群名片")
+        if raw_sender is not None:
+            message.message_obj.raw_message = {"sender": raw_sender}
+        await app.on_message(message)
+        assert message.extra["livingemotion:ingest"] == "accepted"
+        graph = await app.console_relationships(persona_id="native", view_scope="group")
+        assert graph["nodes"][0]["label"] == "12345678"
+        cached = await app.store._run(lambda db: db.execute(
+            "SELECT COUNT(*) FROM runtime_meta WHERE key LIKE 'console.qq.nickname.v1:%'").fetchone()[0])
+        assert cached == 0
+    finally:
+        await app.terminate()
+
+
+@pytest.mark.asyncio
 async def test_failed_application_initialize_closes_started_workers_and_store(tmp_path, monkeypatch):
     app = Application(Host(), NativeConfig({}), tmp_path, bridge_factory=TestBridge)
 
@@ -183,6 +254,45 @@ async def test_console_reports_native_reply_confirmation_unsupported(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_config_revision_survives_reload_but_actions_do_not(tmp_path):
+    app, host, native = await application(tmp_path)
+    config_revision, action_revision = app.config_revision, app.revision
+    assert app.config_dto()["revision"] == config_revision
+    await app.terminate()
+    app = Application(host, native, tmp_path, bridge_factory=TestBridge)
+    await app.initialize()
+    try:
+        assert app.revision != action_revision
+        assert app.config_revision == config_revision
+        await app.update_config({"enabled": False}, expected_revision=config_revision,
+                                actor_id="verified", reason="")
+        assert native.saved["enabled"] is False
+        assert app.config_revision != config_revision
+        with pytest.raises(ApplicationError, match="Configuration changed"):
+            await app.update_config({"enabled": True}, expected_revision=config_revision,
+                                    actor_id="verified", reason="")
+        assert native.saved["enabled"] is False
+    finally:
+        await app.terminate()
+
+
+@pytest.mark.asyncio
+async def test_config_content_change_before_save_still_rejects_old_revision(tmp_path):
+    app, _, native = await application(tmp_path)
+    try:
+        revision = app.config_revision
+        native["diary_enabled"] = True
+        with pytest.raises(ApplicationError, match="Configuration changed"):
+            await app.update_config({"dream_enabled": True}, expected_revision=revision,
+                                    actor_id="verified", reason="")
+        assert app.config.diary_enabled is True
+        assert app.config.dream_enabled is False
+        assert not getattr(native, "saved", None)
+    finally:
+        await app.terminate()
+
+
+@pytest.mark.asyncio
 async def test_config_cas_disable_restore_and_three_reload(tmp_path):
     app, host, native = await application(tmp_path)
     instance = app.instance_id
@@ -274,7 +384,8 @@ async def test_relationship_projection_shared_without_local_fallback(tmp_path, m
         if available:
             assert result["data"]["score"] == snapshot.relationship.score == 777
             expression = json.loads(request.extra_user_content_parts[0].text.split("\n")[-1])
-            assert expression["relationship"]["score"] == state["relationship"]["raw"] == 777
+            assert expression["relationship"]["raw_score"] == state["relationship"]["raw"] == 777
+            assert expression["relationship"]["score"] == 77.7
         else:
             assert result["status"] == "unavailable" and result["reason_code"] == "context_changed"
             assert snapshot is None and request.extra_user_content_parts == []
@@ -443,7 +554,7 @@ async def test_diary_shared_worker_persistent_pin_and_duplicate(tmp_path):
         assert pinned["status"] == "updated"
         assert (await app.store.load_experience(entry.experience_id))[0].pinned
         assert (await app.store.audit_records(context))[0]["action"] == "experience.pin"
-        assert (await service.queue_diary(context))["status"] == "duplicate"
+        assert (await service.queue_diary(context))["reason_code"] == "daily_content_preserved"
         assert len(binding.calls) == 1 and host.sends == 0
     finally:
         await app.terminate()
@@ -493,8 +604,13 @@ async def test_experience_invalidated_before_dispatch_or_save(tmp_path, change, 
 async def test_behavior_shared_worker_unknown_history_and_clear(tmp_path):
     app, host, native, message, context, binding, clock = await generation_app(tmp_path)
     try:
-        native.update(autonomy_enabled=True, autonomy_scopes=context.scope_key)
+        native.update(autonomy_enabled=True, autonomy_scopes=context.scope_key,
+                      relationship_edit_enabled=True)
         await app.refresh_config()
+        from astrbot_plugin_livingemotion.adapters.behavior_sender import AstrBotBehaviorSender
+        # This fixture tests the fallback host bool, independent of native QQ receipts.
+        app.behavior.sender = AstrBotBehaviorSender(host.send_message, make_chain=app.bridge.chain,
+                                                   recorded_route=app.bridge.recorded_route)
         relation = await app.store.get_state(context, "relationship", context.account_id)
         await app.correct_relationship(context.account_key, expected_version=relation.version,
                                        score=900, reason="synthetic", actor_id="verified")
@@ -528,8 +644,12 @@ async def test_wake_catchup_revalidated_and_scheduled_sleep_waits_for_receipt(tm
     app, host, native, message, context, binding, clock = await generation_app(tmp_path)
     try:
         native.update(autonomy_enabled=True, autonomy_scopes=context.scope_key,
-                      night_schedule_enabled=True, sleep_at="23:00", wake_at="08:00")
+                      night_schedule_enabled=True, sleep_at="23:00", wake_at="08:00",
+                      relationship_edit_enabled=True)
         await app.refresh_config()
+        from astrbot_plugin_livingemotion.adapters.behavior_sender import AstrBotBehaviorSender
+        app.behavior.sender = AstrBotBehaviorSender(host.send_message, make_chain=app.bridge.chain,
+                                                   recorded_route=app.bridge.recorded_route)
         relation = await app.store.get_state(context, "relationship", context.account_id)
         await app.correct_relationship(context.account_key, expected_version=relation.version,
                                        score=900, reason="synthetic", actor_id="verified")
@@ -583,15 +703,123 @@ async def test_emotion_refinement_is_async_and_does_not_double_count(tmp_path):
         assert after.value["pleasure"] > before.value["pleasure"]
         assert len(await app.store.read_window(context)) == 2
         assert await app.store.relationship_ledger(context) == ledger
-        assert await app.store.get_state(context, "relationship", context.account_id) == relationship
+        refined_relation = await app.store.get_state(context, "relationship", context.account_id)
+        assert refined_relation.value["score"] == relationship.value["score"]
+        assert refined_relation.value["_runtime"] == relationship.value["_runtime"]
+        assert refined_relation.version == relationship.version + 1
+        assert refined_relation.value["_account_affect"]["state"]["pleasure"] > relationship.value[
+            "_account_affect"]["state"]["pleasure"]
         records = await app.console_records(context.account_key, "emotion")
         assert records["total"] == 2
         assert any("model_refined" in item["reason_codes"] for item in records["items"])
+        assert app.emotion_model_analysis([context])["status"] == "completed"
         assert host.sends == 0
     finally:
         release.set()
         await app.terminate()
 
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["none", "new_message", "clear", "cancel"])
+async def test_refinement_retains_real_event_and_fences_late_result(tmp_path, change):
+    import gc
+    import weakref
+    app, host, native, message, context, binding, clock = await generation_app(tmp_path)
+    release, started = asyncio.Event(), asyncio.Event()
+    try:
+        native["emotion_model_enabled"] = True
+        await app.refresh_config()
+        identity_validate = app.bridge.identity.validate
+        async def require_real_event(snapshot, *, event=None):
+            return event is not None and await identity_validate(snapshot, event=event)
+        app.bridge.identity.validate = require_real_event
+        async def generate(*_):
+            started.set()
+            await release.wait()
+            return '{"rule_version":"emotion-1","delta":{"pleasure":0},"confidence":1}'
+        binding.generate = generate
+        newer = Message("retained-source", "neutral synthetic message")
+        reference = weakref.ref(newer)
+        await app.on_message(newer)
+        del newer
+        gc.collect()
+        await asyncio.wait_for(started.wait(), 1)
+        assert reference() is not None
+        before = await app.store.get_state(context, "bot")
+        ledger = await app.store.relationship_ledger(context)
+        tasks = tuple(app._actions)
+        if change == "new_message":
+            followup = Message("later-source", "later interaction")
+            # Suppress only the second model job; its rule projection still commits.
+            native["emotion_model_enabled"] = False
+            await app.refresh_config()
+            await app.on_message(followup)
+        elif change == "clear":
+            await app.store.clear_scope(context, 0)
+        elif change == "cancel":
+            for task in tasks:
+                task.cancel()
+        expected = await app.store.get_state(context, "bot")
+        release.set()
+        await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 2)
+        after = await app.store.get_state(context, "bot")
+        if change == "none":
+            assert after.version == before.version + 1
+            assert app.emotion_model_analysis([context])["status"] == "completed"
+            assert await app.store.relationship_ledger(context) == ledger
+            assert len(await app.store.read_window(context)) == 2
+        else:
+            assert after == expected
+        gc.collect()
+        assert reference() is None
+        assert app.emotion_model_analysis([])["status"] == "uncollected"
+        assert host.sends == 0
+    finally:
+        release.set()
+        await app.terminate()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure,expected", [
+    ("unsupported", "provider_budget_contract_unsupported"),
+    ("missing", "model_unavailable"), ("invalid", "model_output_invalid"),
+    ("timeout", "task_timeout"), ("quota", "quota_exhausted"),
+    ("observe", "mode_unavailable"), ("disabled", "model_disabled"),
+])
+async def test_emotion_model_diagnostics_are_controlled(tmp_path, failure, expected):
+    from astrbot_plugin_livingemotion.runtime.models import ModelUnavailable
+    app, host, native, message, context, binding, clock = await generation_app(tmp_path)
+    try:
+        native["emotion_model_enabled"] = failure != "disabled"
+        if failure == "observe":
+            native["mode"] = "observe_only"
+        if failure == "quota":
+            native["model_daily_limit"] = 1
+        await app.refresh_config()
+        if failure in ("unsupported", "missing"):
+            async def unavailable(_):
+                raise ModelUnavailable(expected)
+            app.model_binding = unavailable
+        async def generate(*_):
+            if failure == "timeout":
+                raise TimeoutError("PRIVATE_PROVIDER_TEXT_MUST_NOT_ESCAPE")
+            return "not-json" if failure == "invalid" else (
+                '{"rule_version":"emotion-1","delta":{"pleasure":0},"confidence":1}')
+        binding.generate = generate
+        if failure == "quota":
+            await app.store.reserve_quota("used-model", context, 0, period="2026-11-05",
+                                         purpose="diary", limit=1, global_limit=1)
+        newer = Message("diagnostic-source", "Synthetic private text")
+        await app.on_message(newer)
+        if app._actions:
+            await asyncio.wait_for(asyncio.gather(*tuple(app._actions)), 2)
+        value = app.emotion_model_analysis([context])
+        assert value["reason_code"] == expected
+        assert value["status"] not in ("queued", "running")
+        assert "PRIVATE_PROVIDER_TEXT" not in str(value) and "Synthetic private text" not in str(value)
+        assert host.sends == 0
+    finally:
+        await app.terminate()
 
 @pytest.mark.asyncio
 async def test_live_rem_dream_persists_imagined_and_pin_freezes_clarity(tmp_path):
@@ -629,7 +857,7 @@ async def test_model_input_limit_rejects_before_dispatch(tmp_path):
         await app.refresh_config()
         service = await app.experience_service(context)
         result = await service.queue_diary(context, persona_text=host.prompt)
-        assert result["status"] == "rejected" and result["reason_code"] == "input_token_limit"
+        assert result["status"] == "rejected" and result["reason_code"] == "input_budget_too_small"
         assert not binding.calls and host.sends == 0
     finally:
         await app.terminate()

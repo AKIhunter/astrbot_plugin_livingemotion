@@ -187,7 +187,7 @@ def test_preview_readonly_hash_privacy_and_actual_instance(sample):
     manifest = plan(sample)
     assert [migration.file_hash(p) for p in (source, target)] == before
     assert manifest["target"]["instance_id"] == context.instance_id != "local"
-    assert manifest["target"]["schema_version"] == 3
+    assert manifest["target"]["schema_version"] == migration.SCHEMA_VERSION
     assert manifest["source"]["user_version"] == 7
     assert manifest["source"]["tables"]["persona_state"]["count"] == 1
     assert manifest["manifest_hash"] == stable_key({
@@ -198,14 +198,15 @@ def test_preview_readonly_hash_privacy_and_actual_instance(sample):
     assert not execute(target, "SELECT * FROM states")
 
 
-def test_retained_v2_profile_import_verify_and_runtime_upgrade(sample, tmp_path):
+@pytest.mark.parametrize("version", [2, 3, 4, 5, 6])
+def test_retained_v2_profile_import_verify_and_runtime_upgrade(sample, tmp_path, version):
     from astrbot_plugin_livingemotion.storage.schema import MIGRATIONS, migrate
 
     source, _, selection, context = sample
-    target = tmp_path / "retained-v2.sqlite"
+    target = tmp_path / f"retained-v{version}.sqlite"
     db = sqlite3.connect(target)
     try:
-        migrate(db, MIGRATIONS[:2])
+        migrate(db, MIGRATIONS[:version])
         db.execute("INSERT INTO runtime_meta VALUES('instance_id',?)", (context.instance_id,))
         db.execute("INSERT INTO source_contexts VALUES(?,?,?,?)",
                    (context.account_key, context.scope_key,
@@ -214,7 +215,7 @@ def test_retained_v2_profile_import_verify_and_runtime_upgrade(sample, tmp_path)
     finally:
         db.close()
     manifest = migration.preview(source, target, selection, **YES)
-    assert manifest["target"]["schema_version"] == 2
+    assert manifest["target"]["schema_version"] == version
     assert migration.import_manifest(source, target, manifest, **YES)["inserted"] == len(
         selection["rows"]
     )
@@ -224,7 +225,7 @@ def test_retained_v2_profile_import_verify_and_runtime_upgrade(sample, tmp_path)
         store = SQLiteStore(target, clock=lambda: NOW)
         await store.open()
         try:
-            assert (await store.health())["schema_version"] == 3
+            assert (await store.health())["schema_version"] == len(MIGRATIONS)
             assert await store.legacy_baselines()
         finally:
             await store.close()

@@ -65,6 +65,7 @@ def hooks(monkeypatch):
 def plugin_for(app, host, hooks):
     plugin = object.__new__(hooks)
     plugin.application, plugin.api = app, app.api
+    plugin.context = host
     original = host.get_registered_star
     host.get_registered_star = lambda name: (
         SimpleNamespace(activated=True, star_cls=plugin)

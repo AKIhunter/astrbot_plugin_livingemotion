@@ -32,6 +32,14 @@ class Binding:
         return '{"body":"My own bot reflection."}'
 
 
+async def test_preflight_selects_behavior_and_never_generates(model_app):
+    result = await model_app.model_preflight(context(), "behavior")
+    assert result == {"available": True, "reason_code": "ready"}
+    assert all(provider.calls == [] for provider in model_app.providers.values())
+    binding = await model_app.model_binding(context(), "behavior")
+    assert binding.fingerprint == "behavior-native"
+
+
 class App(models.Generation):
     def __init__(self, store, runtime, providers):
         self.store, self.runtime, self.config = store, runtime, runtime.config

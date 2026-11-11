@@ -28,7 +28,7 @@ from retro_common import (
 )
 
 
-WORKSPACE = Path(__file__).resolve().parents[4]
+WORKSPACE = Path(os.environ.get("LIVINGEMOTION_WORKSPACE", Path(__file__).resolve().parents[4]))
 BASE = WORKSPACE / ".livingemotion-retro-host"
 PYTHON = WORKSPACE / ".livingemotion-host-t1/venv/bin/python3.12"
 HOST4 = WORKSPACE / ".livingemotion-host-t1/AstrBot"
@@ -70,7 +70,8 @@ async def browser_cases(args, e, root, base_url, password, native_config):
             and report.get("product_source_sha256") == e.report["product"]["source_sha256"]
             and report.get("native_dashboard_bundle_sha256") ==
             e.report["dashboard"]["source_sha256_bundle"])
-    e.check("browser.real_iframe_36_views", len(report.get("frames", [])) == 36)
+    e.check("browser.real_iframe_views", len(report.get("frames", [])) ==
+            (4 if args.experience_only else 36))
 
 
 async def runtime(args, e):
@@ -160,14 +161,16 @@ async def runtime(args, e):
         if gate:
             e.report["product_behavior_acceptance"] = False
             return
-        await e.case("persona_cases", lambda: persona_cases(core, e))
-        await e.case("pipeline_cases", lambda: pipeline_cases(core, e, final=final))
-        if final:
+        if not args.experience_only:
+            await e.case("persona_cases", lambda: persona_cases(core, e))
+            await e.case("pipeline_cases", lambda: pipeline_cases(core, e, final=final))
+        if final and not args.experience_only:
             from retro_reply import final_reply_cases
             from retro_sleep import final_sleep_cases
             await e.case("ticket_window_cases", lambda: final_reply_cases(core, e))
             await e.case("native_sleep_cases", lambda: final_sleep_cases(core, e))
-        await e.case("transport_cases", lambda: native_transports(core, e, final=final))
+        if not args.experience_only:
+            await e.case("transport_cases", lambda: native_transports(core, e, final=final))
         tasks.append(asyncio.create_task(core.start(), name="retro-core"))
         dashboard = AstrBotDashboard(
             core, db_helper, core.dashboard_shutdown_event, webui_dir=str(root / "dashboard"),
@@ -190,12 +193,17 @@ async def runtime(args, e):
         ) as client:
             token = await login(client, password, e)
             if final:
-                await e.case("product_http_cases", lambda: product_http(core, client, token, e))
+                if args.experience_only:
+                    from retro_daily import daily_http
+                    await e.case("daily_http_cases", lambda: daily_http(core, client, token, e))
+                else:
+                    await e.case("product_http_cases", lambda: product_http(core, client, token, e))
         if final:
             await e.case("native_browser_cases", lambda: browser_cases(
                 args, e, root, f"http://127.0.0.1:{port}", password, astrbot_config,
             ))
-        await e.case("lifecycle_cases", lambda: lifecycle_cases(core, e, final=final))
+        if not args.experience_only:
+            await e.case("lifecycle_cases", lambda: lifecycle_cases(core, e, final=final))
     finally:
         if server:
             server.should_exit = True
@@ -273,7 +281,8 @@ def execute_child(command, root, env, args):
                 if not browser_ran and (root / "browser-ready.json").exists():
                     browser_ran = True
                     browser_command = [
-                        str(args.node), str(Path(__file__).with_name("retro_browser.mjs")),
+                        str(args.node), str(Path(__file__).with_name(
+                            "retro_daily_browser.mjs" if args.experience_only else "retro_browser.mjs")),
                         str(root / "browser-ready.json"), str(args.playwright), str(args.chrome),
                     ]
                     browser_env = {**env, "PATH": f"{args.node.parent}:/usr/bin:/bin"}
@@ -407,6 +416,8 @@ def parent(args):
             "--phase", args.phase, "--host-source", str(host), "--tag", tag,
             "--candidate-spec", args.candidate_spec, "--candidate-version", args.candidate_version,
         ]
+        if args.experience_only:
+            command.append("--experience-only")
         exit_code = execute_child(command, root, scrubbed_env(root, args.python), args)
         path = root / "report.json"
         report = json.loads(path.read_text()) if path.is_file() else {
@@ -468,6 +479,8 @@ def main():
     parser.add_argument("--freeze-manifest", type=Path)
     parser.add_argument("--tag", choices=list(HOST_COMMITS))
     parser.add_argument("--child", action="store_true")
+    parser.add_argument("--experience-only", action="store_true",
+                        help="Focused daily archive acceptance, not full legacy regression")
     parser.add_argument("--host-source", type=Path)
     parser.add_argument("--candidate-spec", default=CANDIDATE_SPEC)
     parser.add_argument("--candidate-version", default=CANDIDATE_VERSION)
