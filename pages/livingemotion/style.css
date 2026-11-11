@@ -76,6 +76,26 @@ body[data-le-section="experience"] #notice[hidden] { display: block !important; 
 .relationship-row-editor { margin-top: 20px; padding: 20px; border: 1px solid var(--line); border-radius: 16px; }
 .relationship-row-editor textarea { width: 100%; }
 .relationship-table td:last-child button + button { margin-left: 6px; }
+/* 关系页：筛选夹在图和列表之间；列表压紧行高，昵称与平台/账号合并展示。 */
+.relationship-filters { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: end; margin: 12px 0 8px; }
+.relationship-filters .scope-field { display: grid; gap: 4px; min-width: 0; }
+.relationship-filters .scope-field:first-child { flex: 0 0 140px; }
+.relationship-filters .scope-field:nth-child(2) { flex: 1 1 220px; }
+.relationship-filters button { flex: 0 0 auto; }
+.relationship-table th, .relationship-table td { padding: 6px 12px 6px 0; vertical-align: middle; }
+.relationship-person { display: flex; flex-direction: column; line-height: 1.35; }
+.relationship-person .micro { font-size: 10px; }
+.relationship-actions { display: flex; gap: 6px; }
+.relationship-table .relationship-actions button { min-height: 30px; padding: 2px 10px; font-size: 12px; }
+.relationship-pager { padding: 12px 0 0; }
+.relationship-empty { padding: 12px 0; }
+.relationship-explainer { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--line); }
+.relationship-explainer h2 { font-size: 16px; margin-bottom: 6px; }
+.relationship-explainer h3 { font-size: 13px; margin: 16px 0 6px; }
+.relationship-explainer p, .relationship-explainer li { font-size: 12px; line-height: 1.7; }
+.relationship-explainer ul { margin: 4px 0; padding-left: 18px; }
+.relationship-explainer-table { width: 100%; font-size: 12px; font-variant-numeric: tabular-nums; }
+.relationship-explainer-table th, .relationship-explainer-table td { padding: 3px 10px 3px 0; vertical-align: top; }
 @media (prefers-reduced-motion: reduce) { .experience-tab-indicator { transition: none; } }
 body[data-le-section="experience"] #records,
 body[data-le-section="experience"] #settings { backface-visibility: hidden; }

@@ -20,6 +20,7 @@ const uiKey = "livingemotion.view.v1";
 const emptyFilters = () => Object.fromEntries(["emotion", "behavior", "diary", "dream"].map(kind => [kind, { page: 1, query: "" }]));
 const state = {
   data: null, section: "overview", contextId: "", filters: emptyFilters(), kind: "diary",
+  relationshipQuery: { platform: "", query: "", page: 1 },
   draft: Object.create(null), baseRevision: null, conflict: false, stale: true,
   baseValues: {}, configConflicts: [],
   loading: false, writing: false, generation: 0, recordGeneration: 0, preview: null,
@@ -44,6 +45,13 @@ try {
       query: text(filter.query, "").slice(0, 200),
     };
   }
+  // 关系页的筛选与页码跟其他记录页一样跨刷新保留，避免自动刷新后回到第一页。
+  const relationship = object(saved.relationshipQuery);
+  state.relationshipQuery = {
+    platform: text(relationship.platform, "").slice(0, 64),
+    query: text(relationship.query, "").slice(0, 200),
+    page: Number.isSafeInteger(relationship.page) && relationship.page > 0 ? relationship.page : 1,
+  };
 } catch (_) { /* The page also works when storage is unavailable. */ }
 // 旧页签与会话缓存迁移：控制台始终读取当前人格的全局视图。
 state.contextId = "";
@@ -53,6 +61,7 @@ function remember() {
   try {
     sessionStorage.setItem(uiKey, JSON.stringify({
       section: state.section, contextId: state.contextId, selection: state.selection, filters: state.filters, kind: state.kind,
+      relationshipQuery: state.relationshipQuery,
       experienceRequests: state.experienceRequests,
     }));
   } catch (_) { /* No business data or drafts are persisted by this page. */ }
@@ -584,13 +593,24 @@ function renderEmotion(container) {
     node("p", t("情绪会随时间回落到基准，新的互动才会推动变化；打开页面本身不会调用模型。"), "hint"),
     sourceDetails(state.data.bot_state), analysisBlock({ includeHuman: false }));
 }
+// 关系页平台候选只取当前人格真实出现过的平台；scopes.platforms 是所有人格的合集，
+// 直接使用会让人选中一个本人物不存在的平台，查询结果看起来像“筛选没生效”。
+function personaPlatforms() {
+  const contexts = list(state.scopes?.contexts);
+  if (!contexts.length) return list(state.scopes?.platforms);
+  return [...new Set(contexts
+    .filter(item => item?.persona_id === state.selection.persona_id && item.platform)
+    .map(item => item.platform))].sort();
+}
 function renderRelationships(container) {
   if (!state.selection.persona_id) {
     container.append(node("p", t("没有已授权人格，不能查询关系。请刷新宿主范围。"), "empty")); return;
   }
   const panel = node("div"); panel.id = "relationship-body"; container.append(panel);
   state.dispose = mountRelationships(panel, {
-    api, selection: { ...scopeParams(selectedScope()), platforms: state.scopes?.platforms },
+    api, selection: { ...scopeParams(selectedScope()), platforms: personaPlatforms() },
+    queryState: state.relationshipQuery,
+    onQuery: value => { state.relationshipQuery = value; remember(); },
     stageNames: state.data.config.values.relationship_stage_names ?? Array.from({ length: 11 }, (_, index) => state.data.config.values[`relationship_stage_${index}_name`] || ""),
     persona: state.data.persona, canWrite: () => canWrite() && state.data.capabilities.includes("relationship.write"),
     // 好感是可改写的敏感数据：只有设置里显式打开才出现编辑表单。

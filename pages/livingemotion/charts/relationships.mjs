@@ -50,6 +50,81 @@ function legendItem(kind, label) {
   item.append(node("i", undefined, "legend-mark"), node("span", label));
   return item;
 }
+// 六维说明的字段名与 charts/emotion.mjs 的 data-emotion-line、model.mjs 的中文名一致。
+// 换算公式取自 domain/dreaming.py:six_emotions，权重取自 domain/emotion.py:RULES。
+const EMOTION_NOTES = [
+  ["joy", "喜悦", "max(0,p) × (1 − 0.35s)", "愉悦↑、压力↓", "愉悦↓、压力↑"],
+  ["anger", "愤怒", "max(0,−p) × a × (0.35 + 0.65s)", "负向愉悦↑、唤起↑、压力↑", "愉悦↑、唤起↓、压力↓"],
+  ["sadness", "悲伤", "max(0,−p) × (1 − 0.55a) × (1 − 0.35s)", "负向愉悦↑、唤起↓、压力↓", "愉悦↑、唤起↑、压力↑"],
+  ["fear", "恐惧", "s × (0.35 + 0.65a)", "压力↑、唤起↑", "压力↓、唤起↓"],
+  ["surprise", "惊讶", "a × (0.25 + 0.35 × (1 − |p|))", "唤起↑、|愉悦|↓", "唤起↓、|愉悦|↑"],
+  ["affection", "关爱", "(0.35n + 0.65 × max(0,p)) × (1 − 0.4s)", "社交需要↑、愉悦↑、压力↓", "社交需要↓、愉悦↓、压力↑"],
+];
+const RULE_NOTES = [
+  ["insult 侮辱", "本地正则", "−0.14", "+0.12", "+0.14", "+0.04"],
+  ["praise 称赞", "本地正则", "+0.12", "+0.05", "−0.04", "−0.02"],
+  ["constructive_criticism 建设性批评", "本地正则", "+0.04", "+0.03", "−0.02", "−0.01"],
+  ["teaching 教导", "本地正则", "+0.06", "+0.04", "−0.03", "−0.01"],
+  ["care 关心", "本地正则", "+0.12", "−0.02", "−0.06", "−0.06"],
+  ["gratitude 感谢", "本地正则", "+0.10", "+0.02", "−0.04", "−0.05"],
+  ["apology 道歉", "本地正则", "+0.05", "−0.04", "−0.08", "−0.02"],
+  ["sadness 低落", "模型细化", "0", "+0.03", "+0.02", "−0.02"],
+  ["anxiety 焦虑", "模型细化", "0", "+0.04", "+0.03", "−0.02"],
+  ["joy 开心", "模型细化", "+0.08", "+0.04", "−0.02", "−0.03"],
+  ["surprise 惊讶", "模型细化", "+0.02", "+0.12", "+0.02", "+0.01"],
+  ["interaction 普通互动", "无信号兜底", "+0.01", "+0.01", "0", "−0.01"],
+  ["reply_succeeded 回复成功", "TA 的成功动作", "+0.01", "0", "0", "−0.02"],
+];
+function explainerRow(values) {
+  const row = node("tr");
+  for (const value of values) row.append(node("td", value));
+  return row;
+}
+function explainerTable(headers, rows) {
+  const table = node("table", undefined, "relationship-explainer-table");
+  const head = node("thead"), headRow = node("tr");
+  for (const header of headers) headRow.append(node("th", header));
+  head.append(headRow);
+  const body = node("tbody");
+  for (const row of rows) body.append(explainerRow(row));
+  table.append(head, body);
+  const wrapper = node("div", undefined, "table-wrap"); wrapper.append(table);
+  return wrapper;
+}
+function relationshipExplainer() {
+  const section = node("section", undefined, "relationship-explainer");
+  section.setAttribute("aria-label", t("情绪与六维指标说明"));
+  section.append(node("h2", t("情绪与六维指标说明")));
+  section.append(node("p", t("六维不是独立状态：由底层四维换算后只用于展示。p=愉悦（−1…1）、a=唤起、s=压力、n=社交需要（0…1）；情绪页折线图（data-emotion-line）的字段名就是下表第一列。"), "hint"));
+  section.append(explainerTable([t("字段"), t("名称"), t("换算"), t("增加"), t("减少")], EMOTION_NOTES));
+  section.append(node("h3", t("什么时候触发变化")));
+  const triggers = node("ul");
+  for (const line of [
+    t("真实人类消息：来源可信、发送者就是该会话账号本人，且事件在 2 小时内。"),
+    t("机器人成功动作：bot_action_succeeded 记为 reply_succeeded。"),
+    t("不算情绪事件：dream、diary、summary、fact、observation、legacy_unknown。"),
+    t("规则情绪随事件计算（插件停用时除外）；情绪细化模型默认关闭，开启后仅在 active 模式、同一范围至少间隔 300 秒、并受每日模型额度（默认 48 次）约束。"),
+    t("没有新互动时，情绪也会按半衰期自然回落；打开页面不会调用模型。"),
+  ]) triggers.append(node("li", line));
+  section.append(triggers);
+  section.append(node("h3", t("事件权重（底层四维，单事件每维最多 ±0.15）")));
+  section.append(explainerTable([t("信号"), t("来源"), t("愉悦"), t("唤起"), t("压力"), t("社交需要")], RULE_NOTES));
+  section.append(node("p", t("未接入：conflict、boundary_respected、boundary_violated、promise_kept、promise_broken 在 RULES 里有权重，但当前消息链路不会产生这些信号，常规聊天不会按它们变化。"), "hint"));
+  section.append(node("h3", t("权重、冷却、衰减与上下限")));
+  const mechanics = node("ul");
+  for (const line of [
+    t("实际增量 = 规则值 × 事件置信度 × 敏感度(1.0) × 关系系数(0.75 + 0.25 × 关系归一值)；关系分 ≥450 且含 sadness/anxiety/care 时再 ×2。"),
+    t("同类刺激 300 秒内最多计 3 次、累计 0.30；超出后本次不增加。迟到但仍新鲜的事件先按半衰期衰减。"),
+    t("夜间唤起增益按精力缩放：×(0.5 + 精力/200)；其余维度不受夜间影响。"),
+    t("自然回落半衰期：愉悦 30 分钟、唤起 20 分钟、压力 40 分钟、社交需要 60 分钟，回落到基准 (0, 0.3, 0, 0.3)。"),
+    t("上下限：愉悦 [−1,1]，其余 [0,1]；六维换算后再夹到 [0,1]。"),
+    t("规则情绪没有每日次数上限，也没有独立冷却（只有上面的同类刺激限流）；每日 48 次与 300 秒间隔只约束模型细化。"),
+    t("天气只给六维展示值加成：晴 joy +0.2、雨 sadness +0.2、雪 affection +0.4、雷暴/冰雹/灾害 fear +0.25、多云全维 +0.1，不写回底层四维。"),
+    t("未接入：六维独立存储、独立冷却、独立每日上限；它们每次都由底层四维现算。"),
+  ]) mechanics.append(node("li", line));
+  section.append(mechanics);
+  return section;
+}
 export function graphData(raw) {
   const data = object(raw);
   if (data.api_version !== 1 || !Array.isArray(data.nodes) || !Array.isArray(data.items) ||
@@ -74,10 +149,16 @@ export function graphData(raw) {
 }
 export function mountRelationships(root, {
   api, selection, persona, stageNames, canWrite, onError, uncertain = new Set(), editEnabled = false,
+  queryState, onQuery,
 }) {
   const stageLabel = item => relationshipStage(item, stageNames).name;
   let disposed = false, sequence = 0, simulation = null, timer = null, selected = null, writing = false, graph = null;
-  let page = 1, query = "", platform = selection.context_id ? selection.platform || "" : "", paused = false, scale = 1;
+  // 筛选/翻页状态由宿主持久化：自动刷新或切页签会重新挂载本面板，不能回到第一页。
+  const saved = object(queryState);
+  let page = Number.isSafeInteger(saved.page) && saved.page > 0 ? saved.page : 1,
+    query = text(saved.query, "").slice(0, 200),
+    platform = selection.context_id ? selection.platform || "" : text(saved.platform, ""),
+    paused = false, scale = 1;
   let version = null, conflict = false, edited = null, graphKey = "";
   const positionCache = new Map();
   const motionPreference = matchMedia("(prefers-reduced-motion: reduce)");
@@ -85,7 +166,7 @@ export function mountRelationships(root, {
   const view = { ...VIEW, yaw: DEFAULT_VIEW.yaw, pitch: DEFAULT_VIEW.pitch };
   const placed = new Map();
   const writeKey = item => `relationship:${selection.persona_id}/${item.platform}/${item.account_id}`;
-  const form = node("form", undefined, "record-toolbar");
+  const form = node("form", undefined, "record-toolbar relationship-filters");
   const search = node("input"); search.type = "search"; search.id = "relationship-query"; search.maxLength = 200; search.placeholder = t("平台账号或昵称");
   const platforms = node("select"); platforms.id = "relationship-platform";
   platforms.append(node("option", t("全部平台"))); platforms.firstChild.value = "";
@@ -94,7 +175,10 @@ export function mountRelationships(root, {
     if (selection.context_id && selection.platform && option.value !== selection.platform) option.disabled = true;
     platforms.append(option);
   }
+  // 人格切换后旧平台可能已不在候选里：直接回落“全部平台”，避免永久空结果。
+  if (platform && ![...platforms.options].some(option => option.value === platform)) platform = "";
   platforms.value = platform;
+  search.value = query;
   const submit = node("button", t("查找关系")); submit.type = "submit";
   form.append(labelled(t("平台"), platforms), labelled(t("账号搜索 · 包含未绘制节点"), search), submit);
   const count = node("p", t("正在读取关系…"), "hint");
@@ -155,7 +239,9 @@ export function mountRelationships(root, {
   const stage = node("div", undefined, "graph-stage");
   stage.append(svg, detail);
   device.append(stage, zones);
-  root.append(form, count, device, tableRoot, editor);
+  const explainer = relationshipExplainer();
+  // 筛选放在 3D 力图和列表之间；说明栏固定在页面最底部。
+  root.append(count, device, form, tableRoot, editor, explainer);
   let draw = () => {};
   // 供画布级点击命中使用：当前这次布局的节点列表。
   let dataNodes = [];
@@ -484,37 +570,50 @@ export function mountRelationships(root, {
     const wrapper = node("div", undefined, "table-wrap"), table = node("table"), head = node("thead"), tr = node("tr");
     wrapper.tabIndex = 0; wrapper.setAttribute("role", "region"); wrapper.setAttribute("aria-label", t("关系表，可左右滚动；每页10条"));
     table.className = "relationship-table";
-    for (const title of [t("平台 / 账号"), t("昵称"), t("好感"), t("亲近阶段"), t("详情")]) { const th = node("th", title); th.scope = "col"; tr.append(th); }
+    for (const title of [t("人物"), t("好感"), t("亲近阶段"), t("详情")]) { const th = node("th", title); th.scope = "col"; tr.append(th); }
     head.append(tr); table.append(head);
     const body = node("tbody");
     const items = data.page_size === 10 ? list(data.items) : data.items.slice((page - 1) * 10, page * 10);
     for (const item of items.slice(0, 10)) {
       const row = node("tr"); row.dataset.relationshipId = item.id;
-      const action = node("td"); action.append(button(t("查看"), () => {
+      // 昵称与平台/账号合并到一列：两列拆开会让每行多占一截高度，信息也更散。
+      const person = node("td", undefined, "relationship-person");
+      person.append(node("span", text(item.label, t("未记录")), "relationship-name"),
+        node("span", `${text(item.platform)} / ${text(item.account_id)}`, "micro"));
+      const action = node("td", undefined, "relationship-actions");
+      action.append(button(t("查看"), () => {
         show(item); detail.querySelector("h2")?.focus();
       }));
       if (editEnabled) action.append(button(t("编辑"), () => {
         openRowEditor(item); editor.querySelector("input")?.focus({ preventScroll: true });
         editor.scrollIntoView({ block: "nearest", behavior: "instant" });
       }));
-      row.append(node("td", `${text(item.platform)} / ${text(item.account_id)}`), node("td", text(item.label, t("未记录"))),
-        node("td", relationshipScore(item) === null ? t("未提供") : relationshipScore(item).toFixed(1)), node("td", stageLabel(item)), action);
+      row.append(person, node("td", relationshipScore(item) === null ? t("未提供") : relationshipScore(item).toFixed(1)),
+        node("td", stageLabel(item)), action);
       body.append(row);
     }
     table.append(body); wrapper.append(table);
-    if (!items.length) wrapper.append(node("p", t("当前范围暂无符合条件的关系。可以清空搜索或切换平台。"), "empty"));
-    const pager = node("div", undefined, "pager");
+    if (!items.length) wrapper.append(node("p", t("没有符合条件的关系。清空搜索或切换平台再试。"), "empty relationship-empty"));
+    const pager = node("div", undefined, "pager relationship-pager");
     const previous = button(t("上一页"), () => { page--; load(); }), next = button(t("下一页"), () => { page++; load(); });
     previous.disabled = page <= 1; next.disabled = page * 10 >= data.total;
-    pager.append(previous, node("span", t("第 {0} 页 · 共 {1} 人 · 每页 10 条", [page, data.total])), next);
+    pager.append(previous, node("span", t("第 {0} 页 · 共 {1} 人", [page, data.total])), next);
     tableRoot.append(wrapper, pager);
   }
   async function load(preserve = false) {
     if (writing) return;
     const current = ++sequence; stop(); count.textContent = t("正在读取关系…"); root.setAttribute("aria-busy", "true");
+    // 查询条件在请求前交给宿主持久化：自动刷新重新挂载本面板时不会丢筛选和页码。
+    onQuery?.({ platform, query, page });
     try {
       const data = graphData(await api.relationships({ ...scopeParams(selection), platform, query, page, page_size: 10, limit: NODE_CAP, graph_scope: "neighbors" }));
       if (disposed || current !== sequence) return;
+      // 人格或筛选变化后旧页码可能越界：回到最后一页，避免“有结果却显示空表”。
+      if (data.total === 0 && page !== 1) page = 1;
+      if (!data.items.length && data.total > 0 && page > 1) {
+        page = Math.max(1, Math.ceil(data.total / 10));
+        await load(preserve); return;
+      }
       graph = data;
       count.textContent = t("图中 {0} 人 · 列表匹配 {1} 人 · {2} 条人物关系线索", [data.nodes.length, data.total, data.peer_edges.length]) +
         (data.truncated ? t(" · 节点已截断，最多 200 人") : "");
