@@ -26,6 +26,13 @@ try {
     await help.click();
     assert.equal(await help.getAttribute("aria-expanded"), "true");
     assert.equal(await explainer.locator(".help-text").first().isVisible(), true);
+    // 自动刷新或切页签都会重建 TA 页 DOM：展开状态必须保留，不能被自动收起。
+    await page.locator("[data-section=persona]").click();
+    await page.locator("[data-section=overview]").click();
+    const restored = page.locator("details[data-emotion-explainer]");
+    assert.equal(await restored.getAttribute("open"), "");
+    assert.equal(await restored.locator(".help-button").first().getAttribute("aria-expanded"), "true");
+    assert.equal(await restored.locator(".help-text").first().isVisible(), true);
     await page.evaluate(() => {
       const bridge = window.AstrBotPluginView;
       const get = bridge.apiGet, post = bridge.apiPost;

@@ -98,25 +98,31 @@ const RULE_HELP = {
   interaction: "普通聊天：会有一点点正面影响，不会大幅波动。",
   reply_succeeded: "TA 成功发出回复：陪伴需求略降，压力也降一点。",
 };
+// TA 页每 60 秒自动刷新会重建 DOM：展开状态存在模块里，避免把用户点开的说明自动收起。
+let explainerOpen = false;
+const expandedHelp = new Set();
 // 问号同时支持悬浮（title）与点开（内联展开），不引入额外弹层依赖。
-function helpCell(label, explanation) {
+function helpCell(label, explanation, key) {
   const cell = node("td", undefined, "explainer-help");
+  const expanded = expandedHelp.has(key);
   const tip = node("span", explanation, "help-text");
-  tip.hidden = true;
+  tip.hidden = !expanded;
   const control = button("?", () => {
-    const open = control.getAttribute("aria-expanded") === "true";
-    control.setAttribute("aria-expanded", String(!open));
-    tip.hidden = open;
+    const next = control.getAttribute("aria-expanded") !== "true";
+    control.setAttribute("aria-expanded", String(next));
+    tip.hidden = !next;
+    if (next) expandedHelp.add(key); else expandedHelp.delete(key);
   }, "help-button");
   control.setAttribute("aria-label", t("查看{0}的说明", [label]));
+  control.setAttribute("aria-expanded", String(expanded));
   control.title = explanation;
   cell.append(control, tip);
   return cell;
 }
-function explainerRow(cells, label, explanation) {
+function explainerRow(cells, label, explanation, key) {
   const row = node("tr");
   for (const value of cells) row.append(node("td", value));
-  row.append(helpCell(label, explanation));
+  row.append(helpCell(label, explanation, key));
   return row;
 }
 function explainerTable(headers, rows) {
@@ -125,7 +131,7 @@ function explainerTable(headers, rows) {
   for (const header of headers) headRow.append(node("th", header));
   head.append(headRow);
   const body = node("tbody");
-  for (const row of rows) body.append(explainerRow(row.cells, row.label, row.help));
+  for (const row of rows) body.append(explainerRow(row.cells, row.label, row.help, row.key));
   table.append(head, body);
   const wrapper = node("div", undefined, "table-wrap"); wrapper.append(table);
   return wrapper;
@@ -134,16 +140,18 @@ function explainerTable(headers, rows) {
 export function emotionExplainer() {
   const wrapper = node("details", undefined, "relationship-explainer emotion-explainer");
   wrapper.dataset.emotionExplainer = "";
+  wrapper.open = explainerOpen;
+  wrapper.addEventListener("toggle", () => { explainerOpen = wrapper.open; });
   wrapper.append(node("summary", t("情绪与六维指标说明")));
   const body = node("div", undefined, "details-content");
   body.append(node("p", t("数字表示 TA 当前情绪的强弱。点每行右侧的问号，可以看到这个数值为什么会升降。"), "hint"));
   body.append(explainerTable([t("指标"), t("什么情况下升高"), t("什么情况下回落"), t("说明")],
     EMOTION_NOTES.map(([key, name, up, down]) => ({
-      cells: [name, up, down], label: name, help: EMOTION_HELP[key],
+      cells: [name, up, down], label: name, help: EMOTION_HELP[key], key: `emotion:${key}`,
     }))));
   body.append(explainerTable([t("信号"), t("识别方式"), t("愉悦"), t("唤起"), t("压力"), t("社交需要"), t("说明")],
     RULE_NOTES.map(([key, name, source, ...weights]) => ({
-      cells: [name, source, ...weights], label: name, help: RULE_HELP[key],
+      cells: [name, source, ...weights], label: name, help: RULE_HELP[key], key: `signal:${key}`,
     }))));
   body.append(node("p", t("没有新的互动时，这些数值会随着时间慢慢回落到平常水平。"), "hint"));
   wrapper.append(body);
