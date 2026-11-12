@@ -155,8 +155,28 @@
   },
   "emotion_interval_seconds": {
     "type": "int",
-    "default": 300,
-    "description": "同范围模型情绪分析最小间隔秒数。例：300为5分钟。"
+    "default": 600,
+    "description": "同范围模型情绪分析最小间隔秒数。例：600为10分钟；静默时段不调用模型。"
+  },
+  "emotion_quiet_start_hour": {
+    "type": "int",
+    "default": 3,
+    "description": "情绪静默开始小时（按本地时区，0-23）。例：3表示03:00起不调用模型。"
+  },
+  "emotion_quiet_end_hour": {
+    "type": "int",
+    "default": 8,
+    "description": "情绪静默结束小时（按本地时区，0-23）。例：8表示到08:00恢复模型分析；与开始相同则关闭静默。"
+  },
+  "emotion_intensity": {
+    "type": "string",
+    "default": "normal",
+    "options": [
+      "gentle",
+      "normal",
+      "intense"
+    ],
+    "description": "情绪强度预设，只放大单次变化与同类刺激上限，不改衰减速度。例：gentle保守×1.35、normal平常×1.6（推荐）、intense激进×2.0；数值越大回复时情绪起伏越明显。"
   },
   "night_schedule_enabled": {
     "type": "bool",

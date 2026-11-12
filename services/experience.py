@@ -36,6 +36,7 @@ from ..contracts import (
     NightPhase,
     NightState,
     canonical_json,
+    prompt_json,
     finite,
     stable_key,
     to_dict,
@@ -802,34 +803,35 @@ class ExperienceService:
         ):
             raise _Rejected("persona_text_invalid")
         limit = self.policy.material_chars if char_limit is None else max(0, char_limit)
-        data = canonical_json(
-            {
-                "purpose": purpose,
-                "bot": context.bot_id,
-                "narrator": "bot_first_person",
-                "program_header": ({
-                    "date": diary_day, "city": self.policy.home_city or "未配置",
-                    "timezone": self.policy.timezone, "weather": "program_supplied_only",
-                } if diary_day else None),
-                "persona": persona_text,
-                "mood": dict(mood) if mood else None,
-                "dream": dict(dream) if dream else None,
-                "materials": [
-                    {
-                        "source_id": item.evidence.source_id,
-                        "source_ids": item.evidence.source_ids,
-                        "kind": item.evidence.kind.value,
-                        "perspective": perspective(item.evidence),
-                        "subject": item.evidence.subject_id,
-                        "holder": item.evidence.holder_id,
-                        "text": item.text[:limit],
-                        "excerpt": len(item.text) > limit,
-                    }
-                    for item in materials
-                ],
-            }
-        )
-        tokens = self.count_tokens(SYSTEM_PROMPT, data)
+        payload = {
+            "purpose": purpose,
+            "bot": context.bot_id,
+            "narrator": "bot_first_person",
+            "program_header": ({
+                "date": diary_day, "city": self.policy.home_city or "未配置",
+                "timezone": self.policy.timezone, "weather": "program_supplied_only",
+            } if diary_day else None),
+            "persona": persona_text,
+            "mood": dict(mood) if mood else None,
+            "dream": dict(dream) if dream else None,
+            "materials": [
+                {
+                    "source_id": item.evidence.source_id,
+                    "source_ids": item.evidence.source_ids,
+                    "kind": item.evidence.kind.value,
+                    "perspective": perspective(item.evidence),
+                    "subject": item.evidence.subject_id,
+                    "holder": item.evidence.holder_id,
+                    "text": item.text[:limit],
+                    "excerpt": len(item.text) > limit,
+                }
+                for item in materials
+            ],
+        }
+        data = prompt_json(payload)
+        # 预算仍按旧口径（canonical_json 的转义长度）评估，保证素材筛选结果
+        # 不因编码变化而漂移；只是发给模型的字符串不再转义中文。
+        tokens = self.count_tokens(SYSTEM_PROMPT, canonical_json(payload))
         if type(tokens) is not int or not 0 < tokens <= min(
             self.policy.input_tokens,
             self.runtime.config.model_input_tokens,
@@ -841,7 +843,7 @@ class ExperienceService:
             data,
             tokens,
             min(self.policy.output_tokens, self.runtime.config.model_output_tokens),
-            min(self.policy.timeout_seconds, self.runtime.config.model_timeout_seconds),
+            self.policy.timeout_seconds,
         )
 
     def _fit_request(
@@ -1391,6 +1393,9 @@ class ExperienceService:
             input_tokens=request.input_tokens,
             output_tokens=request.max_output_tokens,
             exempt_quota=relaxed,
+            # 日记/梦境生成耗时可达 70 秒以上；给解析与落库留 15 秒余量，
+            # 避免正文已生成却因外层 30 秒硬超时被丢弃。
+            timeout_seconds=request.timeout_seconds + 15,
         )
         if submitted["status"] == "queued":
             self._remember(job_id, _result("queued", "queued", experience_id=entry_id))

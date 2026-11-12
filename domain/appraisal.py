@@ -63,9 +63,11 @@ def parse_suggestion(value, body):
             text = text[8:-4]
         value = json.loads(text, object_pairs_hook=_unique_object)
     if not isinstance(value, Mapping) or set(value) - {
-            "rule_version", "delta", "confidence", "appraisals"}:
+            "rule_version", "delta", "confidence", "appraisals", "control"}:
         raise ValueError("model_schema")
     confidence = _number(value.get("confidence", 1), "model_confidence", 0, 1)
+    if "control" in value:
+        _number(value["control"], "control", 0, 1)
     rows = value.get("appraisals", [])
     if not isinstance(rows, list) or len(rows) > 8:
         raise ValueError("appraisal_schema")

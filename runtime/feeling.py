@@ -163,7 +163,7 @@ async def _run_feeling(app, key, slot, identifier, prompt, revision, deadline):
 
             # Trim whole memories to budget; don't truncate provenance or persona identity.
             pieces = [{"kind": m.evidence.kind.value, "text": m.text[:600]} for m in materials]
-            system = SYSTEM + "\n人格风格背景：\n" + prompt[:2000]
+            system = SYSTEM + "\n人格风格背景：\n" + await app.persona_style(identifier, prompt)
             while True:
                 data = json.dumps({"emotion": mood, "memories": pieces}, ensure_ascii=False)
                 tokens = binding.count(system, data)

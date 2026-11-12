@@ -4,8 +4,11 @@ import { node, svgNode } from "../dom.mjs";
 export function radar(current, baseline) {
   const figure = node("figure", undefined, "radar-figure");
   const keys = Object.keys(DIMENSIONS), c = keys.map(key => unit(current[key])), b = keys.map(key => unit(baseline[key]));
-  const svg = svgNode("svg", { viewBox: "0 0 360 300", role: "img", "aria-label": t("TA 四维情绪雷达，实线为当前，虚线为领域基准；数值见下方") });
-  const point = (i, value) => [180 + Math.sin(i * Math.PI / 2) * 98 * value, 150 - Math.cos(i * Math.PI / 2) * 98 * value];
+  const svg = svgNode("svg", { viewBox: "0 0 360 300", role: "img", "aria-label": t("TA 情绪雷达，实线为当前，虚线为领域基准；数值见下方") });
+  const point = (i, value) => {
+    const angle = i * Math.PI * 2 / keys.length;
+    return [180 + Math.sin(angle) * 98 * value, 150 - Math.cos(angle) * 98 * value];
+  };
   for (const level of [.25, .5, .75, 1]) svg.append(svgNode("polygon", {
     points: keys.map((_, i) => point(i, level).join(",")).join(" "), class: "radar-grid",
   }));

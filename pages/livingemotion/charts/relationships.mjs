@@ -50,53 +50,68 @@ function legendItem(kind, label) {
   item.append(node("i", undefined, "legend-mark"), node("span", label));
   return item;
 }
-// 六维指标与事件信号用「人话」解释：只说什么时候升、什么时候降，不暴露规则名、字段名或权重公式。
-// 数值仍保留在表格里，问号只负责补充含义。
-const EMOTION_NOTES = [
-  ["joy", "喜悦", "被夸、收到好消息、聊得开心", "一段时间没有新的开心事"],
-  ["anger", "愤怒", "被冒犯、被贬低", "气氛缓和、心情变好"],
-  ["sadness", "悲伤", "被冷落、听到难过的事", "被安慰、心情转好"],
-  ["fear", "恐惧", "不确定、坏消息、压迫感", "确认安全、放松下来"],
-  ["surprise", "惊讶", "突然的意外、没预料到的消息", "弄明白之后很快回落"],
-  ["affection", "关爱", "被感谢、被关心、互动变多", "长时间没互动、压力大"],
+// 五维与事件信号用「人话」解释：只说什么时候升、什么时候降，不暴露字段名或公式。
+// 信号权重存基准值，页面按当前情绪强度档位等比折算后再展示。
+const DIMENSION_NOTES = [
+  ["pleasure", "愉悦", "被夸、被关心、聊得开心", "被冒犯、被冷落、气氛变差", "约 30 分钟"],
+  ["arousal", "唤醒", "被骂、突发消息、意外惊吓", "安静一段时间、话题变平", "约 20 分钟"],
+  ["stress", "压力", "被冒犯、起冲突、被催促", "对方道歉、语气缓和", "约 40 分钟"],
+  ["social_need", "社交需求", "被关心、被感谢、对方难过", "收到回复、互动得到满足", "约 60 分钟"],
+  ["control", "底气", "模型判断这次对话有把握", "没把握、拿不准时回落", "约 60 分钟到 50%"],
 ];
-const EMOTION_HELP = {
-  joy: "被夸、收到好消息、聊得开心时会升高；过一阵子没有新的开心事，它会自己慢慢降下来。",
-  anger: "被冒犯、被贬低时升高；对方态度转好、气氛缓和，或者过一阵子会降下来。",
-  sadness: "被冷落、听到难过的事时升高；被安慰、心情转好，或者过一阵子会降下来。",
-  fear: "遇到不确定、突然的坏消息或压迫感时升高；确认安全、放松下来后会降下来。",
-  surprise: "突然发生意外、听到没预料到的消息时升高；弄明白之后很快回落。",
-  affection: "被感谢、被关心、互动变多时升高；长时间没互动或压力大时会降下来。",
+const DIMENSION_HELP = {
+  pleasure: "被夸、被感谢、被关心会升高；被侮辱、被冷落会下降；没有新互动就慢慢回到基准。",
+  arousal: "突发消息、被骂、意外会升高；安静下来后回落最快，所以它波动最明显。",
+  stress: "冲突、被指责、被催促会升高；道歉、安抚、话题变轻松会下降。",
+  social_need: "被关心、被感谢、对方难过时想靠近，会升高；收到回复、陪伴需求被满足会下降。",
+  control: "只由模型判断这次回复有多少把握，本地规则不改它；它只影响页面展示，不参与情绪计算，也不会传给回复模型。",
 };
+const INTENSITY_GAIN = { gentle: 1.35, normal: 1.6, intense: 2.0 };
+const INTENSITY_LABEL = { gentle: "保守", normal: "平常", intense: "激进" };
 const RULE_NOTES = [
-  ["insult", "侮辱", "关键词识别", "−0.14", "+0.12", "+0.14", "+0.04"],
-  ["praise", "称赞", "关键词识别", "+0.12", "+0.05", "−0.04", "−0.02"],
-  ["constructive_criticism", "建设性批评", "关键词识别", "+0.04", "+0.03", "−0.02", "−0.01"],
-  ["teaching", "教导", "关键词识别", "+0.06", "+0.04", "−0.03", "−0.01"],
-  ["care", "关心", "关键词识别", "+0.12", "−0.02", "−0.06", "−0.06"],
-  ["gratitude", "感谢", "关键词识别", "+0.10", "+0.02", "−0.04", "−0.05"],
-  ["apology", "道歉", "关键词识别", "+0.05", "−0.04", "−0.08", "−0.02"],
-  ["sadness", "低落", "模型补充", "0", "+0.03", "+0.02", "−0.02"],
-  ["anxiety", "焦虑", "模型补充", "0", "+0.04", "+0.03", "−0.02"],
-  ["joy", "开心", "模型补充", "+0.08", "+0.04", "−0.02", "−0.03"],
-  ["surprise", "惊讶", "模型补充", "+0.02", "+0.12", "+0.02", "+0.01"],
-  ["interaction", "普通互动", "默认信号", "+0.01", "+0.01", "0", "−0.01"],
-  ["reply_succeeded", "回复成功", "TA 发出回复", "+0.01", "0", "0", "−0.02"],
+  ["insult", "侮辱", "本地关键词", -0.14, 0.12, 0.14, 0.04],
+  ["praise", "称赞", "本地关键词", 0.12, 0.05, -0.04, -0.02],
+  ["constructive_criticism", "建设性批评", "本地关键词", 0.04, 0.03, -0.02, -0.01],
+  ["teaching", "教导", "本地关键词", 0.06, 0.04, -0.03, -0.01],
+  ["care", "关心", "本地关键词", 0.12, -0.02, -0.06, -0.06],
+  ["gratitude", "感谢", "本地关键词", 0.10, 0.02, -0.04, -0.05],
+  ["apology", "道歉", "本地关键词", 0.05, -0.04, -0.08, -0.02],
+  ["conflict", "冲突", "事件信号", -0.12, 0.12, 0.14, 0.04],
+  ["boundary_respected", "边界被尊重", "事件信号", 0.06, -0.02, -0.04, -0.02],
+  ["boundary_violated", "边界被冒犯", "事件信号", -0.08, 0.08, 0.12, 0.02],
+  ["promise_kept", "说到做到", "事件信号", 0.07, 0.01, -0.03, -0.02],
+  ["promise_broken", "食言", "事件信号", -0.08, 0.04, 0.08, 0.02],
+  ["sadness", "对方低落", "关键词或模型", 0, 0.03, 0.02, 0.04],
+  ["anxiety", "对方焦虑", "关键词或模型", 0, 0.04, 0.03, 0.04],
+  ["joy", "对方开心", "关键词或模型", 0.08, 0.04, -0.02, -0.03],
+  ["surprise", "意外消息", "关键词或模型", 0.02, 0.12, 0.02, 0.01],
+  ["interaction", "普通互动", "兜底默认", 0.01, 0.01, 0, -0.01],
+  ["reply_succeeded", "回复发出成功", "TA 的动作", 0.01, 0, 0, -0.02],
 ];
 const RULE_HELP = {
-  insult: "被骂或被贬低：心情变差、压力上升，也更想有人陪。",
+  insult: "被骂或被贬低：心情明显变差、压力上升，也更想有人陪。",
   praise: "被夸或被认可：心情变好，压力下降。",
-  constructive_criticism: "对方认真指出问题但态度友善：会有一点不舒服，但整体仍算良性互动。",
+  constructive_criticism: "对方认真指出问题但态度友善：会有一点不舒服，整体仍算良性互动。",
   teaching: "被耐心讲解或指导：会感到被重视，压力略降。",
   care: "被问候、被照顾：心情变好，压力明显下降。",
   gratitude: "被感谢：心情和陪伴需求都会上升。",
   apology: "对方道歉：压力和负面情绪下降。",
-  sadness: "对方说难过的事：会跟着有点低落，也更想陪伴。",
-  anxiety: "对方焦虑：会跟着紧张，压力上升。",
+  conflict: "正面起冲突：心情变差，警觉和压力一起上升。",
+  boundary_respected: "对方尊重你的边界：心情变好，压力下降。",
+  boundary_violated: "边界被冒犯：心情变差、压力上升、警觉提高。",
+  promise_kept: "对方说到做到：信任感上升，压力下降。",
+  promise_broken: "对方食言：心情变差，警觉和压力上升。",
+  sadness: "对方说难过的事：会跟着有点低落，更想陪伴对方。",
+  anxiety: "对方焦虑：会跟着紧张，也更想靠近。",
   joy: "对方分享开心的事：会一起开心。",
   surprise: "听到意外消息：会短暂惊讶、警觉。",
-  interaction: "普通聊天：会有一点点正面影响，不会大幅波动。",
+  interaction: "普通聊天：一点点正面影响，不会大幅波动。",
   reply_succeeded: "TA 成功发出回复：陪伴需求略降，压力也降一点。",
+};
+// 基准权重按当前强度档位折算成页面显示的生效值。
+const signed = (value, gain) => {
+  const scaled = Math.round(value * gain * 100) / 100;
+  return scaled === 0 ? "0" : `${scaled > 0 ? "+" : "−"}${Math.abs(scaled).toFixed(2)}`;
 };
 // TA 页每 60 秒自动刷新会重建 DOM：展开状态存在模块里，避免把用户点开的说明自动收起。
 let explainerOpen = false;
@@ -137,23 +152,28 @@ function explainerTable(headers, rows) {
   return wrapper;
 }
 // TA 页底部的可折叠说明；默认收起，不打断主阅读路径。
-export function emotionExplainer() {
+export function emotionExplainer(intensity = "normal") {
+  const gain = INTENSITY_GAIN[intensity] || INTENSITY_GAIN.normal;
+  const name = t(INTENSITY_LABEL[intensity] || INTENSITY_LABEL.normal);
   const wrapper = node("details", undefined, "relationship-explainer emotion-explainer");
   wrapper.dataset.emotionExplainer = "";
   wrapper.open = explainerOpen;
   wrapper.addEventListener("toggle", () => { explainerOpen = wrapper.open; });
-  wrapper.append(node("summary", t("情绪与六维指标说明")));
+  wrapper.append(node("summary", t("情绪与五维指标说明")));
   const body = node("div", undefined, "details-content");
   body.append(node("p", t("数字表示 TA 当前情绪的强弱。点每行右侧的问号，可以看到这个数值为什么会升降。"), "hint"));
-  body.append(explainerTable([t("指标"), t("什么情况下升高"), t("什么情况下回落"), t("说明")],
-    EMOTION_NOTES.map(([key, name, up, down]) => ({
-      cells: [name, up, down], label: name, help: EMOTION_HELP[key], key: `emotion:${key}`,
+  body.append(explainerTable([t("指标"), t("什么情况下升高"), t("什么情况下回落"), t("回落速度"), t("说明")],
+    DIMENSION_NOTES.map(([key, label, up, down, speed]) => ({
+      cells: [label, up, down, speed], label, help: DIMENSION_HELP[key], key: `dim:${key}`,
     }))));
-  body.append(explainerTable([t("信号"), t("识别方式"), t("愉悦"), t("唤起"), t("压力"), t("社交需要"), t("说明")],
-    RULE_NOTES.map(([key, name, source, ...weights]) => ({
-      cells: [name, source, ...weights], label: name, help: RULE_HELP[key], key: `signal:${key}`,
+  body.append(node("p", t("当前档位「{0}」：单次变化最多 {1}，同一类刺激 5 分钟内累计最多 {2}；换档位等比放大，衰减速度不变。",
+    [name, (0.15 * gain).toFixed(2), (0.30 * gain).toFixed(2)]), "hint"));
+  body.append(explainerTable([t("信号"), t("识别方式"), t("愉悦"), t("唤醒"), t("压力"), t("社交需求"), t("说明")],
+    RULE_NOTES.map(([key, label, source, ...weights]) => ({
+      cells: [label, source, ...weights.map(value => signed(value, gain))],
+      label, help: RULE_HELP[key], key: `signal:${key}`,
     }))));
-  body.append(node("p", t("没有新的互动时，这些数值会随着时间慢慢回落到平常水平。"), "hint"));
+  body.append(node("p", t("表中是「{0}」档的生效增量；没有新的互动时，这些数值会随着时间慢慢回落到平常水平。", [name]), "hint"));
   wrapper.append(body);
   return wrapper;
 }

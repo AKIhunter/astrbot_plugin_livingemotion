@@ -1,7 +1,7 @@
 // Generated from real Console; synthetic host, no model or sends.
 export const nativeDTO = {
   "config": {
-    "revision": "2b34419465c55a20524a4f2459993a4d5acb6aeab3db76f50e135fdf208f5e3c",
+    "revision": "3a97bdc532db1eece287d8deed200726050525200876702c9afa31a42aec412e",
     "source": "AstrBot native plugin configuration",
     "values": {
       "enabled": true,
@@ -51,7 +51,10 @@ export const nativeDTO = {
       "model_concurrency": 1,
       "queue_size": 100,
       "model_daily_limit": 48,
-      "emotion_interval_seconds": 300,
+      "emotion_interval_seconds": 600,
+      "emotion_quiet_start_hour": 3,
+      "emotion_quiet_end_hour": 8,
+      "emotion_intensity": "normal",
       "model_input_tokens": 32768,
       "model_output_tokens": 1024,
       "model_timeout_seconds": 30,
@@ -90,6 +93,7 @@ export const nativeDTO = {
       "livingmemory_enabled": false,
       "memory_write": false,
       "relationship_stage_names": "[\"反感\",\"陌生\",\"友好\",\"亲近\",\"独特\"]",
+      "relationship_stage_descriptions": "[\"\",\"\",\"\",\"\"]",
       "relationship_special_description": "",
       "wake_autocatchup_enabled": true,
       "wake_greeting_enabled": true,
@@ -829,16 +833,77 @@ export const nativeDTO = {
         "key": "emotion_interval_seconds",
         "label": "情绪分析间隔",
         "section": "emotion",
-        "value": 300,
+        "value": 600,
         "type": "integer",
         "advanced": false,
         "help": "同一范围情绪分析的最小间隔。",
-        "details": "单位秒，控制模型细化频率；不会保证到点调用，必须有可用事件、模型和预算。",
-        "example": "300表示至少隔5分钟再分析一次。",
+        "details": "单位秒，控制模型细化频率；不会保证到点调用，必须有可用事件、模型和预算。静默时段不调用模型，只保留本地规则增量。",
+        "example": "600表示至少隔10分钟再分析一次。",
         "parent": "emotion_model_enabled",
         "level": 1,
         "step": 1,
         "unit": "秒"
+      },
+      {
+        "key": "emotion_quiet_start_hour",
+        "label": "情绪静默开始（小时）",
+        "section": "emotion",
+        "value": 3,
+        "type": "integer",
+        "advanced": false,
+        "help": "情绪静默时段的开始小时。",
+        "details": "按本地时区24小时制填写0–23；与结束小时相同表示不启用静默。静默只跳过模型分析，本地规则仍随聊天生效。",
+        "example": "3表示03:00起不调用模型；想连凌晨也分析就与结束设为同一小时。",
+        "parent": "emotion_model_enabled",
+        "level": 1,
+        "step": 1,
+        "unit": "时",
+        "min": 0,
+        "max": 23
+      },
+      {
+        "key": "emotion_quiet_end_hour",
+        "label": "情绪静默结束（小时）",
+        "section": "emotion",
+        "value": 8,
+        "type": "integer",
+        "advanced": false,
+        "help": "情绪静默时段的结束小时。",
+        "details": "按本地时区24小时制填写0–23，结束小时本身恢复分析。开始大于结束表示跨午夜。",
+        "example": "8表示08:00恢复模型分析；开始22、结束6表示22:00到次日06:00静默。",
+        "parent": "emotion_model_enabled",
+        "level": 1,
+        "step": 1,
+        "unit": "时",
+        "min": 0,
+        "max": 23
+      },
+      {
+        "key": "emotion_intensity",
+        "label": "情绪强度",
+        "section": "emotion",
+        "value": "normal",
+        "type": "enum",
+        "advanced": false,
+        "help": "情绪起伏的三档强度。",
+        "details": "只放大单次情绪增量与同类刺激的累计上限，不改半衰期和衰减速度；数值越大，回复时情绪变化越明显。",
+        "example": "平常为推荐档；嫌情绪变化太快要选保守，嫌太平淡选激进。改完在设置页保存即可生效。",
+        "parent": "emotion_model_enabled",
+        "level": 1,
+        "options": [
+          {
+            "value": "gentle",
+            "label": "保守"
+          },
+          {
+            "value": "normal",
+            "label": "平常"
+          },
+          {
+            "value": "intense",
+            "label": "激进"
+          }
+        ]
       },
       {
         "key": "model_input_tokens",
@@ -1436,6 +1501,19 @@ export const nativeDTO = {
         "level": 0
       },
       {
+        "key": "relationship_stage_descriptions",
+        "label": "关系阶段描述",
+        "section": "relationship",
+        "value": "[\"\",\"\",\"\",\"\"]",
+        "type": "string",
+        "advanced": false,
+        "help": "前四档关系的相处描述，留空沿用默认描述。",
+        "details": "依次对应反感、陌生、友好、亲近；每项最多1000字。描述用于关系表达，不改变分数规则。独特档在同一行单独设置。",
+        "example": "[\"保持距离，任务可靠\",\"礼貌谨慎，慢慢了解\",\"自然友善，肯定善意\",\"主动关心，尊重边界\"]",
+        "parent": "emotion_model_enabled",
+        "level": 1
+      },
+      {
         "key": "relationship_special_description",
         "label": "独特关系说明",
         "section": "relationship",
@@ -1533,6 +1611,9 @@ export const nativeDTO = {
           "queue_size",
           "model_daily_limit",
           "emotion_interval_seconds",
+          "emotion_quiet_start_hour",
+          "emotion_quiet_end_hour",
+          "emotion_intensity",
           "model_input_tokens",
           "model_output_tokens",
           "model_timeout_seconds"
@@ -1543,6 +1624,7 @@ export const nativeDTO = {
         "label": "关系",
         "field_keys": [
           "relationship_stage_names",
+          "relationship_stage_descriptions",
           "relationship_special_description",
           "relationship_edit_enabled"
         ]
@@ -1662,6 +1744,13 @@ export const nativeDTO = {
     ]
   },
   "state": {
+    "environment": {
+      "enabled": false
+    },
+    "feeling": {
+      "text": "",
+      "status": "unavailable"
+    },
     "api_version": 1,
     "context_id": "",
     "action_target": {
@@ -1922,7 +2011,7 @@ export const nativeDTO = {
     },
     "revision": "config-1",
     "config": {
-      "revision": "2b34419465c55a20524a4f2459993a4d5acb6aeab3db76f50e135fdf208f5e3c",
+      "revision": "3a97bdc532db1eece287d8deed200726050525200876702c9afa31a42aec412e",
       "source": "AstrBot native plugin configuration",
       "values": {
         "enabled": true,
@@ -1972,7 +2061,10 @@ export const nativeDTO = {
         "model_concurrency": 1,
         "queue_size": 100,
         "model_daily_limit": 48,
-        "emotion_interval_seconds": 300,
+        "emotion_interval_seconds": 600,
+        "emotion_quiet_start_hour": 3,
+        "emotion_quiet_end_hour": 8,
+        "emotion_intensity": "normal",
         "model_input_tokens": 32768,
         "model_output_tokens": 1024,
         "model_timeout_seconds": 30,
@@ -2011,6 +2103,7 @@ export const nativeDTO = {
         "livingmemory_enabled": false,
         "memory_write": false,
         "relationship_stage_names": "[\"反感\",\"陌生\",\"友好\",\"亲近\",\"独特\"]",
+        "relationship_stage_descriptions": "[\"\",\"\",\"\",\"\"]",
         "relationship_special_description": "",
         "wake_autocatchup_enabled": true,
         "wake_greeting_enabled": true,
@@ -2750,16 +2843,77 @@ export const nativeDTO = {
           "key": "emotion_interval_seconds",
           "label": "情绪分析间隔",
           "section": "emotion",
-          "value": 300,
+          "value": 600,
           "type": "integer",
           "advanced": false,
           "help": "同一范围情绪分析的最小间隔。",
-          "details": "单位秒，控制模型细化频率；不会保证到点调用，必须有可用事件、模型和预算。",
-          "example": "300表示至少隔5分钟再分析一次。",
+          "details": "单位秒，控制模型细化频率；不会保证到点调用，必须有可用事件、模型和预算。静默时段不调用模型，只保留本地规则增量。",
+          "example": "600表示至少隔10分钟再分析一次。",
           "parent": "emotion_model_enabled",
           "level": 1,
           "step": 1,
           "unit": "秒"
+        },
+        {
+          "key": "emotion_quiet_start_hour",
+          "label": "情绪静默开始（小时）",
+          "section": "emotion",
+          "value": 3,
+          "type": "integer",
+          "advanced": false,
+          "help": "情绪静默时段的开始小时。",
+          "details": "按本地时区24小时制填写0–23；与结束小时相同表示不启用静默。静默只跳过模型分析，本地规则仍随聊天生效。",
+          "example": "3表示03:00起不调用模型；想连凌晨也分析就与结束设为同一小时。",
+          "parent": "emotion_model_enabled",
+          "level": 1,
+          "step": 1,
+          "unit": "时",
+          "min": 0,
+          "max": 23
+        },
+        {
+          "key": "emotion_quiet_end_hour",
+          "label": "情绪静默结束（小时）",
+          "section": "emotion",
+          "value": 8,
+          "type": "integer",
+          "advanced": false,
+          "help": "情绪静默时段的结束小时。",
+          "details": "按本地时区24小时制填写0–23，结束小时本身恢复分析。开始大于结束表示跨午夜。",
+          "example": "8表示08:00恢复模型分析；开始22、结束6表示22:00到次日06:00静默。",
+          "parent": "emotion_model_enabled",
+          "level": 1,
+          "step": 1,
+          "unit": "时",
+          "min": 0,
+          "max": 23
+        },
+        {
+          "key": "emotion_intensity",
+          "label": "情绪强度",
+          "section": "emotion",
+          "value": "normal",
+          "type": "enum",
+          "advanced": false,
+          "help": "情绪起伏的三档强度。",
+          "details": "只放大单次情绪增量与同类刺激的累计上限，不改半衰期和衰减速度；数值越大，回复时情绪变化越明显。",
+          "example": "平常为推荐档；嫌情绪变化太快要选保守，嫌太平淡选激进。改完在设置页保存即可生效。",
+          "parent": "emotion_model_enabled",
+          "level": 1,
+          "options": [
+            {
+              "value": "gentle",
+              "label": "保守"
+            },
+            {
+              "value": "normal",
+              "label": "平常"
+            },
+            {
+              "value": "intense",
+              "label": "激进"
+            }
+          ]
         },
         {
           "key": "model_input_tokens",
@@ -3357,6 +3511,19 @@ export const nativeDTO = {
           "level": 0
         },
         {
+          "key": "relationship_stage_descriptions",
+          "label": "关系阶段描述",
+          "section": "relationship",
+          "value": "[\"\",\"\",\"\",\"\"]",
+          "type": "string",
+          "advanced": false,
+          "help": "前四档关系的相处描述，留空沿用默认描述。",
+          "details": "依次对应反感、陌生、友好、亲近；每项最多1000字。描述用于关系表达，不改变分数规则。独特档在同一行单独设置。",
+          "example": "[\"保持距离，任务可靠\",\"礼貌谨慎，慢慢了解\",\"自然友善，肯定善意\",\"主动关心，尊重边界\"]",
+          "parent": "emotion_model_enabled",
+          "level": 1
+        },
+        {
           "key": "relationship_special_description",
           "label": "独特关系说明",
           "section": "relationship",
@@ -3454,6 +3621,9 @@ export const nativeDTO = {
             "queue_size",
             "model_daily_limit",
             "emotion_interval_seconds",
+            "emotion_quiet_start_hour",
+            "emotion_quiet_end_hour",
+            "emotion_intensity",
             "model_input_tokens",
             "model_output_tokens",
             "model_timeout_seconds"
@@ -3464,6 +3634,7 @@ export const nativeDTO = {
           "label": "关系",
           "field_keys": [
             "relationship_stage_names",
+            "relationship_stage_descriptions",
             "relationship_special_description",
             "relationship_edit_enabled"
           ]
@@ -3600,6 +3771,8 @@ export const nativeDTO = {
     "state_mode": "persona",
     "capabilities": [
       "config.write",
+      "configuration.read",
+      "config.receipt",
       "behavior.preview",
       "scopes.read",
       "relationships.read",
@@ -3708,8 +3881,8 @@ export const nativeDTO = {
       {
         "id": "dream.generate",
         "enabled": false,
-        "reason_code": "model_or_persona_unavailable",
-        "reason": "请配置可用的原生人格和日记/梦境模型。",
+        "reason_code": "dream_disabled",
+        "reason": "请先启用梦境生成。",
         "context_id": ""
       }
     ],
@@ -3727,13 +3900,15 @@ export const nativeDTO = {
         "pleasure": 0.5,
         "arousal": 0.2,
         "stress": 0.0,
-        "social_need": 0.3
+        "social_need": 0.3,
+        "control": 0.5
       },
       "baseline": {
         "pleasure": 0.5,
         "arousal": 0.3,
         "stress": 0.0,
-        "social_need": 0.3
+        "social_need": 0.3,
+        "control": 0.5
       },
       "label": "calm",
       "emotion_analysis": {
@@ -7442,6 +7617,9 @@ export const nativeDTO = {
           "queue_size",
           "model_daily_limit",
           "emotion_interval_seconds",
+          "emotion_quiet_start_hour",
+          "emotion_quiet_end_hour",
+          "emotion_intensity",
           "model_input_tokens",
           "model_output_tokens",
           "model_timeout_seconds"
@@ -7452,6 +7630,7 @@ export const nativeDTO = {
         "label": "关系",
         "field_keys": [
           "relationship_stage_names",
+          "relationship_stage_descriptions",
           "relationship_special_description",
           "relationship_edit_enabled"
         ]
@@ -7566,12 +7745,7 @@ export const nativeDTO = {
       "context_id": "",
       "platform": ""
     },
-    "personas": [
-      {
-        "id": "fixture-persona",
-        "name": "fixture-persona"
-      }
-    ],
+    "personas": [],
     "platforms": [
       "bilibili",
       "qq"
@@ -9128,16 +9302,16 @@ export const nativeDTO = {
   }
 };
 export const nativeDTOEvidence = {
-  "captured_at": "2026-11-09T14:50:11.659019+00:00",
-  "field_count": 91,
+  "captured_at": "2026-11-12T14:01:31.871346+00:00",
+  "field_count": 95,
   "scope": "real Console DTO / synthetic host / temporary database",
   "sources_sha256": {
-    "config.py": "f799698815ee5e5c09be96707877cc0e4ab68d1403e9091f06ae10a60de18d30",
-    "contracts.py": "07683269335d0e7b16829e3486303020901cd1a0d8aa5f2bebec6956497180cc",
-    "runtime/console.py": "476fba6b548da030c8c7584c1b7b2548f71a19a57e6ed4e2a51bf8cd700a5de8",
-    "runtime/config_help.py": "3f635e5e79edde7cb240f472183e1b12b906d397d2c023e2554a322790e651ab",
+    "config.py": "eac5dcb07b7c593194c2a27003e313cc17ea34afdbd50c17e3e5c5dee946d52a",
+    "contracts.py": "5a7dc9148951b8eae2814c44734c2e24091cb80f894a5abcd76780d13ffc9535",
+    "runtime/console.py": "93c97bd9c3ac12450c6faf0c54faaf262a6fc063f265602492787701f5e4be81",
+    "runtime/config_help.py": "e2a56b87c9d2c3788555cedb2cb99fb830c66d60aaa4cd828359e424d8bd3800",
     "storage/schema.py": "4f539b52a668d1cfc40b8e7df3a549d6de6c0399458153be0bc3762a4d93bb17",
-    "storage/sqlite.py": "26e93f893025262b2a1a5e148c8abc740239f7689ceb40ee0f2c9a3288327001",
+    "storage/sqlite.py": "0a98b16c9065dbe8bb491982cd896e106867f6def083d9023330e28c333a2199",
     "storage/state_scope.py": "5810f7f4209e23b3395ecdb65a384f4d4c4fb4f4d98bd01faecf7b7ac0a14a1f",
     "storage/console_data.py": "8abde8a6dc52e94c7d03f28041981672588798b5f65e4736577b6d51fba0ad01",
     "domain/relationship_inference.py": "73f329394e7094180b7824a0d329826bc7cda3a524c4f5f64a839284b5ec01e9",

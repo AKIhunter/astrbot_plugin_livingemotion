@@ -31,6 +31,8 @@ class _Job:
     execution_context: contextvars.Context | None = None
     # 手动生成（管理员显式点按钮）不受每日模型预算拦住；用量照记，便于观察。
     exempt_quota: bool = False
+    # 日记/梦境等长任务可单独放宽；None 表示沿用全局 model_timeout_seconds。
+    timeout_seconds: float | None = None
 
 
 class BackgroundRuntime:
@@ -54,7 +56,8 @@ class BackgroundRuntime:
                      work: Callable[[], Awaitable[Any]], *, purpose: str = "local",
                      model: bool = False, input_tokens: int = 0,
                      output_tokens: int = 0, completion=None,
-                     exempt_quota: bool = False) -> dict[str, str]:
+                     exempt_quota: bool = False,
+                     timeout_seconds: float | None = None) -> dict[str, str]:
         if not self._accepting:
             return {"status": "rejected", "reason_code": "runtime_stopped"}
         if model and self.config.mode != "active":
@@ -76,10 +79,14 @@ class BackgroundRuntime:
             return {"status": "rejected", "reason_code": "token_limit"}
         if model and output_tokens == 0:
             return {"status": "rejected", "reason_code": "missing_token_budget"}
+        if timeout_seconds is not None and (
+                type(timeout_seconds) not in (int, float)
+                or not 0 < timeout_seconds <= 600):
+            return {"status": "rejected", "reason_code": "invalid_timeout"}
         try:
             self._queue.put_nowait(_Job(job_id, context, generation, purpose, work, model,
                                        completion, contextvars.copy_context(),
-                                       bool(exempt_quota)))
+                                       bool(exempt_quota), timeout_seconds))
         except asyncio.QueueFull:
             return {"status": "rejected", "reason_code": "queue_full"}
         self._pending.add(job_id)
@@ -87,11 +94,12 @@ class BackgroundRuntime:
         return {"status": "queued", "reason_code": "queued"}
 
     async def run_model(self, job_id, context, generation, work, *, purpose,
-                        input_tokens, output_tokens):
+                        input_tokens, output_tokens, timeout_seconds=None):
         completion = asyncio.get_running_loop().create_future()
         result = await self.submit(
             job_id, context, generation, work, purpose=purpose, model=True,
             input_tokens=input_tokens, output_tokens=output_tokens, completion=completion,
+            timeout_seconds=timeout_seconds,
         )
         if result["status"] != "queued":
             raise ValueError(result["reason_code"])
@@ -115,7 +123,8 @@ class BackgroundRuntime:
         try:
             # Own cancellation here so stop cannot interrupt caller-triggered cleanup.
             value = await asyncio.wait_for(
-                asyncio.shield(work), timeout=self.config.model_timeout_seconds,
+                asyncio.shield(work),
+                timeout=job.timeout_seconds or self.config.model_timeout_seconds,
             )
             if job.completion is not None and job.completion.cancelled():
                 raise asyncio.CancelledError

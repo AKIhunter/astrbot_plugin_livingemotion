@@ -90,7 +90,14 @@ class Config:
     model_concurrency: int = 1
     queue_size: int = 100
     model_daily_limit: int = 48
-    emotion_interval_seconds: int = 300
+    # 10 分钟一次模型情绪细化；深夜静默时段直接跳过（见 refinement.in_quiet_hours）。
+    emotion_interval_seconds: int = 600
+    # 静默时段按 UTC+8（或配置的时区）的本地小时计算；start == end 视为关闭。
+    emotion_quiet_start_hour: int = 3
+    emotion_quiet_end_hour: int = 8
+    # 情绪强度三档：gentle 保守 / normal 平常（推荐）/ intense 激进。
+    # 只放大单次增量与同类累计闸门，不改半衰期与衰减速度。
+    emotion_intensity: str = "normal"
     # 计数是「UTF-8 字节上界」，不是 token 数：4096 连系统提示（约 2.3KB）
     # 加人格都装不下，日记/梦境永远 input_token_limit。32768 字节约
     # 11k 汉字，主流模型都吃得下。
@@ -214,6 +221,8 @@ class Config:
             raise ValueError("invalid wake mode")
         if self.behavior_style not in ("gentle", "balanced", "lively"):
             raise ValueError("invalid behavior style")
+        if self.emotion_intensity not in ("gentle", "normal", "intense"):
+            raise ValueError("invalid emotion intensity")
         qq_numbers(self.autonomy_qq_ids)
         qq_numbers(self.autonomy_qq_group_ids)
         object.__setattr__(self, "dream_theme_pool", json.dumps(
@@ -243,7 +252,7 @@ class Config:
                 raise ValueError(f"{name}: expected boolean")
             minimum = 0 if name in (
                 "diary_retries", "lie_in_min_minutes", "lie_in_max_minutes",
-                "closing_lead_minutes",
+                "closing_lead_minutes", "emotion_quiet_start_hour", "emotion_quiet_end_hour",
             ) else 1
             if type(default) is int and (type(value) is not int or value < minimum):
                 raise ValueError(f"{name}: expected positive integer")
@@ -279,6 +288,7 @@ class Config:
             ("lie_in_max_minutes", 1440), ("wake_reply_limit", 100),
             ("wake_window_minutes", 1440), ("closing_lead_minutes", 60),
             ("behavior_random_max_minutes", 10080), ("behavior_idle_minutes", 1440),
+            ("emotion_quiet_start_hour", 23), ("emotion_quiet_end_hour", 23),
         ):
             if getattr(self, name) > maximum:
                 raise ValueError(f"{name}: exceeds safety maximum {maximum}")

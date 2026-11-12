@@ -489,7 +489,9 @@ class NightRuntime:
             prompt = getattr(getattr(snapshot, "persona", None), "prompt", "")
         except Exception:
             return ""
-        return prompt if isinstance(prompt, str) and len(prompt) <= 16000 else ""
+        if not isinstance(prompt, str) or len(prompt) > 16000:
+            return ""
+        return await self.persona_style(context.persona_id, prompt)
 
     async def queue_experience(
         self, context, kind: str, *, manual: bool = False, night: NightState | None = None,
@@ -537,7 +539,9 @@ class NightRuntime:
                         if dream_key:
                             log_dream_skip("context_changed", key=dream_key)
                     else:
-                        persona_text = (source.persona.prompt if source is not None
+                        persona_text = (await self.persona_style(
+                                            context.persona_id, source.persona.prompt)
+                                        if source is not None
                                         else await self._manual_persona_text(context))
                         service = await self.experience_service(context)
                         if kind == "diary":

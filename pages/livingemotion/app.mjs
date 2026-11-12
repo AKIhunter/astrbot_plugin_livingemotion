@@ -3,7 +3,7 @@ import { createApi, pageError, PageError } from "./api.mjs";
 import {
   PAGE_SIZE, SECTIONS, DIMENSIONS, ACTIONS, object, list, text, unit, percent, yesno,
   reasons, hasRevision, date, expired, normalizeState, normalizeRecords, baselineDimensions, scopeParams, NIGHT_STATES,
-  behaviorFields, behaviorReason, emotionAnalysis, emotionOwnership, EMOTIONS, ANALYSIS_DIMENSIONS, affectLabel, analysisBasis,
+  behaviorFields, behaviorReason, emotionAnalysis, emotionOwnership, BOT_DIMENSIONS, ANALYSIS_DIMENSIONS, affectLabel, analysisBasis,
   experienceStatus, reasonExplanation, resultLabel, AFFECT_LABELS, modelDiagnosticText,
 } from "./model.mjs";
 import { radar3d } from "./charts/radar3d.mjs";
@@ -371,12 +371,12 @@ function healthBlock() {
 }
 function renderOverview(container) {
   const global = isGlobalView();
-  const analysis = emotionAnalysis(state.data).bot;
   const layout = node("div", undefined, global ? "ta-layout global" : "ta-layout");
-  // 球体直接画六维分析（valence/arousal/stress/social_need/control/certainty），
+  // 五维球直接读运行期状态：前四维由本地规则推动，底气只由模型异步写入，
   // 数值由球下方的图例承担，避免同一份数据在两处重复成表。
-  layout.append(botHero(), radar3d(object(analysis.dimensions), {},
-    { label: t("当前人格的六维情绪球"), dimensions: ANALYSIS_DIMENSIONS }));
+  layout.append(botHero(), radar3d(object(state.data.bot_state.dimensions),
+    baselineDimensions(state.data),
+    { label: t("当前人格的五维情绪球"), dimensions: BOT_DIMENSIONS }));
   container.append(layout);
   container.append(emotionChart(state.data.emotion_curve));
   container.append(details(t("可用性与来源"), pairs([[t("状态"), state.data.availability.available === true ? t("可用") :
@@ -386,8 +386,8 @@ function renderOverview(container) {
   if (state.selection.view_scope === "global" && ["scene", "context"].includes(emotionOwnership(state.data).kind)) {
     container.append(node("p", t("全局页面展示最近活跃会话的人格状态。"), "hint"));
   }
-  // 六维与信号说明收在 TA 页底部，默认收起，避免挤占主视图。
-  container.append(emotionExplainer());
+  // 五维与信号说明收在 TA 页底部，默认收起，避免挤占主视图。
+  container.append(emotionExplainer(object(state.data.config?.values).emotion_intensity));
 }
 function personaPicker() {
   const personas = list(state.scopes?.personas);
@@ -499,9 +499,7 @@ function analysisBlock({ includeHuman = true, data = state.data, title = t("TA �
   section.dataset.emotionAnalysis = "";
   if (!available) section.append(node("p", t("宿主尚未提供情绪分析，以下仅显示已有 TA 状态。"), "hint"));
   else {
-    const grid = node("div", undefined, "metrics");
-    for (const [key, label] of Object.entries(EMOTIONS)) grid.append(metric(label, object(bot.emotions)[key]));
-    section.append(grid);
+    // 只展示五维：六种派生情绪已由页面移除，避免与雷达数值重复。
     if (showDimensions) section.append(block(t("六维分析"), pairs(Object.entries(ANALYSIS_DIMENSIONS).map(([key, label]) => {
       const value = object(bot.dimensions)[key];
       const valid = typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1;
@@ -589,8 +587,9 @@ function renderEmotion(container) {
   if (!state.data.bot_state.label) container.append(node("p", t("只有对方观察，不能变成 TA 感受"), "hint"));
   container.append(botHero());
   const columns = node("div", undefined, "columns");
-  columns.append(radar3d(object(state.data.bot_state.dimensions), baselineDimensions(state.data), { label: t("当前人格的四维情绪球") }), observationBlock());
-  container.append(block(t("四维状态分析"), columns));
+  columns.append(radar3d(object(state.data.bot_state.dimensions), baselineDimensions(state.data),
+    { label: t("当前人格的五维情绪球"), dimensions: BOT_DIMENSIONS }), observationBlock());
+  container.append(block(t("五维状态分析"), columns));
   container.append(
     node("p", t("情绪会随时间回落到基准，新的互动才会推动变化；打开页面本身不会调用模型。"), "hint"),
     sourceDetails(state.data.bot_state), analysisBlock({ includeHuman: false }));
@@ -1177,8 +1176,27 @@ const renderers = {
   settings: container => container.append(node("p", t("按任务完成配置，所有更改统一保存。"), "hint")),
 };
 
+// 风格摘要按人格读取，保存后直接更新缓存；原生人格不受影响。
+const styleSummaryCache = new Map();
+const personaStyleApi = {
+  async load(personaId) {
+    const key = text(personaId, "");
+    if (styleSummaryCache.has(key)) return styleSummaryCache.get(key);
+    const data = await api.styleSummary(key);
+    styleSummaryCache.set(key, data);
+    return data;
+  },
+  async save(personaId, body) {
+    const data = await api.saveStyleSummary({
+      persona_id: String(personaId), text: String(body),
+      reason: "控制台编辑风格摘要",
+    });
+    styleSummaryCache.set(String(personaId), data);
+    return data;
+  },
+};
 function renderSettings() {
-  settingsView($("settings"), state, state.options, updateControls, personaDescriptionLoader);
+  settingsView($("settings"), state, state.options, updateControls, personaDescriptionLoader, personaStyleApi);
 }
 function navigateToSettings(group) {
   navigate("settings");

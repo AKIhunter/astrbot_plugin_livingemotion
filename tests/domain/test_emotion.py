@@ -16,8 +16,9 @@ from astrbot_plugin_livingemotion.contracts import (
     Relationship, canonical_json,
 )
 from astrbot_plugin_livingemotion.domain.emotion import (
-    BASELINE, DIMENSIONS, RULE_VERSION, EmotionPolicy, apply_emotion,
-    decay_affect, event_signals, expression_context, observe_human, resolve_mode,
+    BASELINE, DIMENSIONS, RULE_VERSION, EmotionPolicy, apply_control, apply_emotion,
+    control_value, decay_affect, emotion_policy, event_signals, expression_context,
+    observe_human, resolve_mode,
 )
 
 
@@ -310,8 +311,8 @@ class ValidationAndModeTests(unittest.TestCase):
             apply_emotion(BotAffect(), event(), now=10 ** 1000)
 
     def test_invalid_policy_and_runtime_numbers_rejected(self):
-        for change in ({"event_cap": 0.2}, {"similar_limit": True}, {"event_ttl": 0},
-                       {"sensitivity": 2}, {"half_lives": (1, 2)},
+        for change in ({"event_cap": 0.31}, {"similar_limit": True}, {"event_ttl": 0},
+                       {"sensitivity": 2}, {"rule_gain": 4}, {"half_lives": (1, 2)},
                        {"half_lives": (1, 2, float("nan"), 4)}):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 EmotionPolicy(**change)
@@ -407,6 +408,28 @@ class ValidationAndModeTests(unittest.TestCase):
                 self.assertLessEqual(value, 1)
             self.assertLessEqual(len(runtime.get("seen", ())), 256)
             canonical_json(result)
+
+
+class ControlTests(unittest.TestCase):
+    """底气只由模型写、独立于四维：规则事件不得重置它。"""
+
+    def test_control_ema_decay_and_rule_independence(self):
+        state = apply_control(BotAffect(), 1.0, now=1000)
+        self.assertAlmostEqual(state.control, 0.6)
+        self.assertEqual(state.control_at, 1000)
+        moved = apply_emotion(state, event(signals=("praise",)), now=1001)["affect"]
+        self.assertGreater(moved.control, 0.59)
+        self.assertEqual(moved.control_at, 1001)
+        self.assertEqual(apply_control(moved, None, now=5000).control, moved.control)
+        self.assertAlmostEqual(control_value(moved, 1001 + 3600), 0.55, places=3)
+
+    def test_intensity_presets_scale_deltas_and_gates_only(self):
+        normal = emotion_policy("normal")
+        self.assertEqual(normal.rule_gain, 1.6)
+        self.assertAlmostEqual(normal.event_cap, 0.24)
+        self.assertAlmostEqual(normal.similar_budget, 0.48)
+        self.assertEqual(normal.half_lives, EmotionPolicy().half_lives)
+        self.assertEqual(emotion_policy("unknown").rule_gain, 1.6)
 
 
 if __name__ == "__main__":

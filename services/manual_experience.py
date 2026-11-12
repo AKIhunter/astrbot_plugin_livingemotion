@@ -5,7 +5,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from ..adapters.weather import WeatherReport
-from ..contracts import ContentKind, Experience, canonical_json
+from ..contracts import ContentKind, Experience, prompt_json
 from ..runtime.background import ModelResultUnknown
 from .experience import SYSTEM_PROMPT, parse_entry, perspective, _plain
 from ..storage.experiences import owner_key
@@ -95,7 +95,7 @@ class ManualExperienceService:
                         pass
                 emotions = apply_bonus(snapshot.mood or {}, weather_bonus(
                     weather, city=snapshot.home_city, day=snapshot.day, timezone=snapshot.timezone))
-                data = canonical_json({
+                data = prompt_json({
                     "purpose": snapshot.kind, "narrator": "bot_first_person",
                     "persona": snapshot.persona,
                     "program_header": {"date": snapshot.day, "timezone": snapshot.timezone,

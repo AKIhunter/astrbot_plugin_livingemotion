@@ -143,6 +143,17 @@ def canonical_json(value: Any) -> str:
                       separators=(",", ":"), allow_nan=False)
 
 
+def prompt_json(value: Any) -> str:
+    """发往模型的 payload 专用序列化：中文保持字面量。
+
+    canonical_json 会把每个汉字转成 \\uXXXX（字符数约 6 倍、token 约 4 倍），
+    它适合做稳定键/落库，不适合当 prompt。仅模型请求用本函数；
+    键序仍固定，保证同一输入产生同一字符串。
+    """
+    return json.dumps(to_dict(value), ensure_ascii=False, sort_keys=True,
+                      separators=(",", ":"), allow_nan=False)
+
+
 def stable_key(*parts: Any) -> str:
     return hashlib.sha256(canonical_json(parts).encode("utf-8")).hexdigest()
 
@@ -322,12 +333,33 @@ class BotAffect:
     reason_codes: tuple[str, ...] = ()
     evidence: tuple[EvidenceRef, ...] = ()
     rule_version: str = "1"
+    # 轮询（模型细化）更新的情绪基准。本地规则只在它的基础上做即时增减，
+    # 时间衰减也回落到这里，而不是永远回到固定常量。旧状态缺这四项时取默认值，
+    # 与新增前的行为完全一致。
+    baseline_pleasure: float = 0.0
+    baseline_arousal: float = 0.3
+    baseline_stress: float = 0.0
+    baseline_social_need: float = 0.3
+    # 基准是否已被模型轮询写过。没写过时基准取 EmotionPolicy.baseline，
+    # 这样改了策略常量后，还没细化过的状态也一起跟着走。
+    baseline_refined: bool = False
+    # 底气（掌控感）：只由模型轮询写入、只给页面展示，不参与本地规则、
+    # 衰减基准和 LivingHello 注入。没有样本时保持中性 0.5。
+    control: float = 0.5
+    control_at: float = 0.0
 
     def __post_init__(self) -> None:
         finite(self.pleasure, "pleasure", -1, 1)
         for name in ("arousal", "stress", "social_need"):
             finite(getattr(self, name), name, 0, 1)
         finite(self.updated_at, "updated_at", 0)
+        finite(self.baseline_pleasure, "baseline_pleasure", -1, 1)
+        for name in ("baseline_arousal", "baseline_stress", "baseline_social_need"):
+            finite(getattr(self, name), name, 0, 1)
+        if type(self.baseline_refined) is not bool:
+            raise ValueError("baseline_refined: expected bool")
+        finite(self.control, "control", 0, 1)
+        finite(self.control_at, "control_at", 0)
 
 
 @dataclass(frozen=True)

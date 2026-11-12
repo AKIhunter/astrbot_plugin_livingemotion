@@ -124,13 +124,13 @@ async def test_emotion_interval_survives_clear_restart_and_midnight(rig, record_
     rig.now += 2
     with pytest.raises(ValueError, match="quota_cooldown"):
         await rig.model("emotion-midnight", work, "emotion")
-    rig.now += 297
+    rig.now += 597
     with pytest.raises(ValueError, match="quota_cooldown"):
-        await rig.model("emotion-299", work, "emotion")
+        await rig.model("emotion-599", work, "emotion")
     rig.now += 1
-    await rig.model("emotion-300", work, "emotion")
-    record_property("measurements", {"calls": calls, "blocked_elapsed_seconds": [2, 299],
-                                      "allowed_elapsed_seconds": 300})
+    await rig.model("emotion-600", work, "emotion")
+    record_property("measurements", {"calls": calls, "blocked_elapsed_seconds": [2, 599],
+                                      "allowed_elapsed_seconds": 600})
     assert calls == 2
 
 

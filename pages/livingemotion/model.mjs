@@ -13,6 +13,11 @@ export const SECTIONS = resource({
 export const DIMENSIONS = resource({
   pleasure: t("愉悦"), arousal: t("唤醒"), stress: t("压力"), social_need: t("社交需求"),
 });
+// 页面五维：前四维参与运行期计算，底气只由模型异步写入、只用于展示。
+export const BOT_DIMENSIONS = resource({
+  pleasure: t("愉悦"), arousal: t("唤醒"), stress: t("压力"),
+  social_need: t("社交需求"), control: t("底气"),
+});
 export const ACTIONS = resource({
   "night.sleep": [t("手动入睡"), t("变更作息状态。不会在此页面直接发送晚安。")],
   "night.wake": [t("手动叫醒"), t("变更作息状态；后续行为仍须通过单一执行端与硬闸门。")],

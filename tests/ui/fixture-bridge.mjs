@@ -8,6 +8,7 @@ let rejectedSave = false;
 let rejectedRelationship = false;
 const relationships = makeRelationships();
 const pins = new Map();
+const styleSummaries = new Map();
 const clone = value => structuredClone(value);
 const fail = (code, message) => Promise.reject(Object.assign(new Error(message), { code }));
 const configKey = `livingemotion.synthetic.config.${scenario}`;
@@ -109,6 +110,13 @@ const bridge = {
         `合成人格说明：${params.persona_id}。\n\n${"第二段用于测试三行折叠与展开，不包含真实人格内容。".repeat(3)}`;
       return { status: "ok", data: { api_version: 1, persona_id: params.persona_id,
         description, characters: description.length, available: true } };
+    }
+    if (path === "console/style-summary") {
+      if (!params?.persona_id) return fail("validation_error", "缺少 persona_id");
+      const saved = styleSummaries.get(params.persona_id) || "";
+      const text = (saved || `合成风格摘要：${params.persona_id}。`).slice(0, 2000);
+      return { status: "ok", data: { api_version: 1, persona_id: params.persona_id,
+        text, characters: text.length, custom: Boolean(saved), available: true } };
     }
     if (path === "console/emotion-images") return { status: "ok", data: { api_version: 1, moods: [] } };
     if (path === "console/relationships") {
@@ -219,6 +227,20 @@ const bridge = {
       if (payload.expected_version !== item.version) return fail("version_conflict", "关系版本变化");
       item.score = payload.score; item.raw = payload.score * 10; item.frozen = payload.frozen; item.note = payload.note; item.version++;
       return { status: "ok", data: { api_version: 1, node: clone(item), version: item.version } };
+    }
+    if (path === "console/style-summary-save") {
+      if (Object.keys(payload).some(key => !["persona_id", "text", "reason"].includes(key))) {
+        return fail("validation_error", "非法风格摘要字段");
+      }
+      if (!payload.persona_id) return fail("validation_error", "缺少 persona_id");
+      if (typeof payload.text !== "string" || payload.text.length > 2000) {
+        return fail("validation_error", "风格摘要需为不超过 2000 字的文本");
+      }
+      if (payload.text.trim()) styleSummaries.set(payload.persona_id, payload.text.trim());
+      else styleSummaries.delete(payload.persona_id);
+      const text = styleSummaries.get(payload.persona_id) || `合成风格摘要：${payload.persona_id}。`;
+      return { status: "ok", data: { api_version: 1, persona_id: payload.persona_id, text,
+        characters: text.length, custom: styleSummaries.has(payload.persona_id), available: true } };
     }
     if (path === "console/preview") return { status: "ok", data: {
       api_version: 1, eligible: false, reasons: ["autonomy_disabled", "observe_only"],

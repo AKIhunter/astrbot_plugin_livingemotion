@@ -24,7 +24,7 @@ from ..contracts import (
     StateWrite,
     to_dict,
 )
-from ..domain.emotion import apply_emotion, decay_affect
+from ..domain.emotion import apply_emotion, decay_affect, emotion_policy
 from ..domain.night import apply_interaction
 from ..domain.relationship import RelationshipPolicy, apply_relationship, initial_relationship, relationship_stage
 from ..storage import SQLiteStore
@@ -229,10 +229,13 @@ class Projector:
                 night, event, context=context, now=now, runtime=interaction,
                 enabled=config.night_enabled,
             )
+        # 情绪强度按设置档位生效：规则增量与单次/同类闸门一起放大。
+        emotion_policy_value = emotion_policy(
+            getattr(config, "emotion_intensity", "normal"))
         emotion = apply_emotion(
             bot, event, now=now, observation=observation, relationship=relationship,
             night=night_result["night"], runtime=runtime("bot"),
-            enabled=config.enabled, mode=config.mode,
+            enabled=config.enabled, mode=config.mode, policy=emotion_policy_value,
         )
         relation = apply_relationship(
             relationship, event, now=now, runtime=runtime("relationship"),
@@ -268,6 +271,7 @@ class Projector:
                 observation=observation, relationship=relationship,
                 runtime=account[1] if account else {},
                 enabled=config.enabled, mode=config.mode,
+                policy=emotion_policy_value,
             )
             payload = deepcopy(relation["trace"]["after"])
             payload["_relationship_override_version"] = override_version

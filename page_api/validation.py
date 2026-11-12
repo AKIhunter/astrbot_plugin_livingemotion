@@ -24,6 +24,7 @@ QUERY_FIELDS = {
     "energy": SCOPE_FIELDS | {"page", "page_size", "event_type"},
     "settings-options": frozenset(),
     "persona-description": frozenset({"persona_id"}),
+    "style-summary": frozenset({"persona_id"}),
     "emotion-images": frozenset(),
     "emotion-image": frozenset({"mood", "index"}),
     "experience-task": frozenset({"request_id"}),
@@ -39,6 +40,7 @@ BODY_FIELDS = {
     "behavior-simulate": frozenset({"context_id", "persona_id", "emotion", "request_id"}),
     "emotion-image-save": frozenset({"mood", "data_url", "index", "remove"}),
     "experience-generate": frozenset({"request_id", "persona_id", "kind"}),
+    "style-summary-save": frozenset({"persona_id", "text", "reason"}),
 }
 # 上传走 JSON 的 base64 而不是 multipart：宿主的页面桥只转发 JSON，
 # 图片本体在 storage 层再做类型与 512 KB 上限校验。
@@ -86,7 +88,7 @@ def query_parameters(operation: str, query) -> dict:
         values[key] = items[0]
     if operation == "settings-options":
         return {}
-    if operation == "persona-description":
+    if operation in ("persona-description", "style-summary"):
         return {"persona_id": text(values.get("persona_id"), 512)}
     if operation == "experience-task":
         return {"request_id": request_identity(values.get("request_id"))}
@@ -213,6 +215,12 @@ async def body_parameters(operation: str, request) -> dict:
         invalid()
     if not isinstance(values, dict) or values.keys() - BODY_FIELDS[operation]:
         invalid()
+    if operation == "style-summary-save":
+        body = values.get("text")
+        if not isinstance(body, str) or len(body) > 2000 or "\x00" in body:
+            invalid()
+        return {"persona_id": text(values.get("persona_id"), 512), "text": body,
+                "reason": text(values.get("reason") or "控制台编辑风格摘要", 1000).strip()}
     if operation == "experience-generate":
         if values.get("kind") not in ("diary", "dream"):
             invalid()

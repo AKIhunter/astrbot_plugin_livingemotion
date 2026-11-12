@@ -9,7 +9,9 @@ timezone|Use an IANA timezone such as Asia/Shanghai or Asia/Tokyo for schedules 
 provider_id|Default background chat model. Empty follows the conversation model; dedicated task models may override it.|バックグラウンド生成の既定モデルです。空欄で会話モデルに従い、専用モデルがあれば優先します。
 fallback_provider_id|Fallback only before a request is sent. Unknown or timed-out requests are not automatically resent.|送信前のみ予備モデルに切り替えます。結果不明やタイムアウト時は自動再送しません。
 emotion_model_enabled|Optional model refinement. Local emotion rules remain active when off; interval and model budget apply.|モデルによる補助分析です。無効時もローカル規則は有効で、間隔と予算に従います。
-emotion_interval_seconds|Minimum seconds between model emotion analyses. Available events, model and budget are still required.|感情分析の最小間隔（秒）です。イベント、モデル、予算も必要です。
+emotion_interval_seconds|Minimum seconds between model emotion analyses. Quiet hours skip model calls and keep local rules only. Available events, model and budget are still required.|感情分析の最小間隔（秒）です。静默時間帯はモデルを呼ばず、ローカル規則のみです。イベント、モデル、予算も必要です。
+emotion_quiet_start_hour|Start hour of the quiet window, local 0–23. Equal start and end disables it. Only model analysis is skipped.|静かな時間帯の開始時刻（0～23 時）です。開始と終了が同じなら無効です。モデル分析のみを止めます。
+emotion_quiet_end_hour|End hour of the quiet window, local 0–23. Analysis resumes at this hour; start greater than end wraps overnight.|静かな時間帯の終了時刻（0～23 時）です。この時刻から分析を再開し、開始が終了より大きい場合は日付をまたぎます。
 autonomy_enabled|Allow proactive contact after saving. Authorized contacts, timing, sleep and budget gates still apply.|保存後の自発連絡を許可します。連絡先の許可、時間、睡眠、予算の制限に従います。
 autonomy_qq_ids|Comma or space separated QQ IDs, matching known private conversations only. Blank authorizes no new private contacts.|QQ 番号をカンマや空白で区切ります。既知の個別会話のみ照合し、空欄では新たな私聊を許可しません。
 autonomy_qq_group_ids|QQ group IDs, not member IDs. Blank covers known groups only when group autonomy is enabled; all gates still apply.|メンバー番号ではなく QQ グループ番号です。空欄は群の自発行動が有効な場合に既知の全群が対象です。
@@ -95,7 +97,9 @@ timezone|Asia/Shanghai or Asia/Tokyo.|Asia/Shanghai または Asia/Tokyo。
 provider_id|Choose a default model, then override it for diaries if needed.|既定モデルを選び、必要なら日記だけ専用モデルを指定します。
 fallback_provider_id|Select another configured chat model for pre-request fallback.|要求送信前の代替として別の設定済みモデルを選びます。
 emotion_model_enabled|For lower cost, leave off; for refinement, enable with a 300-second interval.|低コストなら無効に、補助分析を使うなら有効にして間隔を 300 秒にします。
-emotion_interval_seconds|300 means at least five minutes between analyses.|300 は分析間隔が最低 5 分です。
+emotion_interval_seconds|600 means at least ten minutes between analyses.|600 は分析間隔が最低 10 分です。
+emotion_quiet_start_hour|3 with an end of 8 skips model calls from 03:00 to 08:00 local time.|開始 3、終了 8 で現地時間 03:00～08:00 にモデルを呼びません。
+emotion_quiet_end_hour|Start 22 with an end of 6 skips overnight; set both equal to disable quiet hours.|開始 22、終了 6 は夜間を静かな時間帯にし、両方同じ値なら無効です。
 autonomy_enabled|Authorize private contacts and set a 90–240 minute random wait, then save.|個別連絡先を許可し、ランダム待機を 90～240 分にして保存します。
 autonomy_qq_ids|12345678, 23456789 allows these two known private contacts.|12345678, 23456789 は既知の個別連絡先 2 人を許可します。
 autonomy_qq_group_ids|34567890, 45678901 limits activity to those known groups. Blank requires the group switch.|34567890, 45678901 で対象群を限定します。空欄でも群スイッチは必要です。

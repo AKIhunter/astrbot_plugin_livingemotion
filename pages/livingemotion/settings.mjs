@@ -56,6 +56,7 @@ function orderedFields(fields) {
   fields.forEach(add);
   return result;
 }
+const STYLE_SUMMARY_MAX = 2000;
 const PERSONA_DESCRIPTION_CLAMP_CHARS = 60;
 // 只读人格说明：默认折叠 3 行，超长可展开；内容在 AstrBot 人格管理中编辑。
 function personaDescriptionBlock(select, loader) {
@@ -107,6 +108,75 @@ function personaDescriptionBlock(select, loader) {
   }
   select.addEventListener("change", render);
   void render();
+  return holder;
+}
+// LivingEmotion 自己的风格摘要：不改宿主人格；留空即恢复「原生人格前缀」。
+function styleSummaryBlock(select, styleApi, sessionPersona = "") {
+  // 下拉框为空表示「跟随当前会话人格」，这与后端实际使用的人格一致，仍可读写摘要。
+  const currentPersona = () => text(select.value, "") || sessionPersona;
+  const holder = node("div", undefined, "style-summary-editor");
+  const area = node("textarea", undefined, "style-summary-text");
+  area.rows = 5;
+  area.maxLength = STYLE_SUMMARY_MAX;
+  area.spellcheck = false;
+  area.placeholder = t("这里写 LivingEmotion 使用的人格风格；留空则使用原生人格前缀。");
+  const meta = node("p", undefined, "style-summary-meta");
+  const save = button(t("保存摘要"), () => submit());
+  const reset = button(t("恢复默认"), () => submit(""));
+  const actions = node("div", undefined, "style-summary-actions");
+  actions.append(save, reset);
+  holder.append(node("p", t("LivingEmotion 风格摘要"), "style-summary-title"),
+    node("p", t("仅本插件使用，不改原生人格；留空恢复默认（原生人格前缀）。"), "hint"),
+    area, meta, actions);
+  area.disabled = save.disabled = reset.disabled = true;
+  function setMeta(extra = "") {
+    meta.textContent = t("{0} / {1} 字", [String(area.value.length), String(STYLE_SUMMARY_MAX)]) + " · " +
+      (area.dataset.custom === "true" ? t("自定义摘要生效中") : t("未自定义，使用原生人格前缀")) + extra;
+  }
+  async function load() {
+    const personaId = currentPersona();
+    area.value = ""; area.dataset.custom = "false"; area.disabled = true;
+    save.disabled = reset.disabled = true;
+    if (!personaId) {
+      meta.textContent = t("先选择人格，再编辑风格摘要。");
+      return;
+    }
+    meta.textContent = t("正在读取风格摘要…");
+    try {
+      const data = await styleApi.load(personaId);
+      if (currentPersona() !== personaId) return;
+      area.value = text(data.text, "");
+      area.dataset.custom = String(data.custom === true);
+      area.disabled = false;
+      save.disabled = false;
+      reset.disabled = data.custom !== true;
+      setMeta();
+    } catch (_) {
+      meta.textContent = t("风格摘要读取失败；不影响其他设置。");
+    }
+  }
+  async function submit(forced) {
+    const personaId = currentPersona();
+    if (!personaId) return;
+    const value = forced === undefined ? area.value : forced;
+    area.disabled = save.disabled = reset.disabled = true;
+    meta.textContent = t("正在保存…");
+    try {
+      const data = await styleApi.save(personaId, value);
+      area.value = text(data.text, "");
+      area.dataset.custom = String(data.custom === true);
+      setMeta(" · " + t("已保存"));
+    } catch (_) {
+      meta.textContent = t("风格摘要保存失败；请稍后重试。");
+    } finally {
+      area.disabled = false;
+      save.disabled = false;
+      reset.disabled = area.dataset.custom !== "true";
+    }
+  }
+  area.addEventListener("input", () => setMeta());
+  select.addEventListener("change", load);
+  void load();
   return holder;
 }
 function setExpandedGroup(root, state, group, toggle = true) {
@@ -179,8 +249,10 @@ export function schedulePreview(values) {
   const clock = value => `${value >= 1440 ? t("次日 ") : t("当日 ")}${String(Math.floor(value / 60) % 24).padStart(2, "0")}:${String(Math.floor(value) % 60).padStart(2, "0")}${value % 1 ? ":30" : ""}`;
   return t("本地 {0}：夜间 {1} → 恍惚转困 {2} → 沉睡 {3} → 基础起床 {4}。实际起床另加本周期持久赖床值，不在页面重抽。", [text(values.timezone, t("时区未配置")), clock(start), clock((start + deepAt) / 2), clock(deepAt), clock(wakeAt)]);
 }
-export function renderSettings(root, state, options, updateControls, descriptionLoader) {
+export function renderSettings(root, state, options, updateControls, descriptionLoader, styleApi) {
   const experienceOnly = state.section === "experience";
+  // 配置里 persona_id 为空表示跟随宿主当前会话人格，风格摘要仍需按该人格读写。
+  const sessionPersona = text(state.data?.persona?.id ?? state.data?.selection?.persona_id, "");
   root.replaceChildren(); root.hidden = state.section !== "settings" && !experienceOnly;
   if (root.hidden) return;
   root.append(node("p", t("一份原生配置，一次保存。普通分区只阅读状态；以下更改统一提交到 AstrBot。"), "hint"),
@@ -395,11 +467,42 @@ export function renderSettings(root, state, options, updateControls, description
       const body = field.advanced || advancedPattern.test(field.key) ? advancedBody : common;
       body.append(wrapper);
       // 人格说明只读展示：内容来自宿主 personas.system_prompt，本页不写入。
-      if (field.key === "persona_id" && typeof descriptionLoader === "function") {
-        body.append(personaDescriptionBlock(input, descriptionLoader));
+      if (field.key === "persona_id") {
+        if (typeof descriptionLoader === "function") {
+          body.append(personaDescriptionBlock(input, descriptionLoader));
+        }
+        if (styleApi && typeof styleApi.load === "function" && typeof styleApi.save === "function") {
+          body.append(styleSummaryBlock(input, styleApi, sessionPersona));
+        }
       }
     }
     section.append(common);
+    if (group === "emotion") {
+      // 静默时段是两个数字，直接给一行人类能读的摘要，省得自己推算跨午夜。
+      // 此处 section 尚未挂到 root，必须在 section 内查找输入框。
+      const startInput = section.querySelector("#config-emotion_quiet_start_hour");
+      const endInput = section.querySelector("#config-emotion_quiet_end_hour");
+      if (startInput && endInput) {
+        const summary = node("p", undefined, "hint");
+        summary.id = "quiet-hours-preview";
+        summary.dataset.quietHours = "";
+        const hour = raw => {
+          const value = Number.parseInt(raw, 10);
+          return Number.isInteger(value) && value >= 0 && value <= 23 ? value : null;
+        };
+        const clock = value => `${String(value).padStart(2, "0")}:00`;
+        const render = () => {
+          const start = hour(startInput.value), end = hour(endInput.value);
+          if (start == null || end == null) summary.textContent = t("静默时段请填写 0–23 的整数小时。");
+          else if (start === end) summary.textContent = t("静默时段已关闭：全天都可能调用模型分析情绪。");
+          else summary.textContent = t("静默时段（本地时区）：每天 {0} 不调用模型；本地情绪规则仍生效。", [
+            start < end ? `${clock(start)}–${clock(end)}` : `${clock(start)}–${t("次日 ")}${clock(end)}`]);
+        };
+        render();
+        for (const input of [startInput, endInput]) input.addEventListener("input", render);
+        section.append(summary);
+      }
+    }
     if (group === "persona") {
       // 这两个选项经常被误解，写清楚「拆分 / 全局」到底影响什么。
       section.append(node("h3", t("拆分与全局的区别"), "settings-subhead"),

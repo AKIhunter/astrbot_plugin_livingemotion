@@ -101,7 +101,7 @@ TA 情绪分析|TA emotion analysis|TA の感情分析
 观察标签|Observation labels|観察ラベル
 当前所选用户会话中的 TA 情绪；对方观察单独显示。|TA emotions in the selected user conversation; human observations are shown separately.|選択したユーザーの会話における TA の感情です。相手の観察は別に表示します。
 请选择私聊及具体用户会话查看 TA 对该用户的情绪；当前显示所选人格/范围状态，不推测逐用户情绪。|Select a private user conversation to view TA emotions toward that user. The current persona/scope state does not imply per-user emotions.|個別ユーザーの私聊を選ぶと、そのユーザーに対する TA の感情を表示します。現在は人格・範囲の状態で、個人別の感情は推測しません。
-四维状态分析|Four-dimensional state analysis|4 次元状態分析
+五维状态分析|Five-dimensional state analysis|5 次元状態分析
 实线与基准在同一归一坐标。情绪随时间恢复；刺激变化以实际记录为依据，不为打开页面调用模型。|Current and baseline use the same normalized scale. Emotions recover over time; changes follow recorded events. Opening this page does not call a model.|現在値と基準値は同じ正規化座標です。感情は時間とともに回復し、変化は記録に基づきます。ページを開いてもモデルを呼び出しません。
 没有已授权人格，不能查询关系。请刷新宿主范围。|No authorized persona. Refresh host scopes to query relationships.|許可された人格がありません。ホストの範囲を更新してください。
 上一页|Previous|前へ
@@ -272,6 +272,20 @@ TA 维度|TA dimension|TA の次元
 唤醒|Arousal|覚醒
 压力|Stress|ストレス
 社交需求|Social need|交流欲求
+底气|Poise|自信
+保守|Conservative|控えめ
+激进|Aggressive|積極的
+情绪与五维指标说明|Emotion and five-dimension metric guide|感情と五次元指標の説明
+数字表示 TA 当前情绪的强弱。点每行右侧的问号，可以看到这个数值为什么会升降。|The numbers show how strong TA's emotions are right now. Click the question mark on each row to see why the value rises or falls.|数値は TA の現在の感情の強さを表します。各行の右側の「?」を押すと、その値が上下する理由が表示されます。
+指标|Metric|指標
+什么情况下升高|When it rises|上がるとき
+什么情况下回落|When it falls|下がるとき
+回落速度|Recovery speed|戻る速さ
+信号|Signal|シグナル
+识别方式|Detected by|検出方法
+查看{0}的说明|View the explanation for {0}|{0} の説明を見る
+当前档位「{0}」：单次变化最多 {1}，同一类刺激 5 分钟内累计最多 {2}；换档位等比放大，衰减速度不变。|Current preset "{0}": up to {1} per event and {2} per stimulus type within 5 minutes. Other presets scale proportionally; decay speed is unchanged.|現在のプリセット「{0}」：1 回の変化は最大 {1}、同じ種類の刺激は 5 分間に最大 {2}。プリセットを変えると比例して拡大し、減衰速度は変わりません。
+表中是「{0}」档的生效增量；没有新的互动时，这些数值会随着时间慢慢回落到平常水平。|The table shows effective deltas for the "{0}" preset; without new interactions the values slowly return to their usual level.|表は「{0}」プリセットの実効増分です。新しい交流がないと、値は時間とともに平常水準へ戻ります。
 手动入睡|Put to sleep|手動で入眠
 变更作息状态。不会在此页面直接发送晚安。|Change sleep state. This page does not directly send goodnight messages.|睡眠状態を変更します。このページから直接おやすみの挨拶を送信しません。
 手动叫醒|Wake up|手動で起こす
@@ -463,7 +477,7 @@ QQ群|QQ group|QQ グループ
 未检测到 AstrBot 页面连接。请从已登录的宿主插件详情页打开。|No AstrBot page bridge detected. Open from the signed-in host plugin details.|AstrBot のページ接続がありません。ログイン済みホストのプラグイン詳細から開いてください。
 请求超时，执行结果不明。请核对记录，不要重复提交。|Request timed out; execution is unknown. Check records; do not resubmit.|タイムアウトで実行結果が不明です。記録を確認し、再送信しないでください。
 读取超时，请手动刷新。|Loading timed out; refresh manually.|読込がタイムアウトしました。手動で更新してください。
-TA 四维情绪雷达，实线为当前，虚线为领域基准；数值见下方|Four-dimensional TA emotion radar. Solid: current; dashed: domain baseline. Values below.|TA の 4 次元感情レーダー。実線は現在、破線は基準。数値は下に表示します
+TA 情绪雷达，实线为当前，虚线为领域基准；数值见下方|TA emotion radar. Solid: current; dashed: domain baseline. Values below.|TA の感情レーダー。実線は現在、破線は基準。数値は下に表示します
 当前维度未完整采集|Current dimensions are incomplete|現在の次元データが不完全です
 实线 当前 · 虚线 真实基准|Solid: current · dashed: actual baseline|実線：現在 · 破線：実際の基準
 基准 {0}|Baseline {0}|基準 {0}
@@ -687,7 +701,7 @@ TA 的生活控制台|TA life console|TA の生活コンソール
 全局共享的是人格层面的数值；具体某个人、某个群的情绪请切换查看范围。|Global shows persona-level numbers; switch the view scope to inspect one person or group.|全体表示は人格レベルの数値のみです。個人やグループの感情は表示範囲を切り替えてください。
 作息|Schedule|作息
 更新|Updated|更新
-当前人格的四维情绪球|Persona 4-axis emotion sphere|現在の人格の四次元感情球
+当前人格的五维情绪球|Current persona's five-dimension emotion sphere|現在の人格の五次元感情球
 全局视图只显示共享的人格数值投影，不展示具体会话、账号或观察记录。要查看即时情绪，请在顶部「查看范围」选择私聊或群聊。|Global view only shows the shared persona projection, never a specific conversation, account or observation. To see live emotion, choose Private or Group in View scope above.|全体表示は共有された人格の投影のみで、特定の会話・アカウント・観察記録は表示しません。即時の感情は上の「表示範囲」で私聊かグループを選んでください。
 宿主没有返回可用人格，无法在此切换。|The host returned no personas, so switching is unavailable here.|ホストが利用可能な人格を返さないため、ここでは切り替えできません。
 切换人格|Switch persona|人格を切り替え
@@ -864,7 +878,6 @@ TA 正在睡觉或刚醒|TA is asleep or just woke|TA は睡眠中か起床直�
 宿主没有返回这个生成动作，请确认插件已启用并刷新页面。|The host did not return this generation action; confirm the plugin is enabled and refresh the page.|ホストがこの生成操作を返していません。プラグインが有効か確認して再読み込みしてください。
 好感编辑已关闭：可在「设置 → 关系 → 允许在关系页修改好感」中打开。|Relationship editing is off. Turn on “Allow editing affinity on the relationship page” under Settings → Relationships.|好感編集はオフです。「設定 → 関係 → 関係ページで好感の編集を許可」をオンにしてください。
 拖拽旋转|Drag to rotate|ドラッグで回転
-当前人格的六维情绪球|Current persona's six-dimension emotion orb|現在の人格の六次元感情球
 全局情绪|Global emotion|全体の感情
 当前是全局范围：这里没有「对某个人的情绪」，展示的是这个人格在全局层面的总体情绪状态，由全部已授权会话的互动共同累积。|This is the global scope: there is no emotion toward a specific person here. What you see is the persona-level overall emotional state accumulated from every authorized conversation.|ここは全体表示です。「特定の相手への感情」はなく、ここに表示されるのは、許可されたすべての会話の交流から積み上がった人格レベルの全体的な感情状態です。
 要查看「TA 对此人的情绪」或某个会话的独立状态，请在上方「查看范围」选择私聊或群聊，再选具体会话。|To see the bot's feelings toward one person or a single conversation's state, pick a private chat or group under View scope above.|特定の相手への感情や個別の会話の状態を見るには、上の「表示範囲」で個人チャットかグループを選んでください。
@@ -965,5 +978,23 @@ const saveBar = `保存更改|Save changes|変更を保存
 有 {0} 项也在别处修改。请核对下方内容，再选择保留我的修改或放弃更改。|{0} fields also changed elsewhere. Review below, then keep or discard your changes.|{0} 項目が別の場所でも変更されました。下の内容を確認し、変更を保持するか破棄してください。
 最新配置已包含你的修改。|Your changes are already in the latest configuration.|最新の設定に変更が反映されています。
 已读取最新配置并保留你的修改，请再次保存。|Latest configuration loaded and your edits kept. Save again to submit.|最新の設定を読み込み、編集内容を保持しました。再度保存してください。
-已保留你的修改，点击保存提交。|Your edits are kept. Click Save to submit.|編集内容を保持しました。保存を押して反映してください。`;
+已保留你的修改，点击保存提交。|Your edits are kept. Click Save to submit.|編集内容を保持しました。保存を押して反映してください。
+LivingEmotion 风格摘要|LivingEmotion style summary|LivingEmotion スタイル要約
+仅本插件使用，不改原生人格；留空恢复默认（原生人格前缀）。|Used only by this plugin; the native persona is untouched. Leave empty to restore the native persona prefix.|このプラグイン専用です。原生人格は変更しません。空欄にすると原生人格の先頭部分に戻ります。
+这里写 LivingEmotion 使用的人格风格；留空则使用原生人格前缀。|Write the persona style LivingEmotion should use; leave empty to use the native persona prefix.|LivingEmotion が使う人格スタイルを書きます。空欄なら原生人格の先頭部分を使います。
+保存摘要|Save summary|要約を保存
+恢复默认|Restore default|既定に戻す
+正在读取风格摘要…|Loading style summary…|スタイル要約を読み込み中…
+风格摘要读取失败；不影响其他设置。|Failed to load the style summary; other settings are unaffected.|スタイル要約の読み込みに失敗しました。他の設定には影響しません。
+先选择人格，再编辑风格摘要。|Select a persona before editing the style summary.|人格を選択してからスタイル要約を編集してください。
+风格摘要保存失败；请稍后重试。|Failed to save the style summary; please retry.|スタイル要約の保存に失敗しました。後でもう一度お試しください。
+自定义摘要生效中|Custom summary active|カスタム要約を使用中
+未自定义，使用原生人格前缀|Not customized; using the native persona prefix|未設定のため、原生人格の先頭部分を使用
+已保存|Saved|保存しました
+{0} / {1} 字|{0} / {1} characters|{0} / {1} 文字
+情绪静默开始（小时）|Emotion quiet start (hour)|感情の静かな時間 開始（時）
+情绪静默结束（小时）|Emotion quiet end (hour)|感情の静かな時間 終了（時）
+静默时段请填写 0–23 的整数小时。|Enter an integer hour from 0 to 23 for quiet hours.|静かな時間は 0～23 の整数で入力してください。
+静默时段已关闭：全天都可能调用模型分析情绪。|Quiet hours are off: the model may analyze emotion at any hour.|静かな時間は無効です。どの時間帯でもモデルが感情を分析する可能性があります。
+静默时段（本地时区）：每天 {0} 不调用模型；本地情绪规则仍生效。|Quiet hours (local time): no model calls {0} daily; local emotion rules still apply.|静かな時間（現地時間）：毎日 {0} はモデルを呼びません。ローカル感情ルールは引き続き有効です。`;
 export const messages = Object.fromEntries((rows + "\n" + more + "\n" + shell + "\n" + daily + "\n" + saveBar).split("\n").map(row => { const [key, en, ja] = row.split("|"); return [key, [en, ja]]; }));

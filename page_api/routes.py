@@ -12,6 +12,7 @@ ROUTES = (
     ("preview", "POST"), ("action", "POST"),
     ("scopes", "GET"), ("relationships", "GET"), ("relationship", "POST"),
     ("energy", "GET"), ("settings-options", "GET"), ("persona-description", "GET"),
+    ("style-summary", "GET"), ("style-summary-save", "POST"),
     ("memory-sync", "POST"), ("behavior-simulate", "POST"),
     ("emotion-images", "GET"), ("emotion-image", "GET"), ("emotion-image-save", "POST"),
     ("experience-generate", "POST"), ("experience-task", "GET"),
@@ -73,6 +74,12 @@ class PageAPI:
     async def persona_description(self):
         return await self._dispatch("persona-description")
 
+    async def style_summary(self):
+        return await self._dispatch("style-summary")
+
+    async def style_summary_save(self):
+        return await self._dispatch("style-summary-save")
+
     async def memory_sync(self):
         return await self._dispatch("memory-sync")
 
@@ -108,7 +115,8 @@ class PageAPI:
                 parameters = query_parameters(operation, request.query)
             else:
                 parameters = await body_parameters(operation, request)
-            if operation in ("config", "action", "relationship", "memory-sync", "experience-generate", "behavior-simulate"):
+            if operation in ("config", "action", "relationship", "memory-sync", "experience-generate",
+                             "behavior-simulate", "style-summary-save"):
                 parameters["actor_id"] = actor_id
             # Parsing may yield; never start business work on a stopped instance.
             if self._closed:

@@ -187,7 +187,7 @@ async def test_state_baseline_and_global_no_action_route(le_store, le_context):
     assert not next(a for a in state["actions"] if a["id"] == "behavior.send")["enabled"]
     assert state["night"]["energy_percent"] == 74.1 and state["night"]["energy"] == 0.741
     assert state["bot_state"]["baseline"] == {
-        "pleasure": 0.5, "arousal": 0.3, "stress": 0, "social_need": 0.3}
+        "pleasure": 0.5, "arousal": 0.3, "stress": 0, "social_need": 0.3, "control": 0.5}
     assert state["night"]["display_state"] == "awake"
     assert state["observation"] is None
     with pytest.raises(ApplicationError):
@@ -204,7 +204,8 @@ async def test_console_baseline_and_decay_share_actual_policy(le_store, le_conte
     ))
     assert committed.accepted
     state = await ConsoleDouble(le_store, le_context).console_state()
-    expected = {"pleasure": 0.6, "arousal": 0.5, "stress": 0.1, "social_need": 0.4}
+    expected = {"pleasure": 0.6, "arousal": 0.5, "stress": 0.1, "social_need": 0.4,
+                "control": 0.5}
     assert state["bot_state"]["baseline"] == expected
     assert state["bot_state"]["dimensions"] == expected
 

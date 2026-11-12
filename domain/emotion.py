@@ -9,7 +9,7 @@ store remains responsible for durable idempotency beyond the live event TTL.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import json
 import math
 from typing import Any, Mapping
@@ -23,6 +23,68 @@ from ..contracts import (
 RULE_VERSION = "emotion-2"
 DIMENSIONS = ("pleasure", "arousal", "stress", "social_need")
 BASELINE = (0.0, 0.3, 0.0, 0.3)
+# 轮询结果写回基准的平滑系数：每次模型分析只把基准拉向当前值 30%，
+# 避免单条消息把长期基准带飞。本地规则仍只在基准上做即时增减。
+BASELINE_BLEND = 0.3
+# 底气（掌控感）：中性 0.5，只由模型轮询写入，EMA 0.2 约等于最近 5 次样本；
+# 没有新样本时按 60 分钟半衰期回落到中性，避免长期停留在一个僵尸数值上。
+CONTROL_NEUTRAL = 0.5
+CONTROL_BLEND = 0.2
+CONTROL_HALF_LIFE = 3600.0
+# 情绪强度预设：只放大规则增量与单次/同类闸门，不改半衰期与衰减速度。
+INTENSITY_PRESETS = {"gentle": 1.35, "normal": 1.6, "intense": 2.0}
+DEFAULT_EVENT_CAP = 0.15
+DEFAULT_SIMILAR_BUDGET = 0.30
+
+
+def baseline_values(state: BotAffect,
+                    default: tuple[float, ...] = BASELINE) -> tuple[float, ...]:
+    """情绪基准：还没被轮询写过时取策略默认值，旧状态因此保持原行为。"""
+    if not state.baseline_refined:
+        return tuple(default)
+    return tuple(getattr(state, f"baseline_{name}") for name in DIMENSIONS)
+
+
+def _baseline_fields(state: BotAffect) -> dict[str, Any]:
+    """原样带上基准字段：衰减和规则都不改基准，只由轮询写回。"""
+    return {**{f"baseline_{name}": getattr(state, f"baseline_{name}") for name in DIMENSIONS},
+            "baseline_refined": state.baseline_refined}
+
+
+def shift_baseline(state: BotAffect, *,
+                   blend: float = BASELINE_BLEND) -> BotAffect:
+    """把一次轮询结果写成新的情绪基准（平滑移动，不直接覆盖）。"""
+    _number(blend, "blend", 0, 1)
+    values = tuple(getattr(state, name) for name in DIMENSIONS)
+    moved = tuple(base + (value - base) * blend
+                  for base, value in zip(baseline_values(state), values))
+    return replace(state, **{f"baseline_{name}": value
+                             for name, value in zip(DIMENSIONS, moved)},
+                   baseline_refined=True)
+
+
+def control_value(state: BotAffect, now: float) -> float:
+    """当前底气：没有新样本时按半衰期回落到中性 0.5。"""
+    _number(now, "now", 0)
+    if now <= state.control_at:
+        return state.control
+    elapsed = now - state.control_at
+    return CONTROL_NEUTRAL + (state.control - CONTROL_NEUTRAL) * 2 ** (
+        -elapsed / CONTROL_HALF_LIFE)
+
+
+def apply_control(state: BotAffect, value: Any, *, now: float) -> BotAffect:
+    """模型判定的底气：先按时间衰减，再用 EMA 0.2 平滑写入。
+
+    只写 control/control_at，不动 updated_at，因此不会打断四维的情绪衰减。
+    """
+    _number(now, "now", 0)
+    if value is None:
+        return state
+    current = control_value(state, now)
+    target = _number(value, "control", 0, 1)
+    return replace(state, control=current + (target - current) * CONTROL_BLEND,
+                   control_at=now)
 
 # Deltas describe the Bot's appraisal, never a copy of the speaker's feeling.
 RULES = {
@@ -31,8 +93,9 @@ RULES = {
     "constructive_criticism": (0.04, 0.03, -0.02, -0.01),
     "teaching": (0.06, 0.04, -0.03, -0.01),
     "surprise": (0.02, 0.12, 0.02, 0.01),
-    "sadness": (0.0, 0.03, 0.02, -0.02),
-    "anxiety": (0.0, 0.04, 0.03, -0.02),
+    # 对方难过/焦虑时更想靠近陪伴：社交需求上升，而不是跟着退开。
+    "sadness": (0.0, 0.03, 0.02, 0.04),
+    "anxiety": (0.0, 0.04, 0.03, 0.04),
     "joy": (0.08, 0.04, -0.02, -0.03),
     "care": (0.12, -0.02, -0.06, -0.06),
     "gratitude": (0.10, 0.02, -0.04, -0.05),
@@ -95,6 +158,8 @@ class EmotionPolicy:
     similar_budget: float = 0.30
     max_events: int = 192
     sensitivity: float = 1.0
+    # 情绪强度增益：规则增量与闸门一起放大，默认 1.0 保持原有数值。
+    rule_gain: float = 1.0
 
     @property
     def baseline(self) -> tuple[float, ...]:
@@ -107,13 +172,23 @@ class EmotionPolicy:
             raise ValueError("half_lives: expected four dimensions")
         for value in self.half_lives:
             _number(value, "half_life", 1, 86400)
-        _number(self.event_cap, "event_cap", 0, 0.15)
+        # 上限放到 0.30：intense 档位是 0.15 × 2.0。
+        _number(self.event_cap, "event_cap", 0, 0.30)
         _number(self.similar_budget, "similar_budget", 0, 1)
         _number(self.sensitivity, "sensitivity", 0, 1)
+        _number(self.rule_gain, "rule_gain", 0, 3)
         _integer(self.similar_limit, "similar_limit", 1)
         _integer(self.max_events, "max_events", 1)
         if self.max_events > 192:
             raise ValueError("max_events exceeds bounded state payload budget")
+
+
+def emotion_policy(intensity: str = "normal") -> EmotionPolicy:
+    """按情绪强度预设构造策略：三档只改增量与闸门，不碰衰减。"""
+    gain = INTENSITY_PRESETS.get(intensity, INTENSITY_PRESETS["normal"])
+    return EmotionPolicy(rule_gain=gain,
+                         event_cap=round(DEFAULT_EVENT_CAP * gain, 4),
+                         similar_budget=round(DEFAULT_SIMILAR_BUDGET * gain, 4))
 
 
 def resolve_mode(*, enabled: bool = True, mode: str = "active",
@@ -298,9 +373,10 @@ def decay_affect(state: BotAffect, *, now: float,
     if now <= state.updated_at:
         return state
     elapsed = now - state.updated_at
+    bases = baseline_values(state, policy.baseline)
     values = tuple(
         baseline + (getattr(state, name) - baseline) * 2 ** (-elapsed / half_life)
-        for name, baseline, half_life in zip(DIMENSIONS, policy.baseline, policy.half_lives)
+        for name, baseline, half_life in zip(DIMENSIONS, bases, policy.half_lives)
     )
     evidence = tuple(ref for ref in state.evidence
                      if ref.expires_at is not None and ref.expires_at > now)
@@ -309,7 +385,8 @@ def decay_affect(state: BotAffect, *, now: float,
                      labels=_labels(values, concern=concern), evidence=evidence,
                      reason_codes=(("appraisal_concern", "time_decay") if concern
                                    else ("time_decay",)),
-                     rule_version=RULE_VERSION)
+                     rule_version=RULE_VERSION, control=control_value(state, now),
+                     control_at=now, **_baseline_fields(state))
 
 
 def observe_human(event: Event, *, now: float,
@@ -357,7 +434,8 @@ def _model_delta(value: Any, cap: float) -> tuple[float, ...]:
         if text.startswith("```json\n") and text.endswith("\n```"):
             text = text[8:-4]
         value = json.loads(text, object_pairs_hook=_unique_object)
-    if not isinstance(value, Mapping) or set(value) - {"rule_version", "delta", "confidence"}:
+    if not isinstance(value, Mapping) or set(value) - {
+            "rule_version", "delta", "confidence", "control"}:
         raise ValueError("model_schema")
     if value.get("rule_version") not in (RULE_VERSION, "emotion-1"):
         raise ValueError("model_version")
@@ -434,7 +512,8 @@ def apply_emotion(
     if relationship is not None and relationship.score >= 450 and set(signals) & {
             "sadness", "anxiety", "care"}:
         weight *= 2  # 亲近加倍关怀；单事件情绪上限仍然有效，不双倍刷好感。
-    delta = [sum(RULES[s][i] for s in signals) * weight for i in range(4)]
+    delta = [sum(RULES[s][i] for s in signals) * weight * policy.rule_gain
+             for i in range(4)]
     reasons = ["rule_" + signal for signal in signals]
     if model_suggestion is not None:
         try:
@@ -465,7 +544,10 @@ def apply_emotion(
                 if weight > 0 else base.evidence)
     affect = BotAffect(**dict(zip(DIMENSIONS, values)), updated_at=now,
                        labels=_labels(values, concern=concern), evidence=evidence,
-                       reason_codes=tuple(reasons), rule_version=RULE_VERSION)
+                       reason_codes=tuple(reasons), rule_version=RULE_VERSION,
+                       # 底气与四维分开走：规则改情绪时不重置模型写下的底气。
+                       control=base.control, control_at=base.control_at,
+                       **_baseline_fields(base))
     result.update(
         affect=affect,
         observation=observe_human(event, now=now, previous=result["observation"],

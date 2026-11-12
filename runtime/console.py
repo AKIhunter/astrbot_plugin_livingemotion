@@ -11,7 +11,9 @@ from ..config import Config, LEGACY_FIELDS
 from .config_help import field_help, field_parent
 from .. import contracts
 from ..contracts import BotAffect, Context, HumanObservation, SceneKind, to_dict
-from ..domain.emotion import DIMENSIONS, EmotionPolicy, decay_affect
+from ..domain.emotion import (
+    DIMENSIONS, baseline_values, decay_affect, emotion_policy,
+)
 from ..domain.dreaming import six_emotions, apply_bonus, weather_bonus
 from ..domain.relationship import relationship_stage_dto
 from ..storage.console_data import (
@@ -47,7 +49,8 @@ def behavior_transport_health(application, context):
 
 def dimensions(value):
     return {"pleasure": (value.pleasure + 1) / 2, "arousal": value.arousal,
-            "stress": value.stress, "social_need": value.social_need}
+            "stress": value.stress, "social_need": value.social_need,
+            "control": max(0.0, min(1.0, value.control))}
 
 
 def _optional_int(value):
@@ -75,7 +78,7 @@ def emotion_analysis(value: BotAffect):
         "arousal": arousal,
         "stress": stress,
         "social_need": social,
-        "control": max(0.0, min(1.0, 0.5 + pleasure * 0.25 - stress * 0.35)),
+        "control": max(0.0, min(1.0, value.control)),
         "certainty": max(0.0, min(1.0, 0.75 - arousal * 0.2 - stress * 0.25)),
     }
     return {"emotions": emotions, "dimensions": dimensions_,
@@ -117,6 +120,9 @@ FIELD_LABELS = {
     "dream_half_life_seconds": "梦境清晰度半衰期", "experience_body_chars": "日记与梦境字数上限",
     "model_concurrency": "模型并发上限", "queue_size": "模型队列上限",
     "model_daily_limit": "每日模型调用上限", "emotion_interval_seconds": "情绪分析间隔",
+    "emotion_quiet_start_hour": "情绪静默开始（小时）",
+    "emotion_quiet_end_hour": "情绪静默结束（小时）",
+    "emotion_intensity": "情绪强度",
     "model_input_tokens": "模型输入上限", "model_output_tokens": "模型输出上限",
     "model_timeout_seconds": "模型调用超时", "window_days": "聊天素材保留时间",
     "window_per_scope": "每个会话素材上限", "window_global": "全部素材上限",
@@ -374,7 +380,8 @@ class Console:
     def config_dto(self, options=None):
         enums = {"mode": ["active", "observe_only"], "memory_mode": ["none", "local_lite", "external"],
                  "persona_mode": ["follow", "explicit", "none"], "wake_mode": ["chat", "never", "both"],
-                 "behavior_style": ["gentle", "balanced", "lively"]}
+                 "behavior_style": ["gentle", "balanced", "lively"],
+                 "emotion_intensity": ["gentle", "normal", "intense"]}
         enum_labels = {"active": "正常运行", "observe_only": "仅观察", "none": "不使用",
                        "local_lite": "旧版本地记录", "external": "外部记忆",
                        "follow": "跟随会话人格", "explicit": "指定人格",
@@ -397,10 +404,14 @@ class Console:
             parent, level = field_parent(f.name)
             item.update(field_help(f.name), parent=parent, level=level)
             if f.name in enums:
-                item["options"] = [{"value": v, "label": enum_labels[v]} for v in enums[f.name]]
+                # gentle 在主动节奏里是「轻柔」，在情绪强度里是「保守」，按字段取标签。
+                label_of = ({"gentle": "保守", "normal": "平常", "intense": "激进"}
+                            if f.name == "emotion_intensity" else enum_labels)
+                item["options"] = [{"value": v, "label": label_of[v]} for v in enums[f.name]]
             if type(f.default) in (int, float):
                 unit = ("秒" if f.name.endswith("_seconds") else
                         "分钟" if "minutes" in f.name else "天" if f.name.endswith("_days") else
+                        "时" if f.name.endswith("_hour") else
                         "Token" if f.name.endswith("_tokens") else
                         "点/分钟" if f.name.endswith("_per_minute") else
                         "点/次" if f.name == "energy_reply_cost" else "次")
@@ -416,6 +427,8 @@ class Console:
             if f.name in ("behavior_random_min_minutes", "behavior_random_max_minutes",
                           "behavior_idle_minutes"):
                 item.update(min=1, max=1440 if f.name == "behavior_idle_minutes" else 10080)
+            if f.name in ("emotion_quiet_start_hour", "emotion_quiet_end_hour"):
+                item.update(min=0, max=23)
             result_fields.append(item)
         return {
             "revision": self.config_revision, "source": "AstrBot native plugin configuration",
@@ -570,13 +583,21 @@ class Console:
         owned_state = getattr(self.store, "get_owned_state", None)
         bot_record = (await owned_state(context, "bot") if callable(owned_state)
                       else await self.store.get_state(context, "bot"))
-        policy = getattr(self, "emotion_policy", EmotionPolicy())
+        policy = getattr(self, "emotion_policy", None)
+        if policy is None:
+            # 没有注入策略时按设置里的情绪强度档位构造，页面数值与运行期一致。
+            policy = emotion_policy(getattr(self.config, "emotion_intensity", "normal"))
         if callable(policy):
             policy = policy()
         bot = decay_affect(snapshot(bot_record, BotAffect), now=self.store.clock(), policy=policy)
-        baseline = policy.baseline
-        baseline = (dimensions(baseline) if isinstance(baseline, BotAffect)
-                    else dimensions(BotAffect(**dict(zip(DIMENSIONS, baseline)))))
+        policy_raw = policy.baseline
+        policy_values = (tuple(getattr(policy_raw, name) for name in DIMENSIONS)
+                         if isinstance(policy_raw, BotAffect) else tuple(policy_raw))
+        baseline = dimensions(BotAffect(**dict(zip(DIMENSIONS, policy_values))))
+        # 情绪基准随每次模型轮询平滑更新并持久化在 bot 状态里；
+        # 还没被轮询写过的状态仍然给出策略里的默认基准。
+        bot_baseline = dimensions(BotAffect(**dict(zip(
+            DIMENSIONS, baseline_values(bot, policy_values)))))
         obs_record = (await self.store.get_state(context, "observation", context.account_id)
                       if not global_view else None)
         obs = snapshot(obs_record, HumanObservation) if obs_record else None
@@ -643,7 +664,7 @@ class Console:
                         "source": "AstrBot native", "revision": context.persona_revision,
                         "description": source.persona.prompt if source else "",
                         "description_available": bool(source and source.persona.prompt)},
-            "bot_state": {"dimensions": dimensions(bot), "baseline": baseline,
+            "bot_state": {"dimensions": dimensions(bot), "baseline": bot_baseline,
                           "label": ", ".join(bot.labels),
                           "emotion_analysis": emotion_analysis(bot),
                           "reason": affect_reason_text(bot.reason_codes),
@@ -1256,6 +1277,44 @@ class Console:
                 description, available = "", False
         return {"api_version": 1, "persona_id": persona_id, "description": description,
                 "characters": len(description), "available": available}
+
+    async def console_style_summary(self, persona_id):
+        """读取 LivingEmotion 自己保存的人格风格摘要；没有存值时回退原生人格截断。"""
+        self._open()
+        manager = getattr(getattr(self, "host", None), "persona_manager", None)
+        getter = getattr(manager, "get_persona", None)
+        prompt, available = "", False
+        if callable(getter):
+            try:
+                persona = getter(persona_id)
+                if inspect.isawaitable(persona):
+                    persona = await persona
+                value = getattr(persona, "system_prompt", None) if persona is not None else None
+                if isinstance(value, str) and len(value) <= 16000:
+                    prompt, available = value, True
+            except Exception:
+                prompt, available = "", False
+        from ..storage.persona_style import read_style, style_key
+        saved = ""
+        try:
+            saved = await read_style(self.store, style_key(self.instance_id, persona_id))
+        except Exception:
+            saved = ""
+        text = saved.strip() or prompt.strip()[:1500]
+        return {"api_version": 1, "persona_id": persona_id, "text": text,
+                "characters": len(text), "custom": bool(saved.strip()), "available": available}
+
+    async def console_style_summary_save(self, persona_id, text, *, actor_id, reason=""):
+        """保存或清空（空串=恢复默认）当前人格的风格摘要，原生人格不动。"""
+        self._open()
+        self._actor(actor_id, reason or "控制台编辑风格摘要")
+        from ..storage.persona_style import MAX_CHARS, style_key, write_style
+        if not isinstance(text, str) or len(text) > MAX_CHARS or "\x00" in text:
+            raise ApplicationError("validation_error", "风格摘要最多 2000 字")
+        saved = await write_style(
+            self.store, style_key(self.instance_id, persona_id), text.strip())
+        return {"api_version": 1, "persona_id": persona_id, "text": saved,
+                "characters": len(saved), "custom": bool(saved)}
 
     async def console_settings_options(self):
         self._open()

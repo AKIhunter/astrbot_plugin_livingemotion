@@ -45,6 +45,8 @@ class ManualExperienceRuntime:
         identifier, prompt, persona_revision = await self.manual_persona()
         if persona_id != identifier:
             raise ValueError("persona_changed")
+        # 使用 LivingEmotion 自己的风格摘要，不把原生人格整段塞进请求。
+        prompt = await self.persona_style(identifier, prompt)
         binding = await self.manual_model_binding(kind)
         context = self.private_archive_context(identifier, persona_revision)
         now = self.store.clock()
