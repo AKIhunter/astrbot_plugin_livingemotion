@@ -2,6 +2,9 @@
 
 ![livingEmotion 原创 LE 字标与四维状态线](.github/img/Banner.png)
 
+开发者：[AKIhunter](https://github.com/AKIhunter)。这是 AstrBot 的 LivingEmotion 插件手册入口；
+完整使用说明与运行流程见 [插件帮助手册](docs/plugin-manual.md)。
+
 基于 AstrBot 原生人格的生活状态控制台，区分 **Bot 感受**、
 **对方情绪观察**、**关系证据**和**作息精力**。记忆可接入 LivingMemory 或使用本地向量库，
 核心功能不依赖从绫或 Bot Manager。
@@ -89,8 +92,13 @@ flowchart LR
 配置位置：AstrBot 管理面板 → 插件 → livingEmotion → 配置 → 情绪 → 情绪强度；
 保存后重启 AstrBot 生效。旧配置与旧状态无需迁移。
 
+「兴奋」按唤醒超出基线的部分计算：默认扣除 0.3，已细化的状态扣除动态基准。
+阴天加成不再把平常唤醒误判成兴奋；标签、曲线和梦境采用同一个 `surprise` 公式。
+具体计算与限制见 [标签计算流程](docs/emotion-five-dimension.md#页面标签与兴奋口径)。
+
 ## 导航
 
+- [AstrBot 插件帮助手册与完整流程图](docs/plugin-manual.md)
 - [页面、作息、关系、记忆与快速开始](docs/life-console.md)
 - [五维情绪：计算、展示与强度档位](docs/emotion-five-dimension.md)
 - [随机主动聊天、选题与节奏配置](docs/proactive-life.md)
@@ -151,6 +159,10 @@ unknown 不自动重发、不退款、不产生成功行为证据。原生 after
 
 **开关已开为何拒绝生成？** 还须满足 Provider、时区、素材、授权、预算及旧迁移约束；
 以具体原因码为准，不通过重复点击绕过。
+
+**为什么阴天也会显示兴奋？** 旧公式把平常唤醒计入惊讶，叠加天气后容易越过标签阈值；
+现已改为只算超出基线的部分。实际唤醒高于基线时仍可能显示兴奋，见
+[计算说明](docs/emotion-five-dimension.md#页面标签与兴奋口径)。
 
 **能直接复制从绫数据库吗？** 不能。使用[迁移 CLI](docs/migration.md)预览一致快照并选择导入，
 不恢复旧 pending，也不能忽略 WAL。

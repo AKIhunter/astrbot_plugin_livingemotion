@@ -3,11 +3,12 @@ display_name: livingEmotion
 short_desc: 原生人格的生活控制台，情绪雷达、关系图、长夜与可选记忆。
 desc: >-
   柔和复古未来主义九区页面，支持全局、私聊与群聊范围及圆形扩散双主题。
-  提供四维情绪、平台账号关系图、五档作息、24小时精力日志、天气日记与梦境。
+  提供四维情绪计算、五轴展示、平台账号关系图、五档作息、天气日记与梦境。
   LivingMemory 或本地原生向量接入，模型与模块集中设置，读写和主动行为分别启用。
 help: >-
   从 AstrBot 插件页打开 livingemotion，在设置的快速开始配置人格、时区和模型。
-  le_wake 仅管理员手动叫醒，指令前缀以宿主配置为准；配置和迁移见 README。
+  le_wake 仅管理员手动叫醒，指令前缀以宿主配置为准；插件手册见 docs/plugin-manual.md。
+  开发者：GitHub AKIhunter；配置、流程图和迁移入口见 README。
 version: 0.2.0
 author: AKIhunter
 # PRIVATE repository; use authenticated access. Commits and CI are recorded in GitHub.

@@ -34,6 +34,49 @@ def test_pool_and_seven_dream_tones():
         dream_profile({"joy": float("nan")})
 
 
+def test_surprise_counts_only_arousal_above_baseline():
+    calm = six_emotions(BotAffect(arousal=0.3))
+    assert calm["surprise"] == 0
+    assert 0 < six_emotions(BotAffect(arousal=0.6))["surprise"] < \
+        six_emotions(BotAffect(arousal=0.9))["surprise"]
+    # 动态基准同样生效：基准抬高后，原来的唤醒值不再算兴奋。
+    refined = BotAffect(arousal=0.6, baseline_refined=True, baseline_arousal=0.6)
+    assert six_emotions(refined)["surprise"] == 0
+    # 阴天全维 +0.1 不再把平静状态推过 0.25 标签阈值（原逻辑会显示「兴奋」）。
+    bonus = weather_bonus(WeatherReport("成都", "2026-11-12", "Asia/Shanghai", "ok", code=3),
+                          city="成都", day="2026-11-12", timezone="Asia/Shanghai")
+    assert max(apply_bonus(calm, bonus).values()) < .25
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("affect,expected", [
+    (BotAffect(), "calm"),
+    (BotAffect(pleasure=.03611172758487537, arousal=.3482770126419815,
+               stress=.007583487618904544, social_need=.24917923686372706,
+               baseline_refined=True, baseline_arousal=.3144831037925945), "calm"),
+    (BotAffect(arousal=.6, baseline_refined=True, baseline_arousal=.6), "calm"),
+    (BotAffect(arousal=.9), "excited"),
+])
+async def test_cloudy_console_label_uses_arousal_increase(affect, expected):
+    from astrbot_plugin_livingemotion.runtime.console import Console, emotion_analysis
+
+    class Cloudy:
+        async def get(self, city, day, timezone):
+            return WeatherReport(city, day, timezone, "ok", code=3)
+
+    app = SimpleNamespace(config=Config(home_city="合成城市", timezone="UTC"),
+                          store=SimpleNamespace(clock=lambda: 1794484800.0),
+                          _manual_weather=Cloudy())
+    # 空上下文走合成曲线；只检验真实控制台标签路径，不访问模型、网络或生产库。
+    state = {"emotion_analysis": {"bot": emotion_analysis(affect)},
+             "bot_state": {"emotion_analysis": emotion_analysis(affect), "label": "calm"}}
+    await Console._attach_emotion_curve(app, state, None)
+    assert state["bot_state"]["label"] == expected
+    assert state["bot_state"]["emotion_analysis"]["emotions"] == (
+        state["emotion_analysis"]["bot"]["emotions"])
+    assert affect.labels == ("calm",)
+
+
 @pytest.mark.parametrize("code,key,amount", [
     (0, "joy", .2), (61, "sadness", .2), (3, "joy", .1),
     (73, "affection", .4), (95, "fear", .25), (99, "fear", .25),

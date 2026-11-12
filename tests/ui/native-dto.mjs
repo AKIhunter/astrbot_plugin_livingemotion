@@ -3917,7 +3917,7 @@ export const nativeDTO = {
           "anger": 0.0,
           "sadness": 0.0,
           "fear": 0.0,
-          "surprise": 0.12,
+          "surprise": 0.0,
           "affection": 0.105
         },
         "dimensions": {
@@ -3955,7 +3955,7 @@ export const nativeDTO = {
           "anger": 0.0,
           "sadness": 0.0,
           "fear": 0.0,
-          "surprise": 0.12,
+          "surprise": 0.0,
           "affection": 0.105
         },
         "dimensions": {
@@ -4107,7 +4107,7 @@ export const nativeDTO = {
             "anger": 0.0471,
             "sadness": 0.5498,
             "fear": 0.0,
-            "surprise": 0.0824,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4119,7 +4119,7 @@ export const nativeDTO = {
             "anger": 0.0446,
             "sadness": 0.4857,
             "fear": 0.0,
-            "surprise": 0.093,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4131,7 +4131,7 @@ export const nativeDTO = {
             "anger": 0.0417,
             "sadness": 0.4297,
             "fear": 0.0,
-            "surprise": 0.1026,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4143,7 +4143,7 @@ export const nativeDTO = {
             "anger": 0.0386,
             "sadness": 0.3805,
             "fear": 0.0,
-            "surprise": 0.1114,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4155,7 +4155,7 @@ export const nativeDTO = {
             "anger": 0.0355,
             "sadness": 0.3373,
             "fear": 0.0,
-            "surprise": 0.1193,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4167,7 +4167,7 @@ export const nativeDTO = {
             "anger": 0.0324,
             "sadness": 0.2992,
             "fear": 0.0,
-            "surprise": 0.1263,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4179,7 +4179,7 @@ export const nativeDTO = {
             "anger": 0.0295,
             "sadness": 0.2656,
             "fear": 0.0,
-            "surprise": 0.1326,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4191,7 +4191,7 @@ export const nativeDTO = {
             "anger": 0.0267,
             "sadness": 0.2359,
             "fear": 0.0,
-            "surprise": 0.1382,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4203,7 +4203,7 @@ export const nativeDTO = {
             "anger": 0.0242,
             "sadness": 0.2096,
             "fear": 0.0,
-            "surprise": 0.1432,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4215,7 +4215,7 @@ export const nativeDTO = {
             "anger": 0.0218,
             "sadness": 0.1863,
             "fear": 0.0,
-            "surprise": 0.1476,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4227,7 +4227,7 @@ export const nativeDTO = {
             "anger": 0.0196,
             "sadness": 0.1657,
             "fear": 0.0,
-            "surprise": 0.1515,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4239,7 +4239,7 @@ export const nativeDTO = {
             "anger": 0.0176,
             "sadness": 0.1474,
             "fear": 0.0,
-            "surprise": 0.1549,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4251,7 +4251,7 @@ export const nativeDTO = {
             "anger": 0.0158,
             "sadness": 0.1311,
             "fear": 0.0,
-            "surprise": 0.1579,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4263,7 +4263,7 @@ export const nativeDTO = {
             "anger": 0.0142,
             "sadness": 0.1167,
             "fear": 0.0,
-            "surprise": 0.1605,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4275,7 +4275,7 @@ export const nativeDTO = {
             "anger": 0.0127,
             "sadness": 0.1039,
             "fear": 0.0,
-            "surprise": 0.1629,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4287,7 +4287,7 @@ export const nativeDTO = {
             "anger": 0.0113,
             "sadness": 0.0925,
             "fear": 0.0,
-            "surprise": 0.1649,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4299,7 +4299,7 @@ export const nativeDTO = {
             "anger": 0.0101,
             "sadness": 0.0823,
             "fear": 0.0,
-            "surprise": 0.1667,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4311,7 +4311,7 @@ export const nativeDTO = {
             "anger": 0.0091,
             "sadness": 0.0733,
             "fear": 0.0,
-            "surprise": 0.1683,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4323,7 +4323,7 @@ export const nativeDTO = {
             "anger": 0.0081,
             "sadness": 0.0653,
             "fear": 0.0,
-            "surprise": 0.1697,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4335,7 +4335,7 @@ export const nativeDTO = {
             "anger": 0.0072,
             "sadness": 0.0581,
             "fear": 0.0,
-            "surprise": 0.1709,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4347,7 +4347,7 @@ export const nativeDTO = {
             "anger": 0.0064,
             "sadness": 0.0518,
             "fear": 0.0,
-            "surprise": 0.172,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4359,7 +4359,7 @@ export const nativeDTO = {
             "anger": 0.0057,
             "sadness": 0.0461,
             "fear": 0.0,
-            "surprise": 0.1729,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4371,7 +4371,7 @@ export const nativeDTO = {
             "anger": 0.0051,
             "sadness": 0.0411,
             "fear": 0.0,
-            "surprise": 0.1738,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4383,7 +4383,7 @@ export const nativeDTO = {
             "anger": 0.0046,
             "sadness": 0.0366,
             "fear": 0.0,
-            "surprise": 0.1745,
+            "surprise": 0.0,
             "affection": 0.105
           },
           "basis": "recorded_decay"
@@ -4395,7 +4395,7 @@ export const nativeDTO = {
             "anger": 0.0562,
             "sadness": 0.2302,
             "fear": 0.11,
-            "surprise": 0.1885,
+            "surprise": 0.0413,
             "affection": 0.1432
           },
           "basis": "recorded_decay"
@@ -4407,7 +4407,7 @@ export const nativeDTO = {
             "anger": 0.0473,
             "sadness": 0.2082,
             "fear": 0.0994,
-            "surprise": 0.1864,
+            "surprise": 0.0356,
             "affection": 0.1416
           },
           "basis": "recorded_decay"
@@ -4419,7 +4419,7 @@ export const nativeDTO = {
             "anger": 0.0401,
             "sadness": 0.1879,
             "fear": 0.09,
-            "surprise": 0.1845,
+            "surprise": 0.0305,
             "affection": 0.14
           },
           "basis": "recorded_decay"
@@ -4431,7 +4431,7 @@ export const nativeDTO = {
             "anger": 0.0341,
             "sadness": 0.1693,
             "fear": 0.0817,
-            "surprise": 0.183,
+            "surprise": 0.0262,
             "affection": 0.1384
           },
           "basis": "recorded_decay"
@@ -4443,7 +4443,7 @@ export const nativeDTO = {
             "anger": 0.0292,
             "sadness": 0.1523,
             "fear": 0.0742,
-            "surprise": 0.1817,
+            "surprise": 0.0223,
             "affection": 0.1368
           },
           "basis": "recorded_decay"
@@ -4455,7 +4455,7 @@ export const nativeDTO = {
             "anger": 0.0251,
             "sadness": 0.1368,
             "fear": 0.0676,
-            "surprise": 0.1807,
+            "surprise": 0.0191,
             "affection": 0.1354
           },
           "basis": "recorded_decay"
@@ -4467,7 +4467,7 @@ export const nativeDTO = {
             "anger": 0.0216,
             "sadness": 0.1228,
             "fear": 0.0616,
-            "surprise": 0.1798,
+            "surprise": 0.0162,
             "affection": 0.1339
           },
           "basis": "recorded_decay"
@@ -4479,7 +4479,7 @@ export const nativeDTO = {
             "anger": 0.0187,
             "sadness": 0.1101,
             "fear": 0.0561,
-            "surprise": 0.1792,
+            "surprise": 0.0138,
             "affection": 0.1326
           },
           "basis": "recorded_decay"
@@ -4491,7 +4491,7 @@ export const nativeDTO = {
             "anger": 0.0163,
             "sadness": 0.0987,
             "fear": 0.0512,
-            "surprise": 0.1787,
+            "surprise": 0.0117,
             "affection": 0.1312
           },
           "basis": "recorded_decay"
@@ -4503,7 +4503,7 @@ export const nativeDTO = {
             "anger": 0.0142,
             "sadness": 0.0883,
             "fear": 0.0468,
-            "surprise": 0.1783,
+            "surprise": 0.0099,
             "affection": 0.1299
           },
           "basis": "recorded_decay"
@@ -4515,7 +4515,7 @@ export const nativeDTO = {
             "anger": 0.0124,
             "sadness": 0.079,
             "fear": 0.0428,
-            "surprise": 0.1781,
+            "surprise": 0.0084,
             "affection": 0.1287
           },
           "basis": "recorded_decay"
@@ -4527,7 +4527,7 @@ export const nativeDTO = {
             "anger": 0.0108,
             "sadness": 0.0707,
             "fear": 0.0391,
-            "surprise": 0.1779,
+            "surprise": 0.0071,
             "affection": 0.1275
           },
           "basis": "recorded_decay"
@@ -4539,7 +4539,7 @@ export const nativeDTO = {
             "anger": 0.0095,
             "sadness": 0.0632,
             "fear": 0.0358,
-            "surprise": 0.1778,
+            "surprise": 0.006,
             "affection": 0.1264
           },
           "basis": "recorded_decay"
@@ -4551,7 +4551,7 @@ export const nativeDTO = {
             "anger": 0.0083,
             "sadness": 0.0565,
             "fear": 0.0328,
-            "surprise": 0.1778,
+            "surprise": 0.0051,
             "affection": 0.1253
           },
           "basis": "recorded_decay"
@@ -4563,7 +4563,7 @@ export const nativeDTO = {
             "anger": 0.0073,
             "sadness": 0.0504,
             "fear": 0.03,
-            "surprise": 0.1778,
+            "surprise": 0.0043,
             "affection": 0.1243
           },
           "basis": "recorded_decay"
@@ -4575,7 +4575,7 @@ export const nativeDTO = {
             "anger": 0.0065,
             "sadness": 0.0451,
             "fear": 0.0275,
-            "surprise": 0.1778,
+            "surprise": 0.0036,
             "affection": 0.1233
           },
           "basis": "recorded_decay"
@@ -4587,7 +4587,7 @@ export const nativeDTO = {
             "anger": 0.0057,
             "sadness": 0.0402,
             "fear": 0.0252,
-            "surprise": 0.1779,
+            "surprise": 0.0031,
             "affection": 0.1224
           },
           "basis": "recorded_decay"
@@ -4599,7 +4599,7 @@ export const nativeDTO = {
             "anger": 0.005,
             "sadness": 0.0359,
             "fear": 0.023,
-            "surprise": 0.178,
+            "surprise": 0.0026,
             "affection": 0.1215
           },
           "basis": "recorded_decay"
@@ -4611,7 +4611,7 @@ export const nativeDTO = {
             "anger": 0.0044,
             "sadness": 0.032,
             "fear": 0.0211,
-            "surprise": 0.1781,
+            "surprise": 0.0022,
             "affection": 0.1206
           },
           "basis": "recorded_decay"
@@ -4623,7 +4623,7 @@ export const nativeDTO = {
             "anger": 0.0039,
             "sadness": 0.0286,
             "fear": 0.0193,
-            "surprise": 0.1782,
+            "surprise": 0.0018,
             "affection": 0.1198
           },
           "basis": "recorded_decay"
@@ -4635,7 +4635,7 @@ export const nativeDTO = {
             "anger": 0.0035,
             "sadness": 0.0255,
             "fear": 0.0177,
-            "surprise": 0.1783,
+            "surprise": 0.0015,
             "affection": 0.119
           },
           "basis": "recorded_decay"
@@ -4647,7 +4647,7 @@ export const nativeDTO = {
             "anger": 0.0031,
             "sadness": 0.0227,
             "fear": 0.0163,
-            "surprise": 0.1784,
+            "surprise": 0.0013,
             "affection": 0.1183
           },
           "basis": "recorded_decay"
@@ -4659,7 +4659,7 @@ export const nativeDTO = {
             "anger": 0.0027,
             "sadness": 0.0203,
             "fear": 0.0149,
-            "surprise": 0.1785,
+            "surprise": 0.0011,
             "affection": 0.1176
           },
           "basis": "recorded_decay"
@@ -4671,7 +4671,7 @@ export const nativeDTO = {
             "anger": 0.0024,
             "sadness": 0.0181,
             "fear": 0.0137,
-            "surprise": 0.1786,
+            "surprise": 0.0009,
             "affection": 0.1169
           },
           "basis": "recorded_decay"
@@ -4683,7 +4683,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.2602,
-            "surprise": 0.3314,
+            "surprise": 0.1514,
             "affection": 0.1742
           },
           "basis": "recorded_decay"
@@ -4695,7 +4695,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.2298,
-            "surprise": 0.3074,
+            "surprise": 0.1274,
             "affection": 0.1718
           },
           "basis": "recorded_decay"
@@ -4707,7 +4707,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.2039,
-            "surprise": 0.2871,
+            "surprise": 0.1071,
             "affection": 0.1695
           },
           "basis": "recorded_decay"
@@ -4719,7 +4719,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.1818,
-            "surprise": 0.2701,
+            "surprise": 0.0901,
             "affection": 0.167
           },
           "basis": "recorded_decay"
@@ -4731,7 +4731,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.1627,
-            "surprise": 0.2557,
+            "surprise": 0.0757,
             "affection": 0.1646
           },
           "basis": "recorded_decay"
@@ -4743,7 +4743,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.1461,
-            "surprise": 0.2437,
+            "surprise": 0.0637,
             "affection": 0.1622
           },
           "basis": "recorded_decay"
@@ -4755,7 +4755,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.1316,
-            "surprise": 0.2335,
+            "surprise": 0.0535,
             "affection": 0.1598
           },
           "basis": "recorded_decay"
@@ -4767,7 +4767,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.1188,
-            "surprise": 0.225,
+            "surprise": 0.045,
             "affection": 0.1575
           },
           "basis": "recorded_decay"
@@ -4779,7 +4779,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.1075,
-            "surprise": 0.2179,
+            "surprise": 0.0379,
             "affection": 0.1552
           },
           "basis": "recorded_decay"
@@ -4791,7 +4791,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0975,
-            "surprise": 0.2118,
+            "surprise": 0.0318,
             "affection": 0.1529
           },
           "basis": "recorded_decay"
@@ -4803,7 +4803,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0885,
-            "surprise": 0.2068,
+            "surprise": 0.0268,
             "affection": 0.1507
           },
           "basis": "recorded_decay"
@@ -4815,7 +4815,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0805,
-            "surprise": 0.2025,
+            "surprise": 0.0225,
             "affection": 0.1486
           },
           "basis": "recorded_decay"
@@ -4827,7 +4827,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0734,
-            "surprise": 0.1989,
+            "surprise": 0.0189,
             "affection": 0.1465
           },
           "basis": "recorded_decay"
@@ -4839,7 +4839,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0669,
-            "surprise": 0.1959,
+            "surprise": 0.0159,
             "affection": 0.1446
           },
           "basis": "recorded_decay"
@@ -4851,7 +4851,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.061,
-            "surprise": 0.1934,
+            "surprise": 0.0134,
             "affection": 0.1426
           },
           "basis": "recorded_decay"
@@ -4863,7 +4863,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0557,
-            "surprise": 0.1913,
+            "surprise": 0.0113,
             "affection": 0.1408
           },
           "basis": "recorded_decay"
@@ -4875,7 +4875,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0509,
-            "surprise": 0.1895,
+            "surprise": 0.0095,
             "affection": 0.139
           },
           "basis": "recorded_decay"
@@ -4887,7 +4887,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0466,
-            "surprise": 0.188,
+            "surprise": 0.008,
             "affection": 0.1373
           },
           "basis": "recorded_decay"
@@ -4899,7 +4899,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0426,
-            "surprise": 0.1867,
+            "surprise": 0.0067,
             "affection": 0.1357
           },
           "basis": "recorded_decay"
@@ -4911,7 +4911,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.039,
-            "surprise": 0.1856,
+            "surprise": 0.0056,
             "affection": 0.1342
           },
           "basis": "recorded_decay"
@@ -4923,7 +4923,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0357,
-            "surprise": 0.1847,
+            "surprise": 0.0047,
             "affection": 0.1327
           },
           "basis": "recorded_decay"
@@ -4935,7 +4935,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0327,
-            "surprise": 0.184,
+            "surprise": 0.004,
             "affection": 0.1313
           },
           "basis": "recorded_decay"
@@ -4947,7 +4947,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0299,
-            "surprise": 0.1833,
+            "surprise": 0.0033,
             "affection": 0.1299
           },
           "basis": "recorded_decay"
@@ -4959,7 +4959,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0274,
-            "surprise": 0.1828,
+            "surprise": 0.0028,
             "affection": 0.1286
           },
           "basis": "recorded_decay"
@@ -4971,7 +4971,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.3537,
+            "surprise": 0.2065,
             "affection": 0.4564
           },
           "basis": "recorded_decay"
@@ -4983,7 +4983,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.3287,
+            "surprise": 0.1778,
             "affection": 0.426
           },
           "basis": "recorded_decay"
@@ -4995,7 +4995,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.3067,
+            "surprise": 0.1527,
             "affection": 0.3984
           },
           "basis": "recorded_decay"
@@ -5007,7 +5007,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.2876,
+            "surprise": 0.1308,
             "affection": 0.3734
           },
           "basis": "recorded_decay"
@@ -5019,7 +5019,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.2711,
+            "surprise": 0.1117,
             "affection": 0.3507
           },
           "basis": "recorded_decay"
@@ -5031,7 +5031,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.2569,
+            "surprise": 0.0953,
             "affection": 0.3302
           },
           "basis": "recorded_decay"
@@ -5043,7 +5043,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.2447,
+            "surprise": 0.0811,
             "affection": 0.3115
           },
           "basis": "recorded_decay"
@@ -5055,7 +5055,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.2344,
+            "surprise": 0.069,
             "affection": 0.2946
           },
           "basis": "recorded_decay"
@@ -5067,7 +5067,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.2255,
+            "surprise": 0.0585,
             "affection": 0.2791
           },
           "basis": "recorded_decay"
@@ -5079,7 +5079,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.2181,
+            "surprise": 0.0496,
             "affection": 0.2651
           },
           "basis": "recorded_decay"
@@ -5091,7 +5091,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.2117,
+            "surprise": 0.0421,
             "affection": 0.2523
           },
           "basis": "recorded_decay"
@@ -5103,7 +5103,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.2064,
+            "surprise": 0.0356,
             "affection": 0.2407
           },
           "basis": "recorded_decay"
@@ -5115,7 +5115,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.2019,
+            "surprise": 0.0301,
             "affection": 0.23
           },
           "basis": "recorded_decay"
@@ -5127,7 +5127,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1982,
+            "surprise": 0.0255,
             "affection": 0.2203
           },
           "basis": "recorded_decay"
@@ -5139,7 +5139,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.195,
+            "surprise": 0.0215,
             "affection": 0.2115
           },
           "basis": "recorded_decay"
@@ -5151,7 +5151,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1924,
+            "surprise": 0.0182,
             "affection": 0.2034
           },
           "basis": "recorded_decay"
@@ -5163,7 +5163,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1902,
+            "surprise": 0.0153,
             "affection": 0.1959
           },
           "basis": "recorded_decay"
@@ -5175,7 +5175,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1883,
+            "surprise": 0.0129,
             "affection": 0.1891
           },
           "basis": "recorded_decay"
@@ -5187,7 +5187,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1868,
+            "surprise": 0.0109,
             "affection": 0.1829
           },
           "basis": "recorded_decay"
@@ -5199,7 +5199,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1855,
+            "surprise": 0.0092,
             "affection": 0.1772
           },
           "basis": "recorded_decay"
@@ -5211,7 +5211,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1845,
+            "surprise": 0.0077,
             "affection": 0.172
           },
           "basis": "recorded_decay"
@@ -5223,7 +5223,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1836,
+            "surprise": 0.0065,
             "affection": 0.1671
           },
           "basis": "recorded_decay"
@@ -5235,7 +5235,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1829,
+            "surprise": 0.0055,
             "affection": 0.1627
           },
           "basis": "recorded_decay"
@@ -5247,7 +5247,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1823,
+            "surprise": 0.0046,
             "affection": 0.1586
           },
           "basis": "recorded_decay"
@@ -5259,7 +5259,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0899,
-            "surprise": 0.0824,
+            "surprise": 0.0,
             "affection": 0.4731
           },
           "basis": "recorded_decay"
@@ -5271,7 +5271,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0839,
-            "surprise": 0.093,
+            "surprise": 0.0,
             "affection": 0.4349
           },
           "basis": "recorded_decay"
@@ -5283,7 +5283,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0781,
-            "surprise": 0.1026,
+            "surprise": 0.0,
             "affection": 0.4005
           },
           "basis": "recorded_decay"
@@ -5295,7 +5295,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0725,
-            "surprise": 0.1114,
+            "surprise": 0.0,
             "affection": 0.3696
           },
           "basis": "recorded_decay"
@@ -5307,7 +5307,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0672,
-            "surprise": 0.1193,
+            "surprise": 0.0,
             "affection": 0.3418
           },
           "basis": "recorded_decay"
@@ -5319,7 +5319,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0621,
-            "surprise": 0.1263,
+            "surprise": 0.0,
             "affection": 0.3168
           },
           "basis": "recorded_decay"
@@ -5331,7 +5331,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0573,
-            "surprise": 0.1326,
+            "surprise": 0.0,
             "affection": 0.2943
           },
           "basis": "recorded_decay"
@@ -5343,7 +5343,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0529,
-            "surprise": 0.1382,
+            "surprise": 0.0,
             "affection": 0.2742
           },
           "basis": "recorded_decay"
@@ -5355,7 +5355,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0487,
-            "surprise": 0.1432,
+            "surprise": 0.0,
             "affection": 0.2562
           },
           "basis": "recorded_decay"
@@ -5367,7 +5367,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0449,
-            "surprise": 0.1476,
+            "surprise": 0.0,
             "affection": 0.24
           },
           "basis": "recorded_decay"
@@ -5379,7 +5379,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0413,
-            "surprise": 0.1515,
+            "surprise": 0.0,
             "affection": 0.2255
           },
           "basis": "recorded_decay"
@@ -5391,7 +5391,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.038,
-            "surprise": 0.1549,
+            "surprise": 0.0,
             "affection": 0.2126
           },
           "basis": "recorded_decay"
@@ -5403,7 +5403,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0349,
-            "surprise": 0.1579,
+            "surprise": 0.0,
             "affection": 0.201
           },
           "basis": "recorded_decay"
@@ -5415,7 +5415,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0321,
-            "surprise": 0.1605,
+            "surprise": 0.0,
             "affection": 0.1907
           },
           "basis": "recorded_decay"
@@ -5427,7 +5427,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0295,
-            "surprise": 0.1629,
+            "surprise": 0.0,
             "affection": 0.1814
           },
           "basis": "recorded_decay"
@@ -5439,7 +5439,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0271,
-            "surprise": 0.1649,
+            "surprise": 0.0,
             "affection": 0.1732
           },
           "basis": "recorded_decay"
@@ -5451,7 +5451,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0248,
-            "surprise": 0.1667,
+            "surprise": 0.0,
             "affection": 0.1658
           },
           "basis": "recorded_decay"
@@ -5463,7 +5463,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0228,
-            "surprise": 0.1683,
+            "surprise": 0.0,
             "affection": 0.1592
           },
           "basis": "recorded_decay"
@@ -5475,7 +5475,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0209,
-            "surprise": 0.1697,
+            "surprise": 0.0,
             "affection": 0.1533
           },
           "basis": "recorded_decay"
@@ -5487,7 +5487,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0192,
-            "surprise": 0.1709,
+            "surprise": 0.0,
             "affection": 0.148
           },
           "basis": "recorded_decay"
@@ -5499,7 +5499,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0176,
-            "surprise": 0.172,
+            "surprise": 0.0,
             "affection": 0.1433
           },
           "basis": "recorded_decay"
@@ -5511,7 +5511,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0162,
-            "surprise": 0.1729,
+            "surprise": 0.0,
             "affection": 0.1392
           },
           "basis": "recorded_decay"
@@ -5523,7 +5523,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0148,
-            "surprise": 0.1738,
+            "surprise": 0.0,
             "affection": 0.1354
           },
           "basis": "recorded_decay"
@@ -5535,7 +5535,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0136,
-            "surprise": 0.1745,
+            "surprise": 0.0,
             "affection": 0.1321
           },
           "basis": "recorded_decay"
@@ -5547,7 +5547,7 @@ export const nativeDTO = {
             "anger": 0.141,
             "sadness": 0.4289,
             "fear": 0.22,
-            "surprise": 0.1466,
+            "surprise": 0.0321,
             "affection": 0.1319
           },
           "basis": "recorded_decay"
@@ -5559,7 +5559,7 @@ export const nativeDTO = {
             "anger": 0.1172,
             "sadness": 0.3904,
             "fear": 0.1988,
-            "surprise": 0.1503,
+            "surprise": 0.0287,
             "affection": 0.1314
           },
           "basis": "recorded_decay"
@@ -5571,7 +5571,7 @@ export const nativeDTO = {
             "anger": 0.098,
             "sadness": 0.3544,
             "fear": 0.1801,
-            "surprise": 0.1534,
+            "surprise": 0.0254,
             "affection": 0.1307
           },
           "basis": "recorded_decay"
@@ -5583,7 +5583,7 @@ export const nativeDTO = {
             "anger": 0.0824,
             "sadness": 0.3209,
             "fear": 0.1634,
-            "surprise": 0.156,
+            "surprise": 0.0223,
             "affection": 0.1301
           },
           "basis": "recorded_decay"
@@ -5595,7 +5595,7 @@ export const nativeDTO = {
             "anger": 0.0697,
             "sadness": 0.2901,
             "fear": 0.1485,
-            "surprise": 0.1582,
+            "surprise": 0.0195,
             "affection": 0.1294
           },
           "basis": "recorded_decay"
@@ -5607,7 +5607,7 @@ export const nativeDTO = {
             "anger": 0.0593,
             "sadness": 0.2618,
             "fear": 0.1351,
-            "surprise": 0.1601,
+            "surprise": 0.0169,
             "affection": 0.1286
           },
           "basis": "recorded_decay"
@@ -5619,7 +5619,7 @@ export const nativeDTO = {
             "anger": 0.0506,
             "sadness": 0.2359,
             "fear": 0.1231,
-            "surprise": 0.1618,
+            "surprise": 0.0146,
             "affection": 0.1278
           },
           "basis": "recorded_decay"
@@ -5631,7 +5631,7 @@ export const nativeDTO = {
             "anger": 0.0434,
             "sadness": 0.2122,
             "fear": 0.1123,
-            "surprise": 0.1634,
+            "surprise": 0.0126,
             "affection": 0.127
           },
           "basis": "recorded_decay"
@@ -5643,7 +5643,7 @@ export const nativeDTO = {
             "anger": 0.0373,
             "sadness": 0.1908,
             "fear": 0.1025,
-            "surprise": 0.1648,
+            "surprise": 0.0108,
             "affection": 0.1262
           },
           "basis": "recorded_decay"
@@ -5655,7 +5655,7 @@ export const nativeDTO = {
             "anger": 0.0322,
             "sadness": 0.1713,
             "fear": 0.0936,
-            "surprise": 0.1661,
+            "surprise": 0.0092,
             "affection": 0.1254
           },
           "basis": "recorded_decay"
@@ -5667,7 +5667,7 @@ export const nativeDTO = {
             "anger": 0.0279,
             "sadness": 0.1537,
             "fear": 0.0856,
-            "surprise": 0.1673,
+            "surprise": 0.0079,
             "affection": 0.1246
           },
           "basis": "recorded_decay"
@@ -5679,7 +5679,7 @@ export const nativeDTO = {
             "anger": 0.0242,
             "sadness": 0.1378,
             "fear": 0.0782,
-            "surprise": 0.1684,
+            "surprise": 0.0067,
             "affection": 0.1238
           },
           "basis": "recorded_decay"
@@ -5691,7 +5691,7 @@ export const nativeDTO = {
             "anger": 0.021,
             "sadness": 0.1235,
             "fear": 0.0716,
-            "surprise": 0.1694,
+            "surprise": 0.0057,
             "affection": 0.123
           },
           "basis": "recorded_decay"
@@ -5703,7 +5703,7 @@ export const nativeDTO = {
             "anger": 0.0183,
             "sadness": 0.1105,
             "fear": 0.0655,
-            "surprise": 0.1703,
+            "surprise": 0.0049,
             "affection": 0.1223
           },
           "basis": "recorded_decay"
@@ -5715,7 +5715,7 @@ export const nativeDTO = {
             "anger": 0.016,
             "sadness": 0.0989,
             "fear": 0.06,
-            "surprise": 0.1711,
+            "surprise": 0.0041,
             "affection": 0.1215
           },
           "basis": "recorded_decay"
@@ -5727,7 +5727,7 @@ export const nativeDTO = {
             "anger": 0.014,
             "sadness": 0.0885,
             "fear": 0.0549,
-            "surprise": 0.1719,
+            "surprise": 0.0035,
             "affection": 0.1208
           },
           "basis": "recorded_decay"
@@ -5739,7 +5739,7 @@ export const nativeDTO = {
             "anger": 0.0123,
             "sadness": 0.0791,
             "fear": 0.0503,
-            "surprise": 0.1727,
+            "surprise": 0.003,
             "affection": 0.1201
           },
           "basis": "recorded_decay"
@@ -5751,7 +5751,7 @@ export const nativeDTO = {
             "anger": 0.0108,
             "sadness": 0.0707,
             "fear": 0.0461,
-            "surprise": 0.1733,
+            "surprise": 0.0025,
             "affection": 0.1194
           },
           "basis": "recorded_decay"
@@ -5763,7 +5763,7 @@ export const nativeDTO = {
             "anger": 0.0095,
             "sadness": 0.0632,
             "fear": 0.0422,
-            "surprise": 0.1739,
+            "surprise": 0.0021,
             "affection": 0.1187
           },
           "basis": "recorded_decay"
@@ -5775,7 +5775,7 @@ export const nativeDTO = {
             "anger": 0.0083,
             "sadness": 0.0565,
             "fear": 0.0387,
-            "surprise": 0.1745,
+            "surprise": 0.0018,
             "affection": 0.1181
           },
           "basis": "recorded_decay"
@@ -5787,7 +5787,7 @@ export const nativeDTO = {
             "anger": 0.0073,
             "sadness": 0.0504,
             "fear": 0.0355,
-            "surprise": 0.175,
+            "surprise": 0.0015,
             "affection": 0.1175
           },
           "basis": "recorded_decay"
@@ -5799,7 +5799,7 @@ export const nativeDTO = {
             "anger": 0.0065,
             "sadness": 0.045,
             "fear": 0.0325,
-            "surprise": 0.1755,
+            "surprise": 0.0013,
             "affection": 0.1169
           },
           "basis": "recorded_decay"
@@ -5811,7 +5811,7 @@ export const nativeDTO = {
             "anger": 0.0057,
             "sadness": 0.0402,
             "fear": 0.0298,
-            "surprise": 0.1759,
+            "surprise": 0.0011,
             "affection": 0.1163
           },
           "basis": "recorded_decay"
@@ -5823,7 +5823,7 @@ export const nativeDTO = {
             "anger": 0.005,
             "sadness": 0.0359,
             "fear": 0.0273,
-            "surprise": 0.1763,
+            "surprise": 0.0009,
             "affection": 0.1158
           },
           "basis": "recorded_decay"
@@ -5835,7 +5835,7 @@ export const nativeDTO = {
             "anger": 0.0603,
             "sadness": 0.2172,
             "fear": 0.0,
-            "surprise": 0.2711,
+            "surprise": 0.1239,
             "affection": 0.2041
           },
           "basis": "recorded_decay"
@@ -5847,7 +5847,7 @@ export const nativeDTO = {
             "anger": 0.0498,
             "sadness": 0.1996,
             "fear": 0.0,
-            "surprise": 0.2575,
+            "surprise": 0.1067,
             "affection": 0.1986
           },
           "basis": "recorded_decay"
@@ -5859,7 +5859,7 @@ export const nativeDTO = {
             "anger": 0.0415,
             "sadness": 0.1824,
             "fear": 0.0,
-            "surprise": 0.2456,
+            "surprise": 0.0916,
             "affection": 0.1933
           },
           "basis": "recorded_decay"
@@ -5871,7 +5871,7 @@ export const nativeDTO = {
             "anger": 0.0347,
             "sadness": 0.166,
             "fear": 0.0,
-            "surprise": 0.2353,
+            "surprise": 0.0785,
             "affection": 0.1884
           },
           "basis": "recorded_decay"
@@ -5883,7 +5883,7 @@ export const nativeDTO = {
             "anger": 0.0293,
             "sadness": 0.1504,
             "fear": 0.0,
-            "surprise": 0.2264,
+            "surprise": 0.067,
             "affection": 0.1837
           },
           "basis": "recorded_decay"
@@ -5895,7 +5895,7 @@ export const nativeDTO = {
             "anger": 0.0249,
             "sadness": 0.136,
             "fear": 0.0,
-            "surprise": 0.2188,
+            "surprise": 0.0572,
             "affection": 0.1793
           },
           "basis": "recorded_decay"
@@ -5907,7 +5907,7 @@ export const nativeDTO = {
             "anger": 0.0212,
             "sadness": 0.1226,
             "fear": 0.0,
-            "surprise": 0.2123,
+            "surprise": 0.0487,
             "affection": 0.1751
           },
           "basis": "recorded_decay"
@@ -5919,7 +5919,7 @@ export const nativeDTO = {
             "anger": 0.0182,
             "sadness": 0.1103,
             "fear": 0.0,
-            "surprise": 0.2068,
+            "surprise": 0.0414,
             "affection": 0.1712
           },
           "basis": "recorded_decay"
@@ -5931,7 +5931,7 @@ export const nativeDTO = {
             "anger": 0.0157,
             "sadness": 0.0991,
             "fear": 0.0,
-            "surprise": 0.2021,
+            "surprise": 0.0351,
             "affection": 0.1674
           },
           "basis": "recorded_decay"
@@ -5943,7 +5943,7 @@ export const nativeDTO = {
             "anger": 0.0136,
             "sadness": 0.0889,
             "fear": 0.0,
-            "surprise": 0.1982,
+            "surprise": 0.0298,
             "affection": 0.1639
           },
           "basis": "recorded_decay"
@@ -5955,7 +5955,7 @@ export const nativeDTO = {
             "anger": 0.0119,
             "sadness": 0.0796,
             "fear": 0.0,
-            "surprise": 0.1949,
+            "surprise": 0.0252,
             "affection": 0.1606
           },
           "basis": "recorded_decay"
@@ -5967,7 +5967,7 @@ export const nativeDTO = {
             "anger": 0.0103,
             "sadness": 0.0713,
             "fear": 0.0,
-            "surprise": 0.1922,
+            "surprise": 0.0214,
             "affection": 0.1575
           },
           "basis": "recorded_decay"
@@ -5979,7 +5979,7 @@ export const nativeDTO = {
             "anger": 0.009,
             "sadness": 0.0638,
             "fear": 0.0,
-            "surprise": 0.1899,
+            "surprise": 0.0181,
             "affection": 0.1546
           },
           "basis": "recorded_decay"
@@ -5991,7 +5991,7 @@ export const nativeDTO = {
             "anger": 0.0079,
             "sadness": 0.057,
             "fear": 0.0,
-            "surprise": 0.188,
+            "surprise": 0.0153,
             "affection": 0.1518
           },
           "basis": "recorded_decay"
@@ -6003,7 +6003,7 @@ export const nativeDTO = {
             "anger": 0.007,
             "sadness": 0.0509,
             "fear": 0.0,
-            "surprise": 0.1864,
+            "surprise": 0.0129,
             "affection": 0.1492
           },
           "basis": "recorded_decay"
@@ -6015,7 +6015,7 @@ export const nativeDTO = {
             "anger": 0.0062,
             "sadness": 0.0455,
             "fear": 0.0,
-            "surprise": 0.1851,
+            "surprise": 0.0109,
             "affection": 0.1467
           },
           "basis": "recorded_decay"
@@ -6027,7 +6027,7 @@ export const nativeDTO = {
             "anger": 0.0054,
             "sadness": 0.0406,
             "fear": 0.0,
-            "surprise": 0.184,
+            "surprise": 0.0092,
             "affection": 0.1443
           },
           "basis": "recorded_decay"
@@ -6039,7 +6039,7 @@ export const nativeDTO = {
             "anger": 0.0048,
             "sadness": 0.0362,
             "fear": 0.0,
-            "surprise": 0.1832,
+            "surprise": 0.0078,
             "affection": 0.1421
           },
           "basis": "recorded_decay"
@@ -6051,7 +6051,7 @@ export const nativeDTO = {
             "anger": 0.0042,
             "sadness": 0.0323,
             "fear": 0.0,
-            "surprise": 0.1824,
+            "surprise": 0.0065,
             "affection": 0.14
           },
           "basis": "recorded_decay"
@@ -6063,7 +6063,7 @@ export const nativeDTO = {
             "anger": 0.0038,
             "sadness": 0.0288,
             "fear": 0.0,
-            "surprise": 0.1819,
+            "surprise": 0.0055,
             "affection": 0.1381
           },
           "basis": "recorded_decay"
@@ -6075,7 +6075,7 @@ export const nativeDTO = {
             "anger": 0.0033,
             "sadness": 0.0257,
             "fear": 0.0,
-            "surprise": 0.1814,
+            "surprise": 0.0046,
             "affection": 0.1362
           },
           "basis": "recorded_decay"
@@ -6087,7 +6087,7 @@ export const nativeDTO = {
             "anger": 0.003,
             "sadness": 0.0229,
             "fear": 0.0,
-            "surprise": 0.181,
+            "surprise": 0.0039,
             "affection": 0.1345
           },
           "basis": "recorded_decay"
@@ -6099,7 +6099,7 @@ export const nativeDTO = {
             "anger": 0.0026,
             "sadness": 0.0204,
             "fear": 0.0,
-            "surprise": 0.1807,
+            "surprise": 0.0033,
             "affection": 0.1328
           },
           "basis": "recorded_decay"
@@ -6111,7 +6111,7 @@ export const nativeDTO = {
             "anger": 0.0023,
             "sadness": 0.0182,
             "fear": 0.0,
-            "surprise": 0.1805,
+            "surprise": 0.0028,
             "affection": 0.1313
           },
           "basis": "recorded_decay"
@@ -6123,7 +6123,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.1501,
-            "surprise": 0.4324,
+            "surprise": 0.2524,
             "affection": 0.2351
           },
           "basis": "recorded_decay"
@@ -6135,7 +6135,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.1304,
-            "surprise": 0.3923,
+            "surprise": 0.2123,
             "affection": 0.2288
           },
           "basis": "recorded_decay"
@@ -6147,7 +6147,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.1139,
-            "surprise": 0.3585,
+            "surprise": 0.1785,
             "affection": 0.2228
           },
           "basis": "recorded_decay"
@@ -6159,7 +6159,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.1001,
-            "surprise": 0.3301,
+            "surprise": 0.1501,
             "affection": 0.217
           },
           "basis": "recorded_decay"
@@ -6171,7 +6171,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0884,
-            "surprise": 0.3062,
+            "surprise": 0.1262,
             "affection": 0.2114
           },
           "basis": "recorded_decay"
@@ -6183,7 +6183,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0785,
-            "surprise": 0.2861,
+            "surprise": 0.1061,
             "affection": 0.2061
           },
           "basis": "recorded_decay"
@@ -6195,7 +6195,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.07,
-            "surprise": 0.2692,
+            "surprise": 0.0892,
             "affection": 0.201
           },
           "basis": "recorded_decay"
@@ -6207,7 +6207,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0626,
-            "surprise": 0.255,
+            "surprise": 0.075,
             "affection": 0.1961
           },
           "basis": "recorded_decay"
@@ -6219,7 +6219,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0563,
-            "surprise": 0.2431,
+            "surprise": 0.0631,
             "affection": 0.1914
           },
           "basis": "recorded_decay"
@@ -6231,7 +6231,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0507,
-            "surprise": 0.2331,
+            "surprise": 0.0531,
             "affection": 0.1869
           },
           "basis": "recorded_decay"
@@ -6243,7 +6243,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0458,
-            "surprise": 0.2246,
+            "surprise": 0.0446,
             "affection": 0.1826
           },
           "basis": "recorded_decay"
@@ -6255,7 +6255,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0414,
-            "surprise": 0.2175,
+            "surprise": 0.0375,
             "affection": 0.1786
           },
           "basis": "recorded_decay"
@@ -6267,7 +6267,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0376,
-            "surprise": 0.2116,
+            "surprise": 0.0316,
             "affection": 0.1747
           },
           "basis": "recorded_decay"
@@ -6279,7 +6279,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0341,
-            "surprise": 0.2065,
+            "surprise": 0.0265,
             "affection": 0.171
           },
           "basis": "recorded_decay"
@@ -6291,7 +6291,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.031,
-            "surprise": 0.2023,
+            "surprise": 0.0223,
             "affection": 0.1675
           },
           "basis": "recorded_decay"
@@ -6303,7 +6303,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0283,
-            "surprise": 0.1988,
+            "surprise": 0.0188,
             "affection": 0.1642
           },
           "basis": "recorded_decay"
@@ -6315,7 +6315,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0258,
-            "surprise": 0.1958,
+            "surprise": 0.0158,
             "affection": 0.161
           },
           "basis": "recorded_decay"
@@ -6327,7 +6327,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0235,
-            "surprise": 0.1933,
+            "surprise": 0.0133,
             "affection": 0.158
           },
           "basis": "recorded_decay"
@@ -6339,7 +6339,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0215,
-            "surprise": 0.1912,
+            "surprise": 0.0112,
             "affection": 0.1551
           },
           "basis": "recorded_decay"
@@ -6351,7 +6351,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0196,
-            "surprise": 0.1894,
+            "surprise": 0.0094,
             "affection": 0.1524
           },
           "basis": "recorded_decay"
@@ -6363,7 +6363,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.018,
-            "surprise": 0.1879,
+            "surprise": 0.0079,
             "affection": 0.1499
           },
           "basis": "recorded_decay"
@@ -6375,7 +6375,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0164,
-            "surprise": 0.1866,
+            "surprise": 0.0066,
             "affection": 0.1474
           },
           "basis": "recorded_decay"
@@ -6387,7 +6387,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.015,
-            "surprise": 0.1856,
+            "surprise": 0.0056,
             "affection": 0.1451
           },
           "basis": "recorded_decay"
@@ -6399,7 +6399,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0138,
-            "surprise": 0.1847,
+            "surprise": 0.0047,
             "affection": 0.1429
           },
           "basis": "recorded_decay"
@@ -6411,7 +6411,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.1799,
-            "surprise": 0.1059,
+            "surprise": 0.0,
             "affection": 0.2626
           },
           "basis": "recorded_decay"
@@ -6423,7 +6423,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.1679,
-            "surprise": 0.1153,
+            "surprise": 0.0,
             "affection": 0.2472
           },
           "basis": "recorded_decay"
@@ -6435,7 +6435,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.1562,
-            "surprise": 0.1235,
+            "surprise": 0.0,
             "affection": 0.2331
           },
           "basis": "recorded_decay"
@@ -6447,7 +6447,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.145,
-            "surprise": 0.1307,
+            "surprise": 0.0,
             "affection": 0.2203
           },
           "basis": "recorded_decay"
@@ -6459,7 +6459,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.1343,
-            "surprise": 0.137,
+            "surprise": 0.0,
             "affection": 0.2086
           },
           "basis": "recorded_decay"
@@ -6471,7 +6471,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.1242,
-            "surprise": 0.1426,
+            "surprise": 0.0,
             "affection": 0.198
           },
           "basis": "recorded_decay"
@@ -6483,7 +6483,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.1147,
-            "surprise": 0.1474,
+            "surprise": 0.0,
             "affection": 0.1884
           },
           "basis": "recorded_decay"
@@ -6495,7 +6495,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.1058,
-            "surprise": 0.1516,
+            "surprise": 0.0,
             "affection": 0.1797
           },
           "basis": "recorded_decay"
@@ -6507,7 +6507,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0975,
-            "surprise": 0.1553,
+            "surprise": 0.0,
             "affection": 0.1719
           },
           "basis": "recorded_decay"
@@ -6519,7 +6519,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0898,
-            "surprise": 0.1585,
+            "surprise": 0.0,
             "affection": 0.1648
           },
           "basis": "recorded_decay"
@@ -6531,7 +6531,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0826,
-            "surprise": 0.1613,
+            "surprise": 0.0,
             "affection": 0.1584
           },
           "basis": "recorded_decay"
@@ -6543,7 +6543,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0759,
-            "surprise": 0.1637,
+            "surprise": 0.0,
             "affection": 0.1527
           },
           "basis": "recorded_decay"
@@ -6555,7 +6555,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0698,
-            "surprise": 0.1658,
+            "surprise": 0.0,
             "affection": 0.1476
           },
           "basis": "recorded_decay"
@@ -6567,7 +6567,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0641,
-            "surprise": 0.1676,
+            "surprise": 0.0,
             "affection": 0.143
           },
           "basis": "recorded_decay"
@@ -6579,7 +6579,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0589,
-            "surprise": 0.1692,
+            "surprise": 0.0,
             "affection": 0.1389
           },
           "basis": "recorded_decay"
@@ -6591,7 +6591,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0541,
-            "surprise": 0.1706,
+            "surprise": 0.0,
             "affection": 0.1352
           },
           "basis": "recorded_decay"
@@ -6603,7 +6603,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0497,
-            "surprise": 0.1718,
+            "surprise": 0.0,
             "affection": 0.1319
           },
           "basis": "recorded_decay"
@@ -6615,7 +6615,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0456,
-            "surprise": 0.1728,
+            "surprise": 0.0,
             "affection": 0.129
           },
           "basis": "recorded_decay"
@@ -6627,7 +6627,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0419,
-            "surprise": 0.1737,
+            "surprise": 0.0,
             "affection": 0.1263
           },
           "basis": "recorded_decay"
@@ -6639,7 +6639,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0384,
-            "surprise": 0.1745,
+            "surprise": 0.0,
             "affection": 0.124
           },
           "basis": "recorded_decay"
@@ -6651,7 +6651,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0352,
-            "surprise": 0.1752,
+            "surprise": 0.0,
             "affection": 0.1219
           },
           "basis": "recorded_decay"
@@ -6663,7 +6663,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0323,
-            "surprise": 0.1758,
+            "surprise": 0.0,
             "affection": 0.12
           },
           "basis": "recorded_decay"
@@ -6675,7 +6675,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0297,
-            "surprise": 0.1763,
+            "surprise": 0.0,
             "affection": 0.1183
           },
           "basis": "recorded_decay"
@@ -6687,7 +6687,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0272,
-            "surprise": 0.1768,
+            "surprise": 0.0,
             "affection": 0.1168
           },
           "basis": "recorded_decay"
@@ -6699,7 +6699,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1466,
+            "surprise": 0.0321,
             "affection": 0.5601
           },
           "basis": "recorded_decay"
@@ -6711,7 +6711,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1503,
+            "surprise": 0.0287,
             "affection": 0.5131
           },
           "basis": "recorded_decay"
@@ -6723,7 +6723,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1534,
+            "surprise": 0.0254,
             "affection": 0.471
           },
           "basis": "recorded_decay"
@@ -6735,7 +6735,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.156,
+            "surprise": 0.0223,
             "affection": 0.4334
           },
           "basis": "recorded_decay"
@@ -6747,7 +6747,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1582,
+            "surprise": 0.0195,
             "affection": 0.3998
           },
           "basis": "recorded_decay"
@@ -6759,7 +6759,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1601,
+            "surprise": 0.0169,
             "affection": 0.3697
           },
           "basis": "recorded_decay"
@@ -6771,7 +6771,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1618,
+            "surprise": 0.0146,
             "affection": 0.3428
           },
           "basis": "recorded_decay"
@@ -6783,7 +6783,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1634,
+            "surprise": 0.0126,
             "affection": 0.3187
           },
           "basis": "recorded_decay"
@@ -6795,7 +6795,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1648,
+            "surprise": 0.0108,
             "affection": 0.2972
           },
           "basis": "recorded_decay"
@@ -6807,7 +6807,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1661,
+            "surprise": 0.0092,
             "affection": 0.2778
           },
           "basis": "recorded_decay"
@@ -6819,7 +6819,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1673,
+            "surprise": 0.0079,
             "affection": 0.2605
           },
           "basis": "recorded_decay"
@@ -6831,7 +6831,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1684,
+            "surprise": 0.0067,
             "affection": 0.245
           },
           "basis": "recorded_decay"
@@ -6843,7 +6843,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1694,
+            "surprise": 0.0057,
             "affection": 0.2312
           },
           "basis": "recorded_decay"
@@ -6855,7 +6855,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1703,
+            "surprise": 0.0049,
             "affection": 0.2187
           },
           "basis": "recorded_decay"
@@ -6867,7 +6867,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1711,
+            "surprise": 0.0041,
             "affection": 0.2075
           },
           "basis": "recorded_decay"
@@ -6879,7 +6879,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1719,
+            "surprise": 0.0035,
             "affection": 0.1975
           },
           "basis": "recorded_decay"
@@ -6891,7 +6891,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1727,
+            "surprise": 0.003,
             "affection": 0.1885
           },
           "basis": "recorded_decay"
@@ -6903,7 +6903,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1733,
+            "surprise": 0.0025,
             "affection": 0.1805
           },
           "basis": "recorded_decay"
@@ -6915,7 +6915,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1739,
+            "surprise": 0.0021,
             "affection": 0.1732
           },
           "basis": "recorded_decay"
@@ -6927,7 +6927,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1745,
+            "surprise": 0.0018,
             "affection": 0.1667
           },
           "basis": "recorded_decay"
@@ -6939,7 +6939,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.175,
+            "surprise": 0.0015,
             "affection": 0.1608
           },
           "basis": "recorded_decay"
@@ -6951,7 +6951,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1755,
+            "surprise": 0.0013,
             "affection": 0.1556
           },
           "basis": "recorded_decay"
@@ -6963,7 +6963,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1759,
+            "surprise": 0.0011,
             "affection": 0.1508
           },
           "basis": "recorded_decay"
@@ -6975,7 +6975,7 @@ export const nativeDTO = {
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1763,
+            "surprise": 0.0009,
             "affection": 0.1466
           },
           "basis": "recorded_decay"
@@ -6987,7 +6987,7 @@ export const nativeDTO = {
             "anger": 0.1617,
             "sadness": 0.4064,
             "fear": 0.1301,
-            "surprise": 0.2108,
+            "surprise": 0.0963,
             "affection": 0.1891
           },
           "basis": "recorded_decay"
@@ -6999,7 +6999,7 @@ export const nativeDTO = {
             "anger": 0.1308,
             "sadness": 0.3757,
             "fear": 0.1149,
-            "surprise": 0.2077,
+            "surprise": 0.0861,
             "affection": 0.1852
           },
           "basis": "recorded_decay"
@@ -7011,7 +7011,7 @@ export const nativeDTO = {
             "anger": 0.1067,
             "sadness": 0.3452,
             "fear": 0.102,
-            "surprise": 0.2042,
+            "surprise": 0.0762,
             "affection": 0.1814
           },
           "basis": "recorded_decay"
@@ -7023,7 +7023,7 @@ export const nativeDTO = {
             "anger": 0.0878,
             "sadness": 0.3155,
             "fear": 0.0909,
-            "surprise": 0.2006,
+            "surprise": 0.0669,
             "affection": 0.1777
           },
           "basis": "recorded_decay"
@@ -7035,7 +7035,7 @@ export const nativeDTO = {
             "anger": 0.0728,
             "sadness": 0.2872,
             "fear": 0.0813,
-            "surprise": 0.1971,
+            "surprise": 0.0584,
             "affection": 0.1741
           },
           "basis": "recorded_decay"
@@ -7047,7 +7047,7 @@ export const nativeDTO = {
             "anger": 0.0608,
             "sadness": 0.2606,
             "fear": 0.073,
-            "surprise": 0.1939,
+            "surprise": 0.0507,
             "affection": 0.1707
           },
           "basis": "recorded_decay"
@@ -7059,7 +7059,7 @@ export const nativeDTO = {
             "anger": 0.0511,
             "sadness": 0.2358,
             "fear": 0.0658,
-            "surprise": 0.191,
+            "surprise": 0.0438,
             "affection": 0.1675
           },
           "basis": "recorded_decay"
@@ -7071,7 +7071,7 @@ export const nativeDTO = {
             "anger": 0.0433,
             "sadness": 0.2129,
             "fear": 0.0594,
-            "surprise": 0.1885,
+            "surprise": 0.0377,
             "affection": 0.1643
           },
           "basis": "recorded_decay"
@@ -7083,7 +7083,7 @@ export const nativeDTO = {
             "anger": 0.0368,
             "sadness": 0.1918,
             "fear": 0.0538,
-            "surprise": 0.1864,
+            "surprise": 0.0324,
             "affection": 0.1613
           },
           "basis": "recorded_decay"
@@ -7095,7 +7095,7 @@ export const nativeDTO = {
             "anger": 0.0315,
             "sadness": 0.1725,
             "fear": 0.0487,
-            "surprise": 0.1846,
+            "surprise": 0.0277,
             "affection": 0.1584
           },
           "basis": "recorded_decay"
@@ -7107,7 +7107,7 @@ export const nativeDTO = {
             "anger": 0.0271,
             "sadness": 0.155,
             "fear": 0.0443,
-            "surprise": 0.1831,
+            "surprise": 0.0237,
             "affection": 0.1557
           },
           "basis": "recorded_decay"
@@ -7119,7 +7119,7 @@ export const nativeDTO = {
             "anger": 0.0234,
             "sadness": 0.139,
             "fear": 0.0403,
-            "surprise": 0.1818,
+            "surprise": 0.0202,
             "affection": 0.1531
           },
           "basis": "recorded_decay"
@@ -7131,7 +7131,7 @@ export const nativeDTO = {
             "anger": 0.0203,
             "sadness": 0.1246,
             "fear": 0.0367,
-            "surprise": 0.1808,
+            "surprise": 0.0172,
             "affection": 0.1506
           },
           "basis": "recorded_decay"
@@ -7143,7 +7143,7 @@ export const nativeDTO = {
             "anger": 0.0176,
             "sadness": 0.1116,
             "fear": 0.0334,
-            "surprise": 0.18,
+            "surprise": 0.0146,
             "affection": 0.1482
           },
           "basis": "recorded_decay"
@@ -7155,7 +7155,7 @@ export const nativeDTO = {
             "anger": 0.0154,
             "sadness": 0.0999,
             "fear": 0.0305,
-            "surprise": 0.1794,
+            "surprise": 0.0124,
             "affection": 0.1459
           },
           "basis": "recorded_decay"
@@ -7167,7 +7167,7 @@ export const nativeDTO = {
             "anger": 0.0134,
             "sadness": 0.0894,
             "fear": 0.0279,
-            "surprise": 0.179,
+            "surprise": 0.0105,
             "affection": 0.1437
           },
           "basis": "recorded_decay"
@@ -7179,7 +7179,7 @@ export const nativeDTO = {
             "anger": 0.0118,
             "sadness": 0.0799,
             "fear": 0.0255,
-            "surprise": 0.1786,
+            "surprise": 0.0089,
             "affection": 0.1417
           },
           "basis": "recorded_decay"
@@ -7191,7 +7191,7 @@ export const nativeDTO = {
             "anger": 0.0103,
             "sadness": 0.0714,
             "fear": 0.0233,
-            "surprise": 0.1784,
+            "surprise": 0.0076,
             "affection": 0.1397
           },
           "basis": "recorded_decay"
@@ -7203,7 +7203,7 @@ export const nativeDTO = {
             "anger": 0.0091,
             "sadness": 0.0638,
             "fear": 0.0213,
-            "surprise": 0.1782,
+            "surprise": 0.0064,
             "affection": 0.1379
           },
           "basis": "recorded_decay"
@@ -7215,7 +7215,7 @@ export const nativeDTO = {
             "anger": 0.008,
             "sadness": 0.0569,
             "fear": 0.0195,
-            "surprise": 0.1781,
+            "surprise": 0.0054,
             "affection": 0.1361
           },
           "basis": "recorded_decay"
@@ -7227,7 +7227,7 @@ export const nativeDTO = {
             "anger": 0.0071,
             "sadness": 0.0508,
             "fear": 0.0178,
-            "surprise": 0.1781,
+            "surprise": 0.0046,
             "affection": 0.1345
           },
           "basis": "recorded_decay"
@@ -7239,7 +7239,7 @@ export const nativeDTO = {
             "anger": 0.0062,
             "sadness": 0.0454,
             "fear": 0.0163,
-            "surprise": 0.1781,
+            "surprise": 0.0039,
             "affection": 0.1329
           },
           "basis": "recorded_decay"
@@ -7251,7 +7251,7 @@ export const nativeDTO = {
             "anger": 0.0055,
             "sadness": 0.0405,
             "fear": 0.015,
-            "surprise": 0.1781,
+            "surprise": 0.0033,
             "affection": 0.1314
           },
           "basis": "recorded_decay"
@@ -7263,7 +7263,7 @@ export const nativeDTO = {
             "anger": 0.0049,
             "sadness": 0.0361,
             "fear": 0.0137,
-            "surprise": 0.1781,
+            "surprise": 0.0027,
             "affection": 0.1299
           },
           "basis": "recorded_decay"
@@ -7275,7 +7275,7 @@ export const nativeDTO = {
             "anger": 0.1323,
             "sadness": 0.1641,
             "fear": 0.3003,
-            "surprise": 0.3537,
+            "surprise": 0.2065,
             "affection": 0.2165
           },
           "basis": "recorded_decay"
@@ -7287,7 +7287,7 @@ export const nativeDTO = {
             "anger": 0.1033,
             "sadness": 0.157,
             "fear": 0.2607,
-            "surprise": 0.3287,
+            "surprise": 0.1778,
             "affection": 0.2123
           },
           "basis": "recorded_decay"
@@ -7299,7 +7299,7 @@ export const nativeDTO = {
             "anger": 0.0814,
             "sadness": 0.1483,
             "fear": 0.2278,
-            "surprise": 0.3067,
+            "surprise": 0.1527,
             "affection": 0.2082
           },
           "basis": "recorded_decay"
@@ -7311,7 +7311,7 @@ export const nativeDTO = {
             "anger": 0.0648,
             "sadness": 0.1386,
             "fear": 0.2002,
-            "surprise": 0.2876,
+            "surprise": 0.1308,
             "affection": 0.204
           },
           "basis": "recorded_decay"
@@ -7323,7 +7323,7 @@ export const nativeDTO = {
             "anger": 0.052,
             "sadness": 0.1285,
             "fear": 0.1769,
-            "surprise": 0.2711,
+            "surprise": 0.1117,
             "affection": 0.1999
           },
           "basis": "recorded_decay"
@@ -7335,7 +7335,7 @@ export const nativeDTO = {
             "anger": 0.0421,
             "sadness": 0.1184,
             "fear": 0.157,
-            "surprise": 0.2569,
+            "surprise": 0.0953,
             "affection": 0.1958
           },
           "basis": "recorded_decay"
@@ -7347,7 +7347,7 @@ export const nativeDTO = {
             "anger": 0.0344,
             "sadness": 0.1085,
             "fear": 0.14,
-            "surprise": 0.2447,
+            "surprise": 0.0811,
             "affection": 0.1918
           },
           "basis": "recorded_decay"
@@ -7359,7 +7359,7 @@ export const nativeDTO = {
             "anger": 0.0284,
             "sadness": 0.099,
             "fear": 0.1253,
-            "surprise": 0.2344,
+            "surprise": 0.069,
             "affection": 0.1879
           },
           "basis": "recorded_decay"
@@ -7371,7 +7371,7 @@ export const nativeDTO = {
             "anger": 0.0235,
             "sadness": 0.09,
             "fear": 0.1125,
-            "surprise": 0.2255,
+            "surprise": 0.0585,
             "affection": 0.1841
           },
           "basis": "recorded_decay"
@@ -7383,7 +7383,7 @@ export const nativeDTO = {
             "anger": 0.0197,
             "sadness": 0.0816,
             "fear": 0.1014,
-            "surprise": 0.2181,
+            "surprise": 0.0496,
             "affection": 0.1804
           },
           "basis": "recorded_decay"
@@ -7395,7 +7395,7 @@ export const nativeDTO = {
             "anger": 0.0166,
             "sadness": 0.0738,
             "fear": 0.0915,
-            "surprise": 0.2117,
+            "surprise": 0.0421,
             "affection": 0.1768
           },
           "basis": "recorded_decay"
@@ -7407,7 +7407,7 @@ export const nativeDTO = {
             "anger": 0.014,
             "sadness": 0.0666,
             "fear": 0.0828,
-            "surprise": 0.2064,
+            "surprise": 0.0356,
             "affection": 0.1734
           },
           "basis": "recorded_decay"
@@ -7419,7 +7419,7 @@ export const nativeDTO = {
             "anger": 0.0119,
             "sadness": 0.06,
             "fear": 0.0751,
-            "surprise": 0.2019,
+            "surprise": 0.0301,
             "affection": 0.17
           },
           "basis": "recorded_decay"
@@ -7431,7 +7431,7 @@ export const nativeDTO = {
             "anger": 0.0102,
             "sadness": 0.054,
             "fear": 0.0682,
-            "surprise": 0.1982,
+            "surprise": 0.0255,
             "affection": 0.1668
           },
           "basis": "recorded_decay"
@@ -7443,7 +7443,7 @@ export const nativeDTO = {
             "anger": 0.0088,
             "sadness": 0.0485,
             "fear": 0.0621,
-            "surprise": 0.195,
+            "surprise": 0.0215,
             "affection": 0.1638
           },
           "basis": "recorded_decay"
@@ -7455,7 +7455,7 @@ export const nativeDTO = {
             "anger": 0.0076,
             "sadness": 0.0435,
             "fear": 0.0565,
-            "surprise": 0.1924,
+            "surprise": 0.0182,
             "affection": 0.1608
           },
           "basis": "recorded_decay"
@@ -7467,7 +7467,7 @@ export const nativeDTO = {
             "anger": 0.0066,
             "sadness": 0.039,
             "fear": 0.0516,
-            "surprise": 0.1902,
+            "surprise": 0.0153,
             "affection": 0.158
           },
           "basis": "recorded_decay"
@@ -7479,7 +7479,7 @@ export const nativeDTO = {
             "anger": 0.0057,
             "sadness": 0.035,
             "fear": 0.0471,
-            "surprise": 0.1883,
+            "surprise": 0.0129,
             "affection": 0.1553
           },
           "basis": "recorded_decay"
@@ -7491,7 +7491,7 @@ export const nativeDTO = {
             "anger": 0.005,
             "sadness": 0.0313,
             "fear": 0.043,
-            "surprise": 0.1868,
+            "surprise": 0.0109,
             "affection": 0.1527
           },
           "basis": "recorded_decay"
@@ -7503,7 +7503,7 @@ export const nativeDTO = {
             "anger": 0.0043,
             "sadness": 0.028,
             "fear": 0.0393,
-            "surprise": 0.1855,
+            "surprise": 0.0092,
             "affection": 0.1502
           },
           "basis": "recorded_decay"
@@ -7515,7 +7515,7 @@ export const nativeDTO = {
             "anger": 0.0038,
             "sadness": 0.025,
             "fear": 0.0359,
-            "surprise": 0.1845,
+            "surprise": 0.0077,
             "affection": 0.1479
           },
           "basis": "recorded_decay"
@@ -7527,7 +7527,7 @@ export const nativeDTO = {
             "anger": 0.0033,
             "sadness": 0.0224,
             "fear": 0.0328,
-            "surprise": 0.1836,
+            "surprise": 0.0065,
             "affection": 0.1457
           },
           "basis": "recorded_decay"
@@ -7539,7 +7539,7 @@ export const nativeDTO = {
             "anger": 0.0029,
             "sadness": 0.02,
             "fear": 0.0301,
-            "surprise": 0.1829,
+            "surprise": 0.0055,
             "affection": 0.1435
           },
           "basis": "recorded_decay"
@@ -7551,7 +7551,7 @@ export const nativeDTO = {
             "anger": 0.0026,
             "sadness": 0.0179,
             "fear": 0.0275,
-            "surprise": 0.1823,
+            "surprise": 0.0046,
             "affection": 0.1415
           },
           "basis": "recorded_decay"
@@ -9302,7 +9302,7 @@ export const nativeDTO = {
   }
 };
 export const nativeDTOEvidence = {
-  "captured_at": "2026-11-12T14:01:31.871346+00:00",
+  "captured_at": "2026-11-12T15:20:46.823073+00:00",
   "field_count": 95,
   "scope": "real Console DTO / synthetic host / temporary database",
   "sources_sha256": {

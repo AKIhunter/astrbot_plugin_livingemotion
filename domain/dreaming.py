@@ -38,15 +38,29 @@ def theme_pool(value):
     return result
 
 
+def _arousal_above_baseline(value):
+    """超出平常唤醒水平的部分：基线本身不算兴奋，动态基准优先。"""
+    baseline = 0.3
+    if getattr(value, "baseline_refined", False):
+        try:
+            baseline = float(getattr(value, "baseline_arousal"))
+        except (AttributeError, TypeError, ValueError):
+            baseline = 0.3
+    return max(0.0, float(getattr(value, "arousal")) - baseline)
+
+
 def six_emotions(value):
     p, a, s, n = (getattr(value, k) for k in ("pleasure", "arousal", "stress", "social_need"))
     positive, negative = max(0, p), max(0, -p)
+    # 惊讶只统计相对唤醒基线的增量：基线 arousal 0.3 是平常水平，
+    # 若直接乘 arousal，阴天全维加成会把平静状态推成「兴奋」。
+    excited = _arousal_above_baseline(value)
     return {
         "joy": positive * (1 - .35 * s),
         "anger": negative * a * (.35 + .65 * s),
         "sadness": negative * (1 - .55 * a) * (1 - .35 * s),
         "fear": s * (.35 + .65 * a),
-        "surprise": a * (.25 + .35 * (1 - abs(p))),
+        "surprise": excited * (.25 + .35 * (1 - abs(p))),
         # 关怀满足社交需求后n可能下降，不能因此把关爱也显示成下降。
         "affection": (.35 * n + .65 * positive) * (1 - .4 * s),
     }
