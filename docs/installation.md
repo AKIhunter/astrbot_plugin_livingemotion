@@ -1,17 +1,55 @@
-# 本地安装与使用
+# LivingEmotion 安装与升级
 
-## 改版安装入口
+开发者：[AKIhunter](https://github.com/AKIhunter)。
+第一次安装请阅读本页前半部分，设置用法见 [新手插件手册](plugin-manual.md)。
 
-使用 Python >=3.12 与 `metadata.yaml` 允许的 AstrBot 版本，通过已授权账号获取
-PRIVATE 仓库源码，放入宿主 `data/plugins/astrbot_plugin_livingemotion/` 并加载。
-保留包、配置 schema 与完整 `pages/livingemotion/`（含本地 vendor），
-不携带开发虚拟环境、node_modules 或运行数据；运行页无需 Node/CDN。
-从插件页面进入“设置 → 快速开始”，按 [生活控制台](life-console.md)配置人格、
-时区、五档作息、模型、城市与记忆。所有设置统一提交到 AstrBot 原生配置。
+## 安装前确认
+
+当前支持 AstrBot 4.29.1–4.29.4 和 Python 3.12 及以上；
+具体版本限制以 [metadata.yaml](../metadata.yaml) 为准。
+插件无需安装从绫、LivingHello、LivingMemory 或 Bot Manager 才能使用基本状态功能。
+管理页面由 AstrBot 提供，普通使用不需要额外安装 Node 或启动独立网页服务。
+
+仓库目前公开，可以直接查看或下载源码。普通下载不需要把 GitHub token
+填进网址或插件配置。如果打不开，先检查链接和访问 GitHub 的网络。
+
+## 获取并加载插件
+
+1. 打开 [插件仓库](https://github.com/AKIhunter/astrbot_plugin_livingemotion)。
+   使用你所在 AstrBot 版本支持的安装方式；也可从 GitHub 下载源码 ZIP。
+2. 如果使用手动安装，解压后找到包含 `main.py` 和 `metadata.yaml` 的文件夹。
+   把这层文件夹命名为 `astrbot_plugin_livingemotion`，放到 AstrBot 的
+   `data/plugins/` 下。不要多套一层 `astrbot_plugin_livingemotion-main`。
+3. 保留 Python 文件、`_conf_schema.json` 和完整 `pages/livingemotion/`。
+   不把电脑上的虚拟环境、node_modules、数据库或私人配置一起复制进去。
+4. 在 AstrBot 插件管理中加载插件；需要重启或重载时按宿主提示操作。
+5. 打开插件页面 `livingemotion`，进入「设置 → 快速开始」。
+   看见页面但没有聊天状态时，先选人格；新安装“未采集”正常。
+
+如果由服务器管理员代为安装，把第 2–4 步交给管理员即可。
+日常设置、看状态和选择模型使用插件页面，不需要修改源码。
+
+## 设置与升级后检查
+
+优先在插件自己的设置页操作：保存后插件更新运行配置，返回页面核对保存值。
+如果用 AstrBot 原生插件配置页，按宿主提示应用或重载，再检查插件页面。
+直接改磁盘 JSON 不等于已经生效。
+
+升级前备份插件源码、配置和插件数据，尤其是数据库。
+更新源码时核对差异，不要整目录覆盖运行数据或用新默认配置替换已有配置。
+升级后检查插件能加载、页面能打开、旧记录仍可读取和配置值保持预期。
 
 旧配置缺少新版字段时保留会话独立状态与规则1；
 切换到规则2并设置时区后使用新的唤醒/沉睡规则。兼容与本轮验收见
 [兼容矩阵](compatibility.md)，配置说明以 [生活控制台](life-console.md)为准。
+
+## 旧版安装与开发验证参考
+
+下面是 0.1 阶段记录，其中版本、默认值和受测范围只适用于当时。
+当前用户按上文安装，按新手手册设置。
+
+<details>
+<summary>展开 0.1 历史安装、CLI 与测试参考</summary>
 
 ## 0.1 原生安装与 Provider 参考
 
@@ -167,3 +205,5 @@ F3 保留原绝对冷却、原时区/范围声明、真实旧计数与导入人�
 见[交接中的检查分层](delivery-notes.md#检查分层)及 [CI](../.github/workflows/ci.yml)。
 普通 pytest 包含可移植组件与回归；真实宿主、ASGI 和原生 Provider payload 显式分层。
 合成浏览器会更新证据文件，不能覆盖他人的独立验收输出。
+
+</details>

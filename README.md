@@ -5,17 +5,14 @@
 开发者：[AKIhunter](https://github.com/AKIhunter)。这是 AstrBot 的 LivingEmotion 插件手册入口；
 完整使用说明与运行流程见 [插件帮助手册](docs/plugin-manual.md)。
 
-基于 AstrBot 原生人格的生活状态控制台，区分 **Bot 感受**、
-**对方情绪观察**、**关系证据**和**作息精力**。记忆可接入 LivingMemory 或使用本地向量库，
-核心功能不依赖从绫或 Bot Manager。
-这是可解释的角色状态系统，不宣称模型具有真实主观意识。
+LivingEmotion 给你的 AstrBot 角色增加持续变化的心情、人物关系、作息和精力。
+你可以在页面上看状态，再按需开启主动聊天、日记、梦境和记忆。
+它沿用 AstrBot 中已经设置的人格，不需要额外安装从绫或 Bot Manager。
+页面里的情绪是软件计算的角色状态，不代表模型真的有人的感受。
 
-> 当前改版采用柔和的复古未来主义：原子轨道、磁带设备与航天仪表，搭配奶白、奶咖和淡绿。
-> 新规则与上手步骤见 [TA 的生活控制台](docs/life-console.md)，支持范围见
-> [兼容矩阵](docs/compatibility.md)。旧版本测试数字保留在历史报告，不作为改版验收。
-> 目标仓库 [AKIhunter/astrbot_plugin_livingemotion](https://github.com/AKIhunter/astrbot_plugin_livingemotion)
-> 必须 **PRIVATE**，通过正常认证访问；实际提交与 CI 结果以仓库记录为准。
-> 本地验收不代表远端 CI 或生产部署。
+> 第一次用：先按下面五步配置，保留“情绪模型、主动聊天、自动日记和梦境”关闭，
+> 体验本地规则情绪。准备使用模型生成时，再配置模型并开启对应功能。
+> 仓库目前公开，可以直接查看或下载源码，详见 [安装说明](docs/installation.md)。
 
 ## 能做什么
 
@@ -37,12 +34,15 @@
 
 ## 第一次使用
 
-1. 按[安装说明](docs/installation.md)加载插件，使用 Python >=3.12 和 metadata 允许的宿主版本。
-2. 从 AstrBot 插件页面打开 `livingemotion`，进入“设置 → 快速开始”。
-3. 选择原生人格、时区与作息。规则情绪不需要模型；启用作息前核对沉睡、起床与赖床区间。
-4. 按需选择日记/梦境/补课/晚安模型，填写住所；记忆可选择 LivingMemory 或本地向量 Provider。
-5. 保存一次，按人格和全局/私聊/群聊范围查看 TA、关系与长夜。
-   空库显示空态；页面模拟不调用模型、不发送消息。
+1. 按[安装说明](docs/installation.md)获取并加载插件。当前支持 AstrBot 4.29.1–4.29.4、Python 3.12 及以上。
+2. 打开插件页面 `livingemotion`，进入“设置 → 快速开始”。
+3. 选择人格。跟随模式用当前聊天的人格；固定角色需选择“指定人格”，再选择下方的人格。
+4. 情绪强度先选“平常”。如要使用作息，填写时区（中国大陆填 `Asia/Shanghai`），
+   核对睡眠与起床时间；保存时区或作息会启用时间表，“允许 TA 睡眠”决定是否因睡眠阻断聊天。
+5. 在插件自己的设置页保存，返回 TA 查看状态。新安装没有聊天记录时显示空白或“未采集”正常；
+   在已有聊天里正常互动后，页面会自动刷新状态。
+
+想开启更多功能、确认配置生效或排查报错，直接看 [新手插件手册](docs/plugin-manual.md)。
 
 ### 默认开关
 
@@ -90,7 +90,9 @@ flowchart LR
 
 三档只放大增量与两道闸门，不改半衰期和衰减速度。
 配置位置：AstrBot 管理面板 → 插件 → livingEmotion → 配置 → 情绪 → 情绪强度；
-保存后重启 AstrBot 生效。旧配置与旧状态无需迁移。
+在插件自己的设置页保存后即可更新运行配置；在 AstrBot 原生配置页操作时，
+按宿主提示应用或重载，再返回插件页面核对。仅编辑磁盘文件不能算配置已生效。
+旧状态可以继续读取，无需手动补写新增字段。
 
 「兴奋」按唤醒超出基线的部分计算：默认扣除 0.3，已细化的状态扣除动态基准。
 阴天加成不再把平常唤醒误判成兴奋；标签、曲线和梦境采用同一个 `surprise` 公式。
@@ -130,12 +132,15 @@ flowchart LR
 宿主 iframe 禁止 localStorage 时主题仅本次有效，刷新回系统主题。
 认证失效清空私人视图；页面资源 token 不是管理凭据。
 
-模型使用 AstrBot 原生 **`ProviderOpenAIOfficial` 的纯文本 Chat Completions 路径**；
-Qwen 纯文本参数由原生 Provider + 合成 transport 验证，未请求生产模型。
+模型支持 AstrBot 原生 OpenAI 类型的聊天提供商（`ProviderOpenAIOfficial`），
+以及 multi_api_router 中单独选定的上游（`multi_api_router:upstream_N`）。
+整体 router 和任意第三方 Provider 不自动等同于受支持的指定上游。
+两条路径都使用纯文本请求；Qwen 原生路径参数由合成 transport 验证。
 输入以完整 UTF-8 字节数加 256 模板余量作保守上界，不是精确 token usage；
 不需要 `tiktoken`。其他 Provider 未验证并拒绝生成。
-默认共享并发 1、队列 100、每日 48 次，输入/输出预算 4096/1024、超时 30 秒；
-不发送 tools 或图片，Qwen 关闭 thinking，服务可采用更严格上限。
+默认同时执行 1 个模型任务、等待队列 100、每日最多 48 次模型调用；
+输入上限 32768（按 UTF-8 字节上界检查）、输出预算 1024、超时 30 秒；
+不发送 tools 或图片；原生 Qwen 路径关闭 thinking，router 路径沿用上游配置，服务可采用更严格上限。
 向量接口另支持 AstrBot 原生 DashScope/OpenAI 提供者，复用宿主配置。
 
 ## 失败边界
@@ -198,5 +203,5 @@ npm --prefix tests/ui run test:browser
 MIT 仅适用于本项目权属明确的新写内容。
 见 [LICENSE](LICENSE)、[来源说明](THIRD_PARTY_NOTICES.md)。
 Logo/Banner 为原创几何 LE 与 livingEmotion 字标，仅参考极简留白、细线和黄绿配色，
-不使用莱茵生命官方图案或上游素材。本次不包含商店上架或生产部署。
-BiliBot/LivingHello 的消费者本地改动不进入新插件仓库提交；现有部署保持不变。
+不使用莱茵生命官方图案或上游素材。历史交付和测试范围见
+[交付记录](docs/delivery-notes.md)；服务器部署应另行备份、校验和验收。
