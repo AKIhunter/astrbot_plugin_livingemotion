@@ -8,7 +8,7 @@
 
 范围：独立新写 `domain/night.py`、`services/catchup.py`、`tests/night/`、
 本文档。共享类型、存储、入口、情绪/关系、规格复选框均未修改；未执行 Git 提交。
-没有读取或复制从绫函数、提示词或素材。运行模块只依赖标准库与本插件 `contracts`，
+运行模块由本插件实现，只依赖标准库与本插件 `contracts`，
 没有 AstrBot、长期记忆、数据库、模型、系统时钟、后台循环或发送依赖。
 
 实施阶段：已批准 apply。专项 `state-machine-correctness`，置信度高；

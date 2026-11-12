@@ -206,7 +206,6 @@ MODE_REASON_TEXT = {
     "active": "参与表达与行动：可生成内容并按规则自主发送。",
     "observe_only": "仅观察：只记录状态，不主动发送。",
     "disabled": "插件未启用或已停止，所有自动行为暂停。",
-    "ownership_conflict": "检测到其他情感插件占用了当前范围，已退让为仅观察。",
     "config_observe_only": "原生配置中的运行模式是「仅观察」，请在设置中改为「参与表达与行动」。",
 }
 
@@ -500,9 +499,7 @@ class Console:
         memory = self.memory.capabilities()
         settings_options = await self.console_settings_options()
         effective = self.effective_mode(context)
-        ownership_conflict = bool(context is not None and self.bridge.conflicts(context))
-        mode_reason = ("ownership_conflict" if ownership_conflict and effective == "observe_only"
-                       else effective if effective in MODE_REASON_TEXT else "disabled")
+        mode_reason = effective if effective in MODE_REASON_TEXT else "disabled"
         # 「有实时来源的会话」才允许写动作。注意不能只看 _contexts：启动时
         # 会从库里回填上下文，那些会话没有实时来源，点下去必然 context_changed。
         live = getattr(self, "is_live_context", None)
@@ -551,8 +548,6 @@ class Console:
                  "reason": "ready" if self.config.enabled else "disabled"},
                 {"name": "configuration", "status": "degraded" if self._config_fault else "ok",
                  "reason": "invalid_native_config" if self._config_fault else "native"},
-                {"name": "ownership", "status": "degraded" if ownership_conflict else "ok",
-                 "reason": "congling_scope_conflict" if ownership_conflict else "exclusive"},
                 {"name": "background", "status": "degraded" if self._task_fault else "ok",
                  "reason": self._task_fault or "idle"},
                 {"name": "reply_confirmation", "status": "unavailable",

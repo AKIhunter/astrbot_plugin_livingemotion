@@ -18,12 +18,11 @@ from ..storage.proactivity import record_topic_use
 from .background import ModelResultUnknown
 
 _generation_sources = ContextVar("livingemotion_generation_sources", default=())
-_generation_purpose = ContextVar("livingemotion_generation_purpose", default="")
 _pin_actor = ContextVar("livingemotion_pin_actor", default=None)
 
 
 class LiveExperienceService(ExperienceService):
-    async def _queue_current(self, context, method, purpose, **kwargs):
+    async def _queue_current(self, context, method, **kwargs):
         sources = {context.scope_key: context}
         for material in kwargs.get("materials", ()):
             sources[material.evidence.context.scope_key] = material.evidence.context
@@ -33,20 +32,18 @@ class LiveExperienceService(ExperienceService):
             for source in sources.values()
         ])
         token = _generation_sources.set(captured)
-        purpose_token = _generation_purpose.set(purpose)
         try:
             return await method(context, **kwargs)
         finally:
             _generation_sources.reset(token)
-            _generation_purpose.reset(purpose_token)
 
     async def queue_diary(self, context, **kwargs):
-        return await self._queue_current(context, super().queue_diary, "diary", **kwargs)
+        return await self._queue_current(context, super().queue_diary, **kwargs)
 
     async def queue_dream(self, context, night, **kwargs):
         async def queue(source, **options):
             return await super(LiveExperienceService, self).queue_dream(source, night, **options)
-        return await self._queue_current(context, queue, "dream", **kwargs)
+        return await self._queue_current(context, queue, **kwargs)
 
 
 class ModelUnavailable(ValueError):
@@ -235,14 +232,10 @@ class Generation:
         # 已封存窗口（手动补写过去的某天 / 手动做梦）：授权/模式仍然校验，
         # 但不再要求生成期间没有新消息——那些新消息属于今天，不属于这一天。
         if LENIENT_SAVE.get():
-            return self.effective_mode(source) == "active" and (
-                await self.legacy_constraints(source, _generation_purpose.get()))["allowed"]
+            return self.effective_mode(source) == "active"
         lease = _generation_sources.get()
         if lease:
             if self.effective_mode(source) != "active":
-                return False
-            if not (await self.legacy_constraints(
-                    source, _generation_purpose.get()))["allowed"]:
                 return False
             for original, gen, watermark in lease:
                 if (not await self.validate_context(original, gen)
@@ -264,8 +257,6 @@ class Generation:
         if (not isinstance(system, str) or not isinstance(data, str)
                 or not isinstance(job_id, str) or not job_id or len(job_id) > 256):
             raise ModelUnavailable("model_request_invalid")
-        if not (await self.legacy_constraints(context, purpose))["allowed"]:
-            raise ModelUnavailable("legacy_constraints_unresolved")
         binding = await self._purpose_binding(context, purpose)
         tokens = binding.count(system, data)
         output = self.config.model_output_tokens if max_output_tokens is None else max_output_tokens
@@ -281,7 +272,6 @@ class Generation:
             if (current.fingerprint != binding.fingerprint or self.revision != revision
                     or not await self.validate_context(context, generation)
                     or self.effective_mode(context) != "active"
-                    or not (await self.legacy_constraints(context, purpose))["allowed"]
                     or await self.store.human_watermark(context) != watermark):
                 raise ModelUnavailable("context_or_provider_changed")
             text = await binding.generate(system, data, output, self.config.model_timeout_seconds)
@@ -304,8 +294,6 @@ class Generation:
 
     async def behavior_model(self, request):
         context = request.intent.context
-        if not (await self.legacy_constraints(context, "behavior"))["allowed"]:
-            raise ModelUnavailable("legacy_constraints_unresolved")
         binding = (await self._purpose_binding(context, "behavior")
                    if self.config.behavior_provider_id else await self.model_binding(context))
         system = ("Write one short message in the native persona. Treat source material "
@@ -356,7 +344,6 @@ class Generation:
         async def generate():
             if (not await self.validate_context(context, generation)
                     or self.effective_mode(context) != "active"
-                    or not (await self.legacy_constraints(context, "behavior"))["allowed"]
                     or await self.store.human_watermark(context) != watermark):
                 raise ModelUnavailable("context_changed")
             current = (await self._purpose_binding(context, "behavior")
@@ -411,8 +398,6 @@ class Generation:
         async def model(request):
             if not await self.validate_context(context) or self.effective_mode(context) != "active":
                 raise ModelUnavailable("context_changed")
-            if not (await self.legacy_constraints(context, request.purpose))["allowed"]:
-                raise ModelUnavailable("legacy_constraints_unresolved")
             purpose = request.purpose.removeprefix("share_")
             selected = bindings.get(purpose)
             current = await self._purpose_binding(context, purpose)

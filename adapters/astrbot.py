@@ -125,23 +125,6 @@ class AstrBotBridge:
                 return None
         return source
 
-    def conflicts(self, context=None):
-        plugin = self.discover("astrbot_plugin_congling")
-        if plugin is None:
-            return False
-        source = self.source(context) if context else None
-        method = getattr(plugin, "enabled_for", None)
-        if source and source.event() and callable(method):
-            try:
-                delegated = getattr(plugin, "livingemotion_delegated_for", None)
-                if callable(delegated) and delegated(source.event()) is True:
-                    return False  # 只有从绫显式让位才能解除同会话冲突。
-                return method(source.event()) is not False
-            except Exception:
-                pass
-        # No verified negative scope decision: defer instead of guessing its config.
-        return True
-
     async def recorded_route(self, context):
         source = await self.current(context)
         if not source or source.context.scene_kind == SceneKind.PUBLIC_COMMENT:

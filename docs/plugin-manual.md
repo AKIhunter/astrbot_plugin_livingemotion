@@ -178,7 +178,7 @@ LivingHello 协作读取四维状态，不共享跨场景私人正文。
 只想在少数群使用时应先填群号。关群主动不会靠私聊名单自动开启群发言。
 
 使用与原理见 [生活控制台](life-console.md)；安装、版本与迁移见
-[安装](installation.md)、[兼容矩阵](compatibility.md)、[迁移与回退](migration.md)。
+[安装](installation.md)、[兼容矩阵](compatibility.md)、[独立运行与升级](local-runtime.md)。
 开发者与维护者的接口、测试和历史材料分别见 [API](api.md)、
 [surprise 回归材料](verification-surprise.md)、[交付记录](delivery-notes.md)。
 变更记录见 [CHANGELOG](../CHANGELOG.md)。测试数字只代表对应测试范围，

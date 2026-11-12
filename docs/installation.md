@@ -7,7 +7,7 @@
 
 当前支持 AstrBot 4.29.1–4.29.4 和 Python 3.12 及以上；
 具体版本限制以 [metadata.yaml](../metadata.yaml) 为准。
-插件无需安装从绫、LivingHello、LivingMemory 或 Bot Manager 才能使用基本状态功能。
+插件无需安装其他插件即可使用基本状态功能。
 管理页面由 AstrBot 提供，普通使用不需要额外安装 Node 或启动独立网页服务。
 
 仓库目前公开，可以直接查看或下载源码。普通下载不需要把 GitHub token
@@ -58,7 +58,7 @@
 读者：隔离环境的安装者和管理员。依据：`main.py`、`config.py`、`_conf_schema.json`、
 `runtime/application.py`、`runtime/models.py`。2026-11-05 核对冻结源码及已完成的最终宿主报告。
 维护者在入口/配置/宿主升级时同步本页，每次交付复核；过期标记规则见[交接](delivery-notes.md)。
-不依赖从绫、LivingMemory、BiliBot、LivingHello 或 Bot Manager 才能加载核心插件。
+无需 LivingMemory、BiliBot、LivingHello 或 Bot Manager 即可加载核心插件。
 
 ## 安装
 
@@ -138,7 +138,7 @@ scope_key = Context.from_dict(snapshot["context"]).scope_key
 不自动重发；无待回复的计划睡眠及手动睡眠仍可使用。
 健康行 `reply_confirmation=unavailable` 明示 unsupported，真实HTTP和iframe已验证；
 不能把页面未报错当支持确认。typed port 成功仅是组件证据，不证明生产投递。
-当前结果见[最终宿主验收](verification-host-final.md)，支持边界见[兼容矩阵](compatibility.md)。
+支持边界见[兼容矩阵](compatibility.md)，升级规则见[独立运行说明](local-runtime.md)。
 
 ## Provider 与预算
 
@@ -176,29 +176,11 @@ Qwen 使用关闭 thinking 的参数。原生 Provider/SDK 参数通过合成 tr
 - bridge 缺失：从宿主插件页面入口访问，不直接打开 HTML。
 - 状态存储故障：H02 原读取故障反例已在最终三场景通过，不泛化为任意故障都不影响原生聊天。
 
-## 迁移与回退
+## 数据与回滚
 
-CLI 已存在，入口 `tools/migrate_legacy.py`，有 `preview/import/verify/rollback-plan`。
-不自动搜旧库；先运行帮助，再按[迁移指南](migration.md#精确-cli)准备显式选择文件：
-
-```bash
-python3.12 tools/migrate_legacy.py --help
-python3.12 tools/migrate_legacy.py preview --help
-```
-
-源必须是已确认的一致快照；目标必须先由插件初始化后停机，停止全部写者。
-任何 WAL/SHM/journal 旁文件都拒绝，不能删旁文件绕过；通过 SQLite backup 制作独立快照。
-先预览、核对来源与字段，再导入/对账。旧 pending 永不恢复，旧观察不等于 Bot 感受，
-旧未知关系不跨账号聚合，不全量迁移事实/向量。
-
-F3 保留原绝对冷却、原时区/范围声明、真实旧计数与导入人类消息水位；
-正文最长原时间起七天，置顶不延长迁移体验期限。未知约束拒绝，开关不能绕过。
-最终完整migration 84/84（含CLI）、V06已证明限制4/4通过，覆盖运行时阻断及恢复；
-其测试与full重叠，不叠加计数，也不等于生产迁移完成。
-
-回退先停新执行者和消费者，等自有任务退出，保留新数据及一致备份，
-再恢复明确记录的消费者选择。`rollback-plan` 只出计划，不停启进程或改配置。
-不能用旧整库覆盖新记录，也不能有损写回从绫。无生产迁移/回退实测。
+仅使用自身数据库，不导入其他插件旧库。升级前备份代码、配置和 SQLite 一致快照，
+核对文件清单后逐文件更新；失败时恢复本次改动文件，保留当前业务数据。
+具体步骤见[独立运行与升级](local-runtime.md)。
 
 ## 开发检查
 

@@ -41,7 +41,7 @@ async def test_closed_coupling_removes_stale_blocks_without_reading_or_catchup(t
 
 
 @pytest.mark.asyncio
-async def test_explicit_delegation_unlocks_scoped_state_relationship_and_catchup(tmp_path):
+async def test_enabled_coupling_injects_local_state_relationship_and_catchup(tmp_path):
     app, host, _ = await application(tmp_path)
     flags = {"livingemotion":True,"livingmemory":False}
     install_guard(host, flags)
@@ -49,9 +49,7 @@ async def test_explicit_delegation_unlocks_scoped_state_relationship_and_catchup
         message = Message()
         await app.on_message(message)
         context = Context.from_dict(message.extra["livingemotion:context"])
-        host.congling = SimpleNamespace(enabled_for=lambda _:True,
-                                        livingemotion_delegated_for=lambda _:True)
-        assert (await app.api.get_capabilities())["mode"] == "observe_only"
+        assert (await app.api.get_capabilities())["mode"] == "active"
         assert (await app.api.get_capabilities(context=context))["mode"] == "active"
         app._prepare_catchup = AsyncMock()
         app._inject_recalled_memory = AsyncMock()
@@ -68,14 +66,13 @@ async def test_explicit_delegation_unlocks_scoped_state_relationship_and_catchup
 
 
 @pytest.mark.asyncio
-async def test_unupdated_congling_is_not_silently_overridden(tmp_path):
-    app, host, _ = await application(tmp_path)
+async def test_local_observe_only_preserves_empty_injection(tmp_path):
+    app, host, _ = await application(tmp_path, {"mode": "observe_only"})
     install_guard(host, {"livingemotion":True,"livingmemory":True})
     try:
         message = Message()
         await app.on_message(message)
         context = Context.from_dict(message.extra["livingemotion:context"])
-        host.congling = SimpleNamespace(enabled_for=lambda _:True)
         assert (await app.api.get_capabilities(context=context))["mode"] == "observe_only"
         req = SimpleNamespace(extra_user_content_parts=[])
         await app.on_llm_request(message, req)

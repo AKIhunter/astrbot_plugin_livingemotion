@@ -71,9 +71,6 @@ class App(models.Generation):
     def effective_mode(self, context):
         return "active" if self.valid else "disabled"
 
-    async def legacy_constraints(self, context, purpose):
-        return {"allowed": self.valid}
-
     async def night_guard(self, *args):
         return True
 

@@ -2,7 +2,7 @@
 
 负责人：`/root/emotion_domain`。仅独立新写 `domain/emotion.py`、
 `domain/relationship.py` 及对应测试；未修改共享类型、存储、入口、API 或规格复选框。
-没有读取或复制从绫函数、提示词，没有 AstrBot、从绫、长期记忆运行时依赖。
+领域模块由本插件实现，没有 AstrBot 或长期记忆运行时依赖。
 
 ## 集成必读
 

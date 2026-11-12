@@ -64,7 +64,7 @@ async def run(args, report):
     from astrbot.dashboard.password_state import set_dashboard_password_hashes
     from astrbot.dashboard.server import AstrBotDashboard
     from final_checks import basic, http_matrix, stopped, seed
-    from final_combination import pipelines, behavior_persona, consumers, conflict
+    from final_combination import pipelines, behavior_persona, consumers
     from final_boundaries import reply_receipts, bili_fault, rollback
     from final_c30_product import native_after_sent
 
@@ -120,8 +120,6 @@ async def run(args, report):
         if args.scenario != "single":
             await e.case("bili_fault_suite_completed", lambda: bili_fault(core, e))
             await e.case("consumer_suite_completed", lambda: consumers(core, e))
-        if args.scenario == "conflict":
-            await e.case("conflict_suite_completed", lambda: conflict(core, e))
         core._final_synthetic_events.append(await seed(core))
         plugin = context.get_registered_star(NAME).star_cls
         tasks.append(asyncio.create_task(core.start(), name="final-core"))
@@ -157,7 +155,7 @@ async def run(args, report):
                     await asyncio.sleep(0.1)
             e.check("browser_process_completed", (root / "browser-done").read_text() == "0",
                     layer="real_dashboard_browser")
-        if args.scenario == "conflict":
+        if args.scenario == "four":
             await e.case("rollback_suite_completed", lambda: rollback(core, e, root))
         await e.case("stop_suite_completed", lambda: stopped(core, e, root))
         e.check("C03.source_unchanged", hashes(root / "data/plugins") == report["source_before"])
@@ -218,7 +216,7 @@ def main():
     parser.add_argument("--host-source", type=Path, required=True)
     parser.add_argument("--sandbox-parent", type=Path, required=True)
     parser.add_argument("--dashboard-dist", type=Path, required=True)
-    parser.add_argument("--scenario", choices=["single", "four", "conflict"], default="single")
+    parser.add_argument("--scenario", choices=["single", "four"], default="single")
     parser.add_argument("--focus", choices=["full", "h01-h03-c30", "c30"], default="full")
     parser.add_argument("--browser", action="store_true")
     parser.add_argument("--child", action="store_true")
@@ -241,23 +239,10 @@ def main():
     if args.scenario != "single":
         sources += [plugin_root.parent / n for n in
                     ("astrbot_plugin_at_guard", "LivingMemory", "BiliBot")]
-    if args.scenario == "conflict":
-        sources.append(plugin_root.parent / "astrbot_plugin_congling")
     for source in sources:
         shutil.copytree(source, root / "data/plugins" / source.name, ignore=shutil.ignore_patterns(
             ".git", ".venv", ".trae", "__pycache__", "*.pyc", "node_modules", "tests",
             "data", "*.db", "*.sqlite*", ".env*", ".pytest_cache", "docs"))
-    if args.scenario == "conflict":
-        config = {
-            "basic": {"enabled": False},
-            "memory": {"enabled": False}, "proactive": {"enabled": False},
-            "diary": {"enabled": False}, "bridge_livingmemory": {"enabled": False},
-            "night": {"enabled": False, "beat_enabled": False, "dream_enabled": False,
-                      "crawl_enabled": False},
-            "capability": {"enabled": False}, "close": {"enabled": False},
-            "qq": {"enabled": False}, "qzone": {"enabled": False},
-        }
-        (root / "data/config/astrbot_plugin_congling_config.json").write_text(json.dumps(config))
     env = {"PATH": f"{Path(sys.executable).parent}:/usr/bin:/bin",
            "HOME": str(root / "home"), "TMPDIR": str(root / "tmp"),
            "ASTRBOT_ROOT": str(root), "PYTHONDONTWRITEBYTECODE": "1",

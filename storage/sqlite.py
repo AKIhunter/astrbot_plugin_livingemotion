@@ -40,11 +40,11 @@ from .experiences import ExperienceStore
 T = TypeVar("T")
 STATE_KINDS = frozenset(("bot", "observation", "relationship", "night"))
 _JSON_SCALARS = frozenset((str, int, float, bool, type(None)))
-LEGACY_EXPERIENCE = """EXISTS (
+UNVERIFIED_EXPERIENCE = """EXISTS (
     SELECT 1 FROM json_each(experiences.value_json,'$.evidence')
-    WHERE json_extract(value,'$.provider')='congling.snapshot')"""
+    WHERE json_extract(value,'$.kind')='legacy_unknown')"""
 LIVE_EXPERIENCE = f"""(pinned=1 OR expires_at IS NULL OR expires_at>?)
-    AND (NOT ({LEGACY_EXPERIENCE})
+    AND (NOT ({UNVERIFIED_EXPERIENCE})
          OR (expires_at>? AND created_at+604800>?))"""
 INTENT_TRANSITIONS = {
     "pending": {"reserved", "cancelled"},
@@ -804,22 +804,9 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
                 db.execute("DELETE FROM body_window WHERE seq NOT IN (SELECT seq FROM events)")
                 experiences = db.execute(
                     f"DELETE FROM experiences WHERE (pinned=0 AND expires_at IS NOT NULL"
-                    f" AND expires_at<=?) OR (({LEGACY_EXPERIENCE}) AND "
+                    f" AND expires_at<=?) OR (({UNVERIFIED_EXPERIENCE}) AND "
                     "(expires_at IS NULL OR expires_at<=? OR created_at+604800<=?))",
                     (now, now, now),
-                ).rowcount
-                # Redact only imported history copies; preserve non-body blockers
-                # and source receipts so expiry cannot reopen a legacy budget.
-                histories = db.execute(
-                    """UPDATE states SET value_json=json_set(
-                       json_remove(value_json,'$.original','$.baseline.pending_crawl'),
-                       '$.history_redacted',json('true')), version=version+1
-                       WHERE kind='legacy_import'
-                       AND COALESCE(json_extract(value_json,'$.history_redacted'),0)=0
-                       AND (json_extract(value_json,'$.history_expires_at') IS NULL OR
-                            updated_at+604800<=? OR
-                            json_extract(value_json,'$.history_expires_at')<=?)""",
-                    (now, now),
                 ).rowcount
                 energy = db.execute("DELETE FROM energy_events WHERE occurred_at<=?",
                                     (now - 7 * 86400,)).rowcount
@@ -828,7 +815,7 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
                 db.execute("UPDATE reply_attempts SET context_json='{}' "
                            "WHERE started_at<=? AND status<>'started'", (now - 7 * 86400,))
                 return {"events": deleted, "experiences": experiences,
-                        "legacy_histories": histories, "energy_events": energy}
+                        "energy_events": energy}
             return self._transaction(db, mutate)
         return await self._run(cleanup)
 
@@ -1298,69 +1285,8 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
                 "cooldown_until": None,
                 "reason_codes": (),
             }
-            try:
-                rows = self._legacy_baselines(db, 2000)
-                if not rows:
-                    return history
-                from ..runtime.legacy import evaluate_legacy
-                legacy = evaluate_legacy(
-                    rows, context, purpose="behavior", timezone=self.config.timezone,
-                    now=self._now(), human_watermark=watermark,
-                )
-                floors = {}
-                for name, key in (("global_used", "global_used_floor"),
-                                  ("scope_used", "scope_used_floor"),
-                                  ("unanswered_count", "unanswered_floor")):
-                    value = legacy.get(key, 0)
-                    if type(value) is not int or value < 0:
-                        raise ValueError("invalid legacy count")
-                    floors[name] = value
-                reasons = tuple(legacy.get("reason_codes", ()))
-                if legacy.get("allowed") is not True and not reasons:
-                    reasons = ("legacy_constraints_unresolved",)
-                cooldown = legacy.get("cooldown_until")
-                if cooldown is not None:
-                    finite(cooldown, "legacy cooldown", 0)
-                if any(not isinstance(code, str) or not code.strip() for code in reasons):
-                    raise ValueError("invalid legacy reasons")
-                for name, value in floors.items():
-                    history[name] += value
-                history.update(reason_codes=reasons, cooldown_until=cooldown)
-            except Exception:
-                # Refusal is a separate hard gate, not fabricated usage or an
-                # invented native attempt. BehaviorHistory consumes these fields.
-                history["reason_codes"] = ("legacy_constraints_unresolved",)
             return history
         return await self._run(read)
-
-    @staticmethod
-    def _legacy_baselines(db, limit):
-        rows = db.execute(
-            "SELECT scope_key,record_key,generation,version,updated_at,value_json "
-            "FROM states WHERE kind='legacy_import' ORDER BY scope_key,record_key LIMIT ?",
-            (limit + 1,),
-        ).fetchall()
-        if len(rows) > limit:
-            raise ValueError("legacy baseline capacity")
-        result = []
-        allowed = ("source_id", "source_hash", "classification", "identity_resolved",
-                   "target_context", "baseline", "activation_blockers", "runtime_constraints")
-        for row in rows:
-            value = json.loads(row["value_json"])
-            if not isinstance(value, dict) or not isinstance(value.get("baseline"), dict):
-                raise ValueError("legacy baseline structure")
-            filtered = {key: value[key] for key in allowed if key in value}
-            filtered["baseline"] = {k: v for k, v in filtered["baseline"].items()
-                                    if k != "pending_crawl"}
-            result.append({**{k: row[k] for k in row.keys() if k != "value_json"},
-                           "value": filtered})
-        return tuple(result)
-
-    async def legacy_baselines(self, *, limit: int = 2000) -> tuple[dict, ...]:
-        if type(limit) is not int or not 1 <= limit <= 2000:
-            raise ValueError("invalid legacy baseline limit")
-
-        return await self._run(lambda db: self._legacy_baselines(db, limit))
 
     async def load_experience(self, entry_id: str) -> tuple[Experience, int] | None:
         def read(db):
@@ -1436,7 +1362,8 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
                         or not row["pinned"] and row["expires_at"] is not None
                         and row["expires_at"] <= now):
                     raise _Rejected("experience_changed")
-                if any(ref.provider == "congling.snapshot" for ref in old.evidence):
+                # 来源不明的体验仍遵守七天硬期限，置顶不能绕过隐私边界。
+                if any(ref.kind.value == "legacy_unknown" for ref in old.evidence):
                     if old.expires_at is None or now >= min(old.expires_at, old.created_at + 604800):
                         raise _Rejected("experience_expired")
                 db.execute("UPDATE experiences SET pinned=?,value_json=? WHERE experience_id=?",

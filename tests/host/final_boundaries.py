@@ -172,9 +172,6 @@ async def rollback(core, e, root):
     files = {str(f.relative_to(data_dir)): hashlib.sha256(f.read_bytes()).hexdigest()
              for f in data_dir.rglob("*") if f.is_file()}
     e.check("C58.native_stop_no_tasks", p.application.closed and not tasks())
-    choice, service, _ = await bridge._provider(bili, "ingest_event")
-    old = core.star_context.get_registered_star("astrbot_plugin_congling").star_cls
-    e.check("C58.consumer_restores_real_congling", choice == "congling" and service is old.emotion)
     await p.observe_message(event("synthetic-late-after-rollback"))
     after = {str(f.relative_to(data_dir)): hashlib.sha256(f.read_bytes()).hexdigest()
              for f in data_dir.rglob("*") if f.is_file()}

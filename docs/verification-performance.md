@@ -9,7 +9,7 @@
 随后独立window lane **F9 11/11 PASS，0 failed/skip，exit 0**，
 物理静默scope计数 **[2,2,2]**。WAL/FULL、满窗口/双trace/状态计数符合要求；
 源码前后12/52文件与跨lane共同11文件一致。
-**C22容量/window通过，迁移TTL引用 `verification-final.md` 阶段证据，最终full待跑。**
+**历史记录：C22容量/window通过，最终full在该时点待跑；当前验收见 delivery-notes.md。**
 C50 31/31、F8 53/53引用 `verification-budgets-final.md`，本轮未重跑。
 完整命令、分布、事务核验边界、Frozen Ownership及原始证据hash见
 [最终性能验收](verification-performance-final.md)。测试已结束，不修产品、不择优重跑。

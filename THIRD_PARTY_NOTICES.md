@@ -1,26 +1,12 @@
 # 来源与第三方说明
 
-记录日期：2026-11-05。本项目显示名 livingEmotion，作者标识 AKIhunter。
-本轮仅本地准备文档与 CI，没有公开发布或授权上架。
+更新日期：2026-11-12。本项目显示名 LivingEmotion，作者标识 AKIhunter。
 
 ## 自有内容
 
-新插件按行为需求独立重实现，源码、提示词、页面和测试夹具均新写。
-不从从绫复制函数体、提示词、页面、logo、图片、数据库或私人记录。
+情绪、关系、作息、补课和存储由本插件实现，源码、提示词、页面和测试夹具为自有内容。
 [MIT 许可](LICENSE)仅授予权属明确的本项目原创内容，不代表本仓依赖或行为参考也采用 MIT。
 新增第三方内容前须核对适用版本、许可、署名和分发义务，并更新本文件。
-
-## 行为参考
-
-- 项目：[LUOSHUI319/astrbot_plugin_congling](https://github.com/LUOSHUI319/astrbot_plugin_congling)。
-- 已记录参考 HEAD：`5015e1804a30cb1784efa41feefcd91508c163f3`；参考工作区有未提交改动，
-  HEAD 不能替代完整来源身份。选用文件哈希及采集时间见 [source-baseline.md](docs/source-baseline.md)。
-- 基线核查记录 GitHub license 为 null，远端/本地根目录未发现 LICENSE。
-  结论仅为**未发现明确许可**，不推断作者没有其他授权，也不据此获得复制或再许可权。
-- livingEmotion 是行为参考意义上的**非官方独立实现/衍生项目**，
-  不表示共享上游源码，不声称获得上游背书、维护关系、商标或分发授权。
-- 核心差异：对方观察不再等于 Bot 心情；关系与作息不依赖原记忆表；
-  记忆可替换，主动发送单一归属，私人体验保留类型、来源和授权边界。
 
 ## 宿主、可选插件与工具
 
@@ -68,7 +54,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ```
 
-本轮不制作 logo/Banner，不借用官方或上游标志。页面为自有 livingEmotion 字标；
+logo/Banner 和页面使用原创 LE 与 LivingEmotion 字标，不借用官方或上游标志；
 视觉方向参考不构成对他人商标/素材的使用授权。
 测试账号、聊天文本、日记、梦、令牌反例和数据库均为合成/隔离生成，不来自生产。
 `tests/ui/evidence/` 只保留已审阅的合成证据；宿主报告保留源码哈希和脱敏检查结果，

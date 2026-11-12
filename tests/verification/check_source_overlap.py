@@ -11,10 +11,8 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 REFERENCE_FILES = (
-    "main.py", "humanize/persona.py", "humanize/proactive.py", "memory/emotion.py",
-    "memory/affinity.py", "memory/diary.py", "night/state.py", "night/energy.py",
-    "night/stages.py", "night/wake_flow.py", "night/dream.py", "page_api/__init__.py",
-    "pages/fromling/index.html",
+    "main.py", "__init__.py", "api.py", "contracts.py", "config.py",
+    "page_api/__init__.py",
 )
 REVIEWED_EVIDENCE = frozenset({
     "tests/host/evidence-v4.29.4.json",

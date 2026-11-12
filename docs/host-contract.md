@@ -72,9 +72,9 @@ OAuth 非类型 scope/sub、OAuth auth_source、伪造签名、过期 token 拒�
 - Python：`.livingemotion-host-t1/venv/bin/python`，CPython `3.12.16`。
 - checkout：`.livingemotion-host-t1/AstrBot`；全部运行目录只放 `.livingemotion-host-t1/`。
 - 本地另有 `/private/tmp/bot-t2-dialogue-20261104-TfDVPs/astrbot`，源码自报 `4.29.1`，没有完整 Git/依赖清单，不当作已运行的宿主。
-- 旧 venv 如 `/private/tmp/congling-validation-venv` 是 Python 3.11 插件测试环境，不满足本标签 `requires-python >=3.12`。
+- Python 3.11 测试环境不满足本标签 `requires-python >=3.12`。
 - 本标签没有 `uv.lock`，依赖按 `pyproject.toml` 解析；后续记录实际安装清单，不能宣称 lockfile 重现。
-- 禁止生产凭证、真实聊天/数据库、模型调用、平台连接和真实发送。尚未确认最低支持版本，不能继承从绫的 `>=4.13,<5` 声明。
+- 禁止生产凭证、真实聊天/数据库、模型调用、平台连接和真实发送。支持范围须由本插件自行验证。
 
 ## 可立即接入的接口
 
@@ -132,7 +132,7 @@ OAuth 非类型 scope/sub、OAuth auth_source、伪造签名、过期 token 拒�
 | 增加最小 guard 后的合法 Dashboard / 非管理令牌 | 真实 HTTP + 独立 guard fixture | 13 项通过；见上方 guard 说明，不表示成品 handler 已修复 |
 | 正常停止与自有任务取消 | 真实 core.stop / fixture.terminate | 通过，子进程已退出，无遗留宿主服务 |
 | 原生 Dashboard 外壳、iframe 握手、页面按钮、390/1280 | 未执行 | 不宣称浏览器 bridge 交互、UI 或完整 livingEmotion 页面通过 |
-| livingEmotion 最终插件加载 / 共存 / 从绫卸载环境 | 未执行 | 本专项只加载自写探针和宿主 builtins，不接入并行构建中的新插件 |
+| livingEmotion 最终插件加载 / 可选插件共存 | 未执行 | 本专项只加载自写探针和宿主 builtins，不接入并行构建中的新插件 |
 
 运行中宿主会尝试获取 T2I endpoints 和模型元数据，3 次非回环 DNS 解析被 audit hook 拒绝；
 一次运行期子进程启动也被拒绝。无 Provider / 外部平台配置，真实模型调用数 0、真实消息发送数 0。
@@ -167,5 +167,5 @@ env UV_PYTHON_INSTALL_DIR="$PWD/.livingemotion-host-t1/python" \
 管理端必须补页面令牌类型保护，再由新插件集成测试核实。
 给 UI：`/api/plugin/page/bridge-sdk.js` + `AstrBotPluginPage.apiGet/apiPost`；
 HTTP 页面/资源已核实，父窗口代理握手与交互尚需 UI 专项验证。
-给父代理：基线已在 `docs/source-baseline.md`；保留其原始时间点，不因其他代理修改消费者而重新生成覆盖。
+历史基线保存在 Git 历史；新验收应记录当前源码哈希，不覆盖旧证据。
 本独立任务已结束，不占用后台进程；后续 T5 可接续。最低支持版本仍未知，当前只能声明对该 HEAD 的以上有限实测结果。

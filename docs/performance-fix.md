@@ -216,7 +216,7 @@ cooldown 把真实 0/0/0 变成 2147483647；其余虚构 last_attempt_at=179999
 上述采用 core 最新 `docs/INTEGRATION.md` 顶部冻结协议，
 取代初步沟通的 `legacy_*` 提议，不新增第三个布尔字段。
 解析异常保留原生真实计数/尝试，
-reason=`legacy_constraints_unresolved`；不能通过时间流逝清掉 unresolved。
+历史旧约束解析失败时不能通过时间流逝放行；该接点现已撤下。
 存储与 core 新端口联合回归：原 `test_migration_cli.py` 全部 10 项通过，
 包括 proven 四限制到期/次日/新人类消息后恢复及 unresolved 不恢复；
 测试断言未修改。仅实现者复验，不代替最终独立验收。
@@ -440,7 +440,7 @@ p95=221.628ms，目标仍为 <=50ms。事务裁剪约占 53.5%。
 | 锁与尾延迟 | 保留单连接线程外执行；批量快照缩短锁队列；scope 锁只串行同场景，跨账号共享 Bot/night 也互斥 |
 | 清除与 CAS | generation 在排队前取得，不能在冲突重试时刷新到清除后代际；状态和快照代际必须一致；事务内仍检查 generation/version |
 | 写放大与查询计划 | 使用现有主键、body_scope_seq、body_retention；scope 找第 N+1 新行，全库计溢出量找最老溢出阈值，DELETE 范围查找，无 NOT IN 全表成员测试 |
-| F3/F5 接口 | 保留 legacy_baselines、历史清理、refine_emotion、current_affect、application.current_relationship 接点 |
+| 当时 F3/F5 接口 | 当时保留旧约束查询、历史清理、refine_emotion、current_affect、application.current_relationship 接点；旧约束接点现已撤下 |
 | 连接/故障转移/副本 | 单机单连接，无网络、副本或控制面；跨连接竞争仍由事务/CAS 防护，不宣称跨进程公平调度 |
 | 计数空间 | 沿用 INTEGER seq/version/generation；不新增持久计数器或依赖 seq 连续，清除/TTL/空正文造成的空洞必须测试 |
 | 恢复 | schema 2 不变；源码可回退且原始库仍可读，不回滚业务数据；既有 WAL 备份/原子回滚测试复跑 |

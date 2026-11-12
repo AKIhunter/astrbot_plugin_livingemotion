@@ -176,7 +176,7 @@ class Wire:
 
 
 class App(Generation, Refinement):
-    """Host identity/persona/legacy authorization are synthetic, not under test."""
+    """Host identity/persona authorization are synthetic, not under test."""
 
     def __init__(self, rig, wire):
         self.store, self.runtime, self.config = rig.store, rig.runtime, rig.config
@@ -208,9 +208,6 @@ class App(Generation, Refinement):
 
     def effective_mode(self, context=None):
         return "active"
-
-    async def legacy_constraints(self, context, purpose):
-        return {"allowed": True}
 
     async def night_guard(self, context, night):
         return True

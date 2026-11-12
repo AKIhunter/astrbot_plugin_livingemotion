@@ -416,7 +416,7 @@ Markdown隐私检查用 `rg -n` 检索两份文档的个人主目录前缀，
 
 ## C22 聚合与隐私
 
-组件 `verification-final.md` 已报告 V02：
+历史组件记录（见 Git 历史）已报告 V02：
 `test_imported_bounded_window_does_not_keep_body_after_retention` 的8天正文清理通过，
 对应 `t11-final-f3-ci-20261105-01`（整体80 passed/4 failed，四失败属 V06）。
 其源码早于本轮 sqlite 更改；本次已补齐默认满窗口及冻结版window/F9，

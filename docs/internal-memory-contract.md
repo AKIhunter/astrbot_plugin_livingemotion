@@ -186,10 +186,8 @@ P4 不改 Application/发送器，也不宣称上述竞态已由本子任务修�
 
 全仓 73 个失败交主协调者处理，不修改范围外旧 tests/迁移器：
 
-- tests/migration 与 tests/verification/test_migration_cli 的
-  `target_schema_incompatible`：storage/legacy_import.py 固定 SCHEMA_VERSION=2
-  并核对完整 SQL schema hash。新版主 schema 和 P4 新增表/trigger 的兼容性
-  需显式设计；不要取消守卫或把任意新增表当作可信目标。
+- 旧库迁移结构专项：本版已撤下导入工具，历史失败仅记录当时边界，
+  不作为当前实现入口。
 - tests/night/test_boundaries 的旧 catchup 禁发送/禁止新依赖断言。
 - tests/verification/test_cross_module 的两处旧 none/local_lite mode 断言；
   本次要求统一 LocalVectorMemory，但保留 local_lite 来源读取，两者不冲突。

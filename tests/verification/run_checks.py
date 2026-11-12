@@ -26,12 +26,6 @@ SUITES = {
         "tests/runtime", "tests/integration",
     ],
     "probes": ["tests/verification/test_cross_module.py"],
-    "migration": ["tests/migration", "tests/verification/test_migration_cli.py"],
-    "migration-base": [
-        "tests/migration/test_legacy_import.py",
-        "tests/verification/test_migration_cli.py::"
-        "test_cli_rollback_preserves_new_event_and_requires_stopped_target",
-    ],
     "full": ["tests"],
     "ci-environment": [
         "tests/budgets/test_model_payload.py::test_real_provider_request_local_wire_payload",
@@ -109,8 +103,6 @@ def main():
     parser.add_argument("--match", default="", help="Optional pytest -k expression for focused checks")
     parser.add_argument("--collect-only", action="store_true")
     args = parser.parse_args()
-    if args.suite == "migration" and not (ROOT / "docs" / "migration.md").is_file():
-        parser.error("migration owner handoff docs/migration.md is not present")
     OUTPUT.mkdir(exist_ok=True)
     label = args.label or args.suite
     if not label.replace("-", "").replace("_", "").isalnum():

@@ -1,6 +1,6 @@
 # 真实宿主有限验证
 
-- `capture_baseline.py`：只读取四个指定旧仓库，记录 HEAD、dirty 计数/摘要、白名单源码哈希；输出文件必须不存在，不覆盖基线。
+- `final_provenance.py`：记录独立宿主、产品与可选消费者的源码哈希；输出文件必须不存在。
 - `run_isolated_host.py`：全新临时数据根、净化环境、回环 HTTP、真实 AstrBot 核心、合成输入；有界运行后自动停止。
 - `fixture_plugin/`：独立编写的宿主接口探针，不是 livingEmotion 成品，也不包含上游复制代码。
 - `fixture_plugin/guard.py`：固定版本、Bearer-only、实际验签的最小管理 guard，已核实合法 Dashboard 通过及 asset/OAuth 类令牌拒绝。

@@ -89,7 +89,7 @@ jobs:
           docs = [root / name for name in (
               "README.md", "CHANGELOG.md", "THIRD_PARTY_NOTICES.md",
               "docs/architecture.md", "docs/api.md", "docs/compatibility.md",
-              "docs/installation.md", "docs/delivery-notes.md", "docs/memory.md", "docs/migration.md",
+              "docs/installation.md", "docs/delivery-notes.md", "docs/memory.md", "docs/local-runtime.md",
               "docs/life-console.md", "docs/internal-state-contract.md",
               "docs/internal-console-contract.md", "docs/internal-memory-contract.md",
               "docs/internal-reply-contract.md", "docs/ui.md",

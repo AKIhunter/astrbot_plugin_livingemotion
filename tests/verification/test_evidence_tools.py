@@ -109,7 +109,7 @@ def test_overlap_signatures_do_not_include_literal_body(tmp_path):
 
 def test_delivery_candidate_keeps_only_reviewed_evidence(tmp_path, monkeypatch):
     monkeypatch.setattr(overlap, "ROOT", tmp_path)
-    selected = ["main.py", "docs/verification-final.md", *overlap.REVIEWED_EVIDENCE]
+    selected = ["main.py", "docs/host-contract.md", *overlap.REVIEWED_EVIDENCE]
     excluded = [
         ".venv-ci/private.py", ".ci-work/copy.py", "tests/__pycache__/test.pyc",
         "tests/verification/evidence/raw.json", "tests/host/final_evidence/raw.json",

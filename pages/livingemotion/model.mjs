@@ -58,7 +58,7 @@ export function modelDiagnosticText(code) {
     seed_missing: "本次事件没有可细化的状态", queue_full: "分析队列已满",
     model_unavailable: "没有可用的生成模型", provider_budget_contract_unsupported: "模型适配器不支持所需预算参数",
     provider_changed: "分析期间模型已切换", task_cancelled: "分析已取消",
-    legacy_constraints: "未通过原有模型限制", model_output_invalid: "模型结果格式无效，未应用",
+    model_output_invalid: "模型结果格式无效，未应用",
     quota_exhausted: "模型预算已用完", quota_limit: "模型预算已用完", quota_cooldown: "模型仍在冷却",
     global_quota_limit: "总模型预算已用完", scope_quota_limit: "会话模型预算已用完",
     daily_limit: "每日模型预算已用完", min_interval: "尚未到下次模型分析时间",

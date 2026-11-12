@@ -241,32 +241,3 @@ async def consumers(core, e):
         chosen, api, _ = await bridge._provider(bili, "ingest_event")
         e.check("C43.rediscover_after_reload_" + target, ok and chosen == "livingemotion"
                 and api is plugin(core).api and (target != NAME or api is not old))
-
-
-async def conflict(core, e):
-    from astrbot.api.provider import ProviderRequest
-
-    name = "astrbot_plugin_congling"
-    meta = core.star_context.get_registered_star(name)
-    e.check("C43.real_congling_loaded", meta is not None and meta.activated, fatal=True)
-    native = meta.star_cls.raw_config
-    native["basic"]["enabled"] = True
-    native.save_config()
-    ok, _ = await core.plugin_manager.reload(name)
-    e.check("C43.real_congling_enabled_reload", ok)
-    for target in (None, NAME, name, NAME):
-        if target:
-            ok, _ = await core.plugin_manager.reload(target)
-            e.check("C43.conflict_reload_" + target, ok)
-        ev = event("synthetic-conflict-" + str(target))
-        await setup_persona(core, ev)
-        p = plugin(core)
-        req = ProviderRequest(prompt="synthetic", system_prompt="Synthetic native persona.")
-        await p.supplement_request(ev, req)
-        raw = ev.get_extra("livingemotion:context")
-        ctx = product("contracts").Context.from_dict(raw)
-        e.check("C43.same_scope_observe_" + str(target),
-                p.application.effective_mode(ctx) == "observe_only"
-                and not req.extra_user_content_parts
-                and not (await p.api.preview_behavior(ctx)).get("eligible", True))
-        core._final_synthetic_events.append(ev)

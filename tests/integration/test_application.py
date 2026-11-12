@@ -19,14 +19,12 @@ class NativeConfig(dict):
 class Host:
     def __init__(self):
         self.persona_id, self.prompt = "native", "Native character"
-        self.congling = None
         self.sends = 0
         self.persona_manager = self
         self.conversation_manager = self
 
     def get_registered_star(self, name):
-        return (SimpleNamespace(activated=True, star_cls=self.congling)
-                if name == "astrbot_plugin_congling" and self.congling else None)
+        return None
 
     async def get_curr_conversation_id(self, route):
         return None
@@ -323,7 +321,7 @@ async def test_config_cas_disable_restore_and_three_reload(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_dynamic_scope_conflict_persona_change_and_sleep(tmp_path):
+async def test_local_mode_persona_change_and_sleep(tmp_path):
     app, host, native = await application(tmp_path)
     try:
         message = Message()
@@ -334,14 +332,15 @@ async def test_dynamic_scope_conflict_persona_change_and_sleep(tmp_path):
         assert not await app.validate_context(context)
         await app.on_message(message)
         context = Context.from_dict(message.extra["livingemotion:context"])
-        host.congling = SimpleNamespace(enabled_for=lambda event: False)
         assert app.effective_mode(context) == "active"
-        host.congling.enabled_for = lambda event: True
+        native["mode"] = "observe_only"
+        await app.refresh_config()
         assert app.effective_mode(context) == "observe_only"
         request = SimpleNamespace(extra_user_content_parts=[SimpleNamespace(text=SUFFIX + "old")])
         await app.on_llm_request(message, request)
         assert request.extra_user_content_parts == []
-        host.congling = None
+        native["mode"] = "active"
+        await app.refresh_config()
         await app.advance_scope(context, action="night.sleep")
         assert not (await app.api.get_availability(context))["block_chat"]
         native["night_block_chat"] = True

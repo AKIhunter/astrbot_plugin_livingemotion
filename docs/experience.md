@@ -41,7 +41,7 @@
 状态：体验服务及合成专项测试已实现。尚未接入宿主页面、定时器、真实模型或发送器。
 仅新增 `services/experience.py`、`tests/experience/test_experience.py` 和本文档；
 没有修改 storage、contracts、main、api、schema、配置或规格，没有 Git 提交。
-没有读取或复制从绫实现及提示词。提示词为本任务独立编写，版本 `experience-1`。
+体验逻辑与提示词由本插件实现，提示词版本 `experience-1`。
 
 ## 能力边界
 

@@ -89,7 +89,8 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
     def effective_mode(self, context=None):
         if self.closed or not self.config.enabled:
             return "disabled"
-        return "observe_only" if self.bridge.conflicts(context) else self.config.mode
+        # 模式归插件自身配置所有，不因其他插件的加载或开关发生变化。
+        return self.config.mode
 
     def scoped_config(self, context=None):
         mode = self.effective_mode(context)
@@ -343,8 +344,6 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         finally:
             elapsed = max(0, time.monotonic() - started)
             event.set_extra("livingemotion:wake_prepare_seconds", elapsed)
-            # Compatibility with LivingHello's existing per-event timing reader.
-            event.set_extra("congling:wake_prepare_seconds", elapsed)
 
     def behavior_policy(self):
         def minute(value):
@@ -381,24 +380,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         )
 
     async def behavior_history(self, context, period, exclude_intent_id):
-        # Store adds proven legacy floors once; cooldown/reasons are not native attempts.
         return BehaviorHistory(**await self.store.behavior_history(context, period, exclude_intent_id))
-
-    async def legacy_constraints(self, context, purpose):
-        try:
-            rows = await self.store.legacy_baselines()
-            if not rows:
-                return {"allowed": True, "reason_codes": ()}
-            from .legacy import evaluate_legacy
-            result = evaluate_legacy(
-                rows, context, purpose=purpose, timezone=self.config.timezone,
-                now=self.store.clock(), human_watermark=await self.store.human_watermark(context),
-            )
-            if isinstance(result, dict) and type(result.get("allowed")) is bool:
-                return result
-        except Exception:
-            pass
-        return {"allowed": False, "reason_codes": ("legacy_constraints_unresolved",)}
 
     async def validate_context(self, context, generation=None):
         if (self.closed or not self.config.enabled

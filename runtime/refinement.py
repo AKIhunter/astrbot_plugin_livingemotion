@@ -137,9 +137,7 @@ class Refinement:
                       "model_disabled" if not self.config.emotion_model_enabled else
                       "quiet_hours" if self.in_quiet_hours() else
                       "mode_unavailable" if self.effective_mode(context) != "active" else
-                      "source_invalid" if not await self.validate_context(context, generation) else
-                      "legacy_constraints" if not (
-                          await self.legacy_constraints(context, "emotion"))["allowed"] else "")
+                      "source_invalid" if not await self.validate_context(context, generation) else "")
             if reason:
                 self._analysis(event, "skipped", reason)
                 return False

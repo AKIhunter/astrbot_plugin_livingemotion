@@ -98,7 +98,7 @@ authorization 是提供者复核凭据，不是字符串 admin 或永久访问�
 原生确认能力按 unsupported 处理；console health 的 `reply_confirmation=unavailable`
 及对应原因已由最终真实 HTTP/iframe 验证，不扩充进程内公开门面。
 待回复 `settling` 在既有 120 秒上限后取消回 `awake/drowsy`，不自动重发；
-无待回复的计划睡眠与手动睡眠可用。独立降级结果见[最终宿主验收](verification-host-final.md)。
+无待回复的计划睡眠与手动睡眠可用。降级边界见[兼容矩阵](compatibility.md)。
 
 `get_bot_state` 读取时按当前时间派生情绪恢复；不制造新刺激或更新持久版本。
 关系公开接口保留 H01 `storage_failed` 历史失败；最终三场景已返回 ok/snapshot，

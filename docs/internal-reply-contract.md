@@ -37,8 +37,7 @@ Live模式无这一提交接点而被拒绝；stream finish和runner错误通知
 共享执行者、持久发送标记和总发送额度。
 发送结果未知保留阻断，重启或下一批都不自动重发。
 正常回复提交只标记原触发消息已处理；身份变化、过期或派生素材保持未读且不入模型。
-准备耗时使用 `livingemotion:wake_prepare_seconds`，同时兼容
-LivingHello 既有 `congling:wake_prepare_seconds` 的读取口径。
+准备耗时只使用 `livingemotion:wake_prepare_seconds`，LivingHello 按该键读取。
 
 ## 睡前晚安
 
@@ -62,19 +61,6 @@ LivingHello 既有 `congling:wake_prepare_seconds` 的读取口径。
 对应四份协调测试为 **31 passed**（1.16s）。
 完整候选便携回归为 **1437 passed**（21.14s）。
 旧6/4项数字仅记录早期窄检查，不与后续集合相加。
-
-## 冻结来源
-
-实施时冻结的用户当前修复副本：
-
-| 文件 | SHA256 |
-| --- | --- |
-| 从绫 night/wake_flow.py | 0b68a30b34064af5a6dbbee995441debcbaa14419e6582c2605ede9f7e4ab66b |
-| 从绫 night/crawl.py | 27cac5c6f8f751ac1af1e045d1d5f854f5c7911e348e95e2ea70eebb8a2783db |
-| 从绫 night/rollup.py | ee3a366789ab907a4f4ea84a250272ebc19187040cb6b3ce0b52ccb444ad5ae4 |
-
-前两份与计划核对时不同；使用执行时完整副本，没有回写或覆盖用户原目录。
-这里只迁入流程语义，不复制私有SQL、人设或运行数据。
 
 ## 最终整合验证
 

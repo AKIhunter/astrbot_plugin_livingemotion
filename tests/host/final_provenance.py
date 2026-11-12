@@ -17,7 +17,6 @@ PLUGINS = (
     "astrbot_plugin_at_guard",
     "LivingMemory",
     "BiliBot",
-    "astrbot_plugin_congling",
 )
 COPY_IGNORES = (
     ".git", ".venv", ".trae", "__pycache__", "*.pyc", "node_modules", "tests",

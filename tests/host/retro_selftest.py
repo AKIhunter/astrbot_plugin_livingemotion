@@ -17,7 +17,7 @@ class HarnessIntegrity(unittest.TestCase):
                 "main.py": "pass", "metadata.yaml": "version: 0.2.0",
                 "runtime/application.py": "pass", "pages/livingemotion/app.mjs": "export {};",
                 "tests/host/evidence-v4.29.4.json": '{"success":true}',
-                "docs/verification-host.md": "old",
+                "docs/host-contract.md": "old",
             }.items():
                 path = root / rel
                 path.parent.mkdir(parents=True, exist_ok=True)

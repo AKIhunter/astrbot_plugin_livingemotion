@@ -324,16 +324,12 @@ async def test_stored_state_uses_canonical_bytes_and_keeps_limits(le_store, le_c
         assert (await le_store.get_state(le_context, "bot")).version == 1
 
 
-async def test_unresolved_history_keeps_native_fields(le_store, le_context, monkeypatch):
-    def broken(*args):
-        raise ValueError("synthetic invalid baseline")
-
-    monkeypatch.setattr(le_store, "_legacy_baselines", broken)
+async def test_empty_local_history_keeps_native_fields(le_store, le_context):
     history = await le_store.behavior_history(le_context, "2027-01-15")
     assert history == {
         "global_used": 0, "scope_used": 0, "unanswered_count": 0,
         "last_attempt_at": None, "cooldown_until": None,
-        "reason_codes": ("legacy_constraints_unresolved",),
+        "reason_codes": (),
     }
 
 
