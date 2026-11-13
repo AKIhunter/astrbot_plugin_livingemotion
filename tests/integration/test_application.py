@@ -40,9 +40,18 @@ class Host:
         return True
 
 
+class TemporaryText:
+    def __init__(self, text):
+        self.text, self._no_save = text, False
+
+    def mark_as_temp(self):
+        self._no_save = True
+        return self
+
+
 class TestBridge(AstrBotBridge):
     __test__ = False
-    text_part = staticmethod(lambda text: SimpleNamespace(text=text))
+    text_part = staticmethod(TemporaryText)
     chain = staticmethod(lambda text: text)
 
 
@@ -222,9 +231,13 @@ async def test_default_chat_without_model_and_unique_suffix(tmp_path):
         request = SimpleNamespace(extra_user_content_parts=[SimpleNamespace(text="host block")])
         await app.on_llm_request(message, request)
         await app.on_llm_request(message, request)
-        assert len(request.extra_user_content_parts) == 2
-        assert request.extra_user_content_parts[-1].text.startswith(SUFFIX)
-        assert host.prompt not in request.extra_user_content_parts[-1].text
+        # 承诺契约也会追加附加块；只按状态标记核对唯一性和临时属性。
+        states = [part for part in request.extra_user_content_parts
+                  if part.text.startswith(SUFFIX)]
+        assert len(states) == 1
+        assert states[0]._no_save
+        assert host.prompt not in states[0].text
+        assert request.extra_user_content_parts[0].text == "host block"
         state = await app.console_state()
         assert state["observation"]["subject"] == "human"
         assert state["bot_state"]["dimensions"]["pleasure"] >= 0.5
