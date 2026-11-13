@@ -79,12 +79,14 @@ class ManualExperienceRuntime:
         contexts = await selected_contexts(self.store, self.instance_id,
             {"persona_id": identifier, "view_scope": "global", "context_id": "", "platform": ""})
         mood = six_emotions(BotAffect())
+        current_emotions = mood
         if contexts:
             representative = contexts[0]
             if representative.scope_key not in {c.scope_key for c, _ in generations}:
                 generations = (*generations, (representative, await self.store.get_generation(representative)))
             record = await self.store.get_state(representative, "bot")
             mood = six_emotions(decay_affect(snapshot(record, BotAffect), now=now))
+            current_emotions = dict(mood)
             points = await self.store.emotion_history(representative, since=now - 86400, until=now)
             own = [p["emotions"] for p in points if p["emotions"] is not None
                    and accepted_day(p["at"], timezone)[0] == day]
@@ -92,9 +94,9 @@ class ManualExperienceRuntime:
                 mood = {k: sum(p[k] for p in own) / len(own) for k in mood}
         return ManualSnapshot(request_id, context, kind, day, timezone, now, prompt,
                               fingerprint, binding, generations, materials,
-                              min(8000, self.config.experience_body_chars), self.config.home_city,
+                              min(2000, self.config.experience_body_chars), self.config.home_city,
                               getattr(self.config, kind + "_retention_days"), mood,
-                              json.loads(self.config.dream_theme_pool))
+                              json.loads(self.config.dream_theme_pool), current_emotions)
 
     async def weather_emotions(self, affect):
         """Daily six-axis overlay; underlying interaction state is never compounded."""

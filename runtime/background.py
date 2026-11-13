@@ -75,7 +75,8 @@ class BackgroundRuntime:
         if (type(input_tokens) is not int or type(output_tokens) is not int
                 or input_tokens < 0 or output_tokens < 0
                 or input_tokens > self.config.model_input_tokens
-                or output_tokens > self.config.model_output_tokens):
+                or output_tokens > (8192 if purpose in ("diary", "dream")
+                                    else self.config.model_output_tokens)):
             return {"status": "rejected", "reason_code": "token_limit"}
         if model and output_tokens == 0:
             return {"status": "rejected", "reason_code": "missing_token_budget"}

@@ -39,6 +39,44 @@ class DailyConflict(ValueError):
 
 
 class ExperienceStore:
+    async def experience_attempt_progress(self, period, purpose):
+        def read(db):
+            rows = db.execute(
+                "SELECT status,COUNT(*) AS n FROM quota_reservations "
+                "WHERE period=? AND purpose=? AND pool='experience_attempt' GROUP BY status",
+                (period, purpose))
+            return {"reserved": 0, "unknown": 0, **{r["status"]: r["n"] for r in rows}}
+        return await self._run(read)
+
+    async def record_auto_experience_status(self, context, kind, result):
+        value = {key: result[key] for key in (
+            "status", "reason_code", "model_reason_code", "http_status", "day",
+            "attempted_at", "finished_at", "job_id", "experience_id",
+        ) if key in result}
+        value.setdefault("attempted_at", self.clock())
+        await self._run(lambda db: db.execute(
+            "INSERT INTO experience_auto_status VALUES(?,?,?,?) "
+            "ON CONFLICT(owner_key,kind) DO UPDATE SET "
+            "attempted_at=excluded.attempted_at,value_json=excluded.value_json "
+            "WHERE excluded.attempted_at>experience_auto_status.attempted_at OR "
+            "(excluded.attempted_at=experience_auto_status.attempted_at AND "
+            "NOT (json_extract(excluded.value_json,'$.status')='queued' AND "
+            "json_extract(experience_auto_status.value_json,'$.status')<>'queued'))",
+            (owner_key(context.instance_id, context.persona_id), kind,
+             value["attempted_at"], canonical_json(value))))
+
+    async def auto_experience_status(self, instance_id, persona_id, kind):
+        def read(db):
+            row = db.execute(
+                "SELECT value_json FROM experience_auto_status WHERE owner_key=? AND kind=?",
+                (owner_key(instance_id, persona_id), kind)).fetchone()
+            if not row:
+                return {"status": "idle", "reason_code": "experience_not_attempted"}
+            value = json.loads(row["value_json"])
+            # 重启后旧 queued 的任务没有结果证明，不能展示成仍在跑或盲目重发。
+            return value
+        return await self._run(read)
+
     async def record_manual_dispatch(self, request_id, context, day, kind):
         """Count a real dispatch in the shared usage pool without quota admission."""
         await self._run(lambda db: db.execute(

@@ -92,6 +92,39 @@ async def test_five_states_cross_midnight_and_persisted_lie_in(life):
     assert app.draw_count == 1
 
 
+async def test_display_refresh_never_writes_or_redraws_night(life):
+    from astrbot_plugin_livingemotion.runtime.night import NIGHT_DISPLAY_ONLY
+    app, store, clock, context = life
+    await app.night_snapshot(context)
+    before = await store.get_state(context, "night")
+    clock[0] += 1800
+    token = NIGHT_DISPLAY_ONLY.set(True)
+    try:
+        for _ in range(5):
+            night = await app.night_snapshot(context)
+            assert night.updated_at == clock[0]
+            await app.availability(context)
+    finally:
+        NIGHT_DISPLAY_ONLY.reset(token)
+    assert await store.get_state(context, "night") == before
+    assert app.draw_count == 1
+
+
+async def test_scheduler_requests_only_yesterday_and_today(life):
+    app, store, clock, context = life
+    app.config = replace(app.config, diary_enabled=True, diary_backfill_yesterday=True)
+    app._contexts, app._actions = {context.scope_key: context}, set()
+    app.native_config = to_dict(app.config)
+    app._last_cleanup = clock[0]
+    requested = []
+    async def queue(source, kind, **options):
+        requested.append((kind, options.get("day")))
+    app.queue_experience = queue
+    for _ in range(2):
+        await app.tick()
+    assert requested == [("diary", "2026-11-05"), ("diary", None)] * 2
+
+
 async def test_restart_does_not_redraw_and_full_energy_cannot_exit_deep(life):
     app, store, clock, context = life
     app.draws = [90]

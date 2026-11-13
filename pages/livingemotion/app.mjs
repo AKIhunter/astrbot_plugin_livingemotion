@@ -1031,8 +1031,9 @@ function renderExperienceTask(kind) {
   if (!panel) return;
   const value = state.data.experience;
   const task = object(value[kind]);
+  const automatic = object(object(value.automatic)[kind]);
   const action = state.data.actions.find(item => item.id === `${kind}.generate`);
-  const signature = JSON.stringify([task, action]);
+  const signature = JSON.stringify([task, automatic, action]);
   if (panel.dataset.signature === signature) return;
   panel.dataset.signature = signature;
   const focused = panel.contains(document.activeElement);
@@ -1055,6 +1056,14 @@ function renderExperienceTask(kind) {
   if (task.status === "unknown") taskCard.append(node("p",
     t("模型可能已经消耗费用。再次点击会发起新请求，可能再次计费；不会自动重试。"), "hint warn-text"));
   panel.append(taskCard);
+  if (automatic.status && automatic.status !== "idle") {
+    const card = node("span", `${t("自动")} · ${text(automatic.day, "")} · ${
+      experienceStatus(automatic.status)}`, "micro");
+    card.dataset.automaticTask = kind;
+    if (automatic.reason_code) card.append(node("span", reasonExplanation(automatic.reason_code), "hint"));
+    if (automatic.http_status) card.append(node("span", ` HTTP ${automatic.http_status}`));
+    panel.append(card);
+  }
   if (focused && !panel.closest(".experience-paper").hidden) control.focus({ preventScroll: true });
 }
 function syncExperience() {
@@ -1364,15 +1373,26 @@ function paperView(item, kind) {
   let body = text(item.body, t("正文未提供。"));
   const weatherText = weather.summary ?? header.weather ??
     body.match(/^天气[：:]\s*(.+)$/m)?.[1] ?? "";
-  const day = text(item.date ?? item.period ?? header.date,
+  const day = text(item.date ?? header.date ??
+    (kind === "diary" && /^\d{4}-\d{2}-\d{2}$/.test(item.period) ? item.period : undefined),
     body.match(/^日期[：:]\s*(\d{4}-\d{2}-\d{2})/m)?.[1] ?? date(item.created_at));
   // 程序头只显示一次，正文保持纯文本，不把内容当成 HTML。
   body = body.replace(/^(?:日期|住所|城市|天气)[：:].*(?:\r?\n|$)/gm, "")
     .replace(/^Dream \(imagined\):\s*/, "").trim();
   const summary = node("summary", undefined, "paper-heading");
-  summary.append(node("h3", text(item.title, kind === "diary" ? t("私人日记") : t("梦境"))));
+  const top = node("div", undefined, "paper-heading-top");
+  top.append(node("h3", day));
+  const label = kind === "diary" ? text(item.title, "") : text(object(item.emotion_snapshot).label, "");
+  if (label && label !== day) top.append(node("span", label,
+    kind === "diary" ? "paper-title" : "paper-emotion"));
+  summary.append(top);
   const metadata = node("div", undefined, "paper-meta");
-  metadata.append(node("time", day));
+  const iso = day.match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+  const weekday = iso ? new Date(`${iso}T12:00:00Z`).getUTCDay() : NaN;
+  if (Number.isFinite(weekday)) {
+    const time = node("time", t(["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"][weekday]));
+    time.dateTime = iso; metadata.append(time);
+  }
   if (kind === "diary" && weatherText) metadata.append(node("span", weatherText));
   summary.append(metadata);
   paper.append(summary, node("div", body, "paper-body"));

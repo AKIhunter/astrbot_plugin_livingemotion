@@ -374,7 +374,7 @@
   "experience_body_chars": {
     "type": "int",
     "default": 2000,
-    "description": "日记或梦境正文1–8000字符。例：2000。"
+    "description": "日记或梦境正文1–2000字符，日期、天气和标题不占正文额度。旧版超过2000的设置升级后按2000执行。例：2000。"
   },
   "home_city": {
     "type": "string",
@@ -474,7 +474,7 @@
   "model_output_tokens": {
     "type": "int",
     "default": 1024,
-    "description": "每任务请求输出1–8192 Token，主动行为可能更短。例：1024。"
+    "description": "普通后台任务请求输出1–8192 Token。日记/梦境独立使用8192 Token输出预算，正文最多2000字；路由上游自己的输出限制仍生效。例：1024。"
   },
   "model_timeout_seconds": {
     "type": "int",

@@ -153,6 +153,9 @@ class Config:
     def from_mapping(cls, value: Mapping[str, Any]) -> "Config":
         known = {item.name for item in fields(cls)}
         data = {key: val for key, val in value.items() if key in known}
+        # 旧版允许 8000；升级只收窄正文长度，保留其余原配置。
+        if type(data.get("experience_body_chars")) is int:
+            data["experience_body_chars"] = min(2000, data["experience_body_chars"])
         # Missing new fields identify an old native configuration, not consent
         # to merge its scenes or enable new sleep blocking.
         data.setdefault("persona_shared_state", False)
@@ -284,7 +287,7 @@ class Config:
             ("model_timeout_seconds", 120), ("scheduler_seconds", 3600),
             ("diary_retries", 2), ("dream_per_night", 2),
             ("diary_retention_days", 365), ("dream_retention_days", 30),
-            ("experience_body_chars", 8000),
+            ("experience_body_chars", 2000),
             ("lie_in_max_minutes", 1440), ("wake_reply_limit", 100),
             ("wake_window_minutes", 1440), ("closing_lead_minutes", 60),
             ("behavior_random_max_minutes", 10080), ("behavior_idle_minutes", 1440),

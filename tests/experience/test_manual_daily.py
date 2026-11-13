@@ -31,6 +31,9 @@ class Binding:
     def count(self, system, data):
         return len(system.encode()) + len(data.encode())
 
+    async def preflight(self):
+        return {"http_status": 200}
+
     async def generate(self, system, data, output, timeout):
         self.calls += 1
         self.payloads.append(json.loads(data))

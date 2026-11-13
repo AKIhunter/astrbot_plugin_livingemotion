@@ -25,6 +25,9 @@ class Binding:
     def count(self, system, data):
         return len(system.encode("utf-8")) + len(data.encode("utf-8")) + 256
 
+    async def preflight(self):
+        return {"http_status": 200}
+
     async def generate(self, system, data, tokens, timeout):
         self.provider.calls.append((system, data, tokens, timeout))
         self.provider.started.set()

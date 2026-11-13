@@ -156,6 +156,12 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = ((
         COALESCE(json_extract(value_json,'$.stress'),0),COALESCE(json_extract(value_json,'$.social_need'),0.3)
         FROM states WHERE kind='bot' AND record_key=''
         AND json_type(value_json,'$.pleasure') IN ('integer','real')""",
+), (
+    # 每人格/类型仅保留最新自动结果，不保存正文；与手动任务表独立。
+    """CREATE TABLE experience_auto_status (
+        owner_key TEXT NOT NULL, kind TEXT NOT NULL,
+        attempted_at REAL NOT NULL, value_json TEXT NOT NULL,
+        PRIMARY KEY(owner_key,kind))""",
 ))
 
 

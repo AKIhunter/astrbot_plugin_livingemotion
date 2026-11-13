@@ -505,6 +505,9 @@ class Binding:
     def count(self, system, data):
         return len((system + data).encode("utf-8")) + (256 if system else 0)
 
+    async def preflight(self):
+        return {"http_status": 200, "reason_code": "model_preflight_ok"}
+
     async def generate(self, system, data, output_tokens, timeout):
         self.calls.append((system, data, output_tokens, timeout))
         self.started.set()

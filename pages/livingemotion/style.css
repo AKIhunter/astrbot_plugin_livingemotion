@@ -58,6 +58,8 @@ body[data-le-section="experience"] #notice[hidden] { display: block !important; 
 .paper-sheet > .paper-heading { padding: 16px 22px; list-style: none; display: block; }
 .paper-heading::-webkit-details-marker { display: none; }
 .paper-heading h3 { margin: 0 0 4px; font: 600 20px/1.5 var(--display); }
+.paper-heading-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
+.paper-title, .paper-emotion { max-width: 100%; overflow-wrap: anywhere; font: 14px/1.6 var(--display); color: var(--text); }
 .paper-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; font: 12px/1.6 var(--mono); color: var(--muted); }
 .paper-sheet[open] { border-radius: 3px; }
 .paper-body { white-space: pre-wrap; overflow-wrap: anywhere; padding: 4px 22px 22px;

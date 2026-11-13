@@ -520,6 +520,8 @@ class Experience:
     pinned: bool = False
     clarity: float = 1.0
     dream_profile: Mapping[str, Any] | None = None
+    title: str = ""
+    emotion_snapshot: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "kind", ContentKind(self.kind))

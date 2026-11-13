@@ -1055,6 +1055,11 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
                        finished_at=? WHERE status='reserved'""", (now,),
                 )
                 db.execute("UPDATE reply_attempts SET status='cancelled' WHERE status='started'")
+                db.execute(
+                    "UPDATE experience_auto_status SET value_json=json_set(value_json,"
+                    "'$.status','unknown','$.reason_code','runtime_restarted',"
+                    "'$.finished_at',?) WHERE json_extract(value_json,'$.status')='queued'",
+                    (now,))
                 return {"unknown": unknown, "cancelled": cancelled}
             return self._transaction(db, mutate)
         return await self._run(recover)

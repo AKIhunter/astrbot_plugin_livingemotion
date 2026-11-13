@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextvars import ContextVar
 from dataclasses import replace
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -28,6 +29,8 @@ from ..domain.night import (
 from ..services.catchup import CatchupPolicy, build_catchup, catchup_intent
 from ..services.experience import log_dream_skip
 from .projector import snapshot
+
+NIGHT_DISPLAY_ONLY = ContextVar("livingemotion_night_display_only", default=False)
 
 
 class NightRuntime:
@@ -138,6 +141,8 @@ class NightRuntime:
         )
 
     async def night_snapshot(self, context):
+        if NIGHT_DISPLAY_ONLY.get():
+            return await self.night_display_snapshot(context)
         if self._night_v2():
             result = await self.advance_scope(context)
             if result is None:
@@ -145,6 +150,19 @@ class NightRuntime:
             return result
         night = snapshot(await self.store.get_state(context, "night"), NightState,
                          updated_at=self.store.clock())
+        if night.policy_version == 2:
+            return night
+        return advance_night(night, now=self.store.clock(), enabled=self.config.night_enabled)
+
+    async def night_display_snapshot(self, context):
+        """页面只投影现有周期；自动刷新不能推进/写入睡眠状态。"""
+        night = snapshot(await self.store.get_state(context, "night"), NightState,
+                         updated_at=self.store.clock())
+        if self._night_v2():
+            current, _ = advance_life(
+                night, now=self.store.clock(), policy=life_policy(self.config),
+                allow_sleep=bool(self.config.allow_sleep and self.config.night_enabled))
+            return current
         if night.policy_version == 2:
             return night
         return advance_night(night, now=self.store.clock(), enabled=self.config.night_enabled)
@@ -495,6 +513,7 @@ class NightRuntime:
 
     async def queue_experience(
         self, context, kind: str, *, manual: bool = False, night: NightState | None = None,
+        day: str | None = None,
     ) -> dict:
         """可信管理端/定时器共用入口。
 
@@ -507,7 +526,7 @@ class NightRuntime:
             from uuid import uuid4
             return await self.console_experience_generate(
                 str(uuid4()), (await self.manual_persona())[0], kind, actor_id="console")
-        day = datetime.fromtimestamp(self.store.clock(), ZoneInfo(
+        day = day or datetime.fromtimestamp(self.store.clock(), ZoneInfo(
             self.config.timezone or "Asia/Shanghai")).date().isoformat()
         # 自动梦境被前置门禁拦下时原本只剩一个返回值，页面之外看不到；补一条
         # 去重日志。queue_dream 内部的门禁会按更细的原因自己记日志。
@@ -546,7 +565,7 @@ class NightRuntime:
                         service = await self.experience_service(context)
                         if kind == "diary":
                             result = await service.queue_diary(
-                                context, persona_text=persona_text, manual=manual,
+                                context, day=day, persona_text=persona_text, manual=manual,
                             )
                         else:
                             if night is None:
@@ -575,6 +594,14 @@ class NightRuntime:
                 log_dream_skip("experience_preparation_unavailable", key=dream_key)
         # 触发时间：页面用它显示「什么时候点的」，而不是让管理员自己猜。
         result.setdefault("attempted_at", self.store.clock())
+        result.setdefault("day", day)
+        # 尚未到点、已经有内容、睡醒后的正常跳过，不覆盖最新实际任务结果。
+        if result.get("reason_code") not in {
+            "diary_not_due", "daily_content_preserved", "experience_exists",
+            "experience_attempt_limit", "dream_success_limit", "generation_in_progress",
+            "dream_requires_live_rem", "generation_disabled", "duplicate_job",
+        }:
+            await self.store.record_auto_experience_status(context, kind, result)
         attempts = getattr(self, "_experience_attempts", None)
         if attempts is None:
             attempts = self._experience_attempts = {}
@@ -696,6 +723,11 @@ class NightRuntime:
                 continue
             await self.maybe_dream_wake(context)
             if self.config.diary_enabled:
+                # 每次调度至多补昨天一篇，独立日期去重，不覆盖现有手动内容。
+                if self.config.diary_backfill_yesterday:
+                    yesterday = (datetime.fromtimestamp(now, ZoneInfo(
+                        self.config.timezone or "Asia/Shanghai")).date() - timedelta(days=1)).isoformat()
+                    await self.queue_experience(context, "diary", day=yesterday)
                 await self.queue_experience(context, "diary")
             if self.config.dream_enabled:
                 await self.queue_experience(context, "dream", night=night)

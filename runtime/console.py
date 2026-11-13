@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import inspect
 import heapq
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from dataclasses import fields, replace
 from uuid import uuid4
 
@@ -347,6 +349,9 @@ class Console:
         try:
             value = await self.manual_experience_state()
             state["experience"].update(value)
+            state["experience"]["automatic"] = {
+                kind: await self.store.auto_experience_status(
+                    self.instance_id, value["persona_id"], kind) for kind in ("diary", "dream")}
             state["experience"]["reason"] = ("按当前人格保存。手动生成不看作息、睡眠阶段和每日额度，"
                                              "但需要先在设置里开启对应类型的生成。")
             if not state.get("persona"):
@@ -402,6 +407,8 @@ class Console:
                     or f.name == "scheduler_seconds"}
             parent, level = field_parent(f.name)
             item.update(field_help(f.name), parent=parent, level=level)
+            if f.name == "experience_body_chars":
+                item.update(min=1, max=2000)
             if f.name in enums:
                 # gentle 在主动节奏里是「轻柔」，在情绪强度里是「保守」，按字段取标签。
                 label_of = ({"gentle": "保守", "normal": "平常", "intense": "激进"}
@@ -486,6 +493,14 @@ class Console:
         return {"api_version": 1, "config": self.config_dto()}
 
     async def console_state(self, context_id="", persona_id="", view_scope="", platform=""):
+        from .night import NIGHT_DISPLAY_ONLY
+        token = NIGHT_DISPLAY_ONLY.set(True)
+        try:
+            return await self._console_state(context_id, persona_id, view_scope, platform)
+        finally:
+            NIGHT_DISPLAY_ONLY.reset(token)
+
+    async def _console_state(self, context_id="", persona_id="", view_scope="", platform=""):
         self._open()
         await self.refresh_config()
         selection = None
@@ -1050,7 +1065,12 @@ class Console:
                 if loaded is None:
                     continue
                 entry, _ = loaded
-                item.update(title=row.get("day") or entry.period, body=entry.body, visibility="private",
+                item.update(title=entry.title, date=row.get("day") or (
+                                entry.period if kind == "diary" else
+                                datetime.fromtimestamp(entry.created_at, ZoneInfo(
+                                    self.config.timezone or "Asia/Shanghai")).date().isoformat()),
+                            emotion_snapshot=entry.emotion_snapshot,
+                            body=entry.body, visibility="private",
                             clarity=entry.clarity, pinned=entry.pinned,
                             context_id=entry.context.account_key,
                             pin_available=(entry.context.platform == "console" or
@@ -1393,6 +1413,10 @@ class Console:
                 raise ApplicationError("validation_error", "Unknown or empty configuration patch")
             # New list edits replace hidden legacy grants, including on clear.
             patch = dict(patch)
+            if "experience_body_chars" in patch and (
+                    type(patch["experience_body_chars"]) is not int
+                    or not 1 <= patch["experience_body_chars"] <= 2000):
+                raise ApplicationError("validation_error", "正文上限须在1至2000之间")
             if {"autonomy_qq_ids", "autonomy_qq_group_ids"} & patch.keys():
                 patch["autonomy_scopes"] = ""
             # 改作息时间本身就表达「要用这套作息」：自动打开时间表，
