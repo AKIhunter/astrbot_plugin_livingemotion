@@ -418,7 +418,7 @@ class NightRuntime:
                 return None
         return None
 
-    async def night_guard(self, context, original):
+    async def night_guard(self, context, original, *, identity_guard=None):
         if self.effective_mode(context) != "active" or not self.config.night_enabled:
             return False
         record = await self.store.get_state(context, "night")
@@ -444,7 +444,7 @@ class NightRuntime:
                 and current.sleep_started_at is not None
                 and current.sleep_started_at == original.sleep_started_at
                 and current.wake_at is not None and now < current.wake_at
-                and await self.validate_context(context))
+                and await (identity_guard or self.validate_context)(context))
 
 
     async def confirm_reply(self, receipt):
@@ -546,14 +546,9 @@ class NightRuntime:
                         log_dream_skip("observe_only", key=dream_key)
                 else:
                     source = await self.bridge.current(context)
-                    # 自动流程仍然要求「现在有实时来源」；手动是管理员显式指令，
-                    # 会话安静多久都能生成（依据是已入库的素材与已记录的人格）。
-                    if source is None and not manual:
-                        result = {"status": "rejected", "reason_code": "source_unavailable"}
-                        if dream_key:
-                            log_dream_skip("source_unavailable", key=dream_key)
-                    elif not await (self.validate_context(context) if source is not None
-                                    else self.validate_manual(context)):
+                    persistent = source is None
+                    persisted_prompt = (await self.automatic_persona(context))[0] if persistent else ""
+                    if not persistent and not await self.validate_context(context):
                         result = {"status": "rejected", "reason_code": "context_changed"}
                         if dream_key:
                             log_dream_skip("context_changed", key=dream_key)
@@ -561,8 +556,10 @@ class NightRuntime:
                         persona_text = (await self.persona_style(
                                             context.persona_id, source.persona.prompt)
                                         if source is not None
-                                        else await self._manual_persona_text(context))
-                        service = await self.experience_service(context)
+                                        else await self.persona_style(
+                                            context.persona_id, persisted_prompt))
+                        service = (await self.experience_service(context, persistent=True)
+                                   if persistent else await self.experience_service(context))
                         if kind == "diary":
                             result = await service.queue_diary(
                                 context, day=day, persona_text=persona_text, manual=manual,
@@ -583,9 +580,12 @@ class NightRuntime:
             if code not in {
                 "provider_budget_contract_unavailable", "provider_budget_contract_unsupported",
                 "model_unavailable", "experience_service_limit", "night_state_unavailable",
+                "persona_unavailable", "source_unavailable", "context_changed",
             }:
                 code = "experience_preparation_unavailable"
-            result = {"status": "unavailable", "reason_code": code}
+            result = {"status": ("rejected" if code in (
+                "persona_unavailable", "source_unavailable", "context_changed") else "unavailable"),
+                "reason_code": code}
             if dream_key:
                 log_dream_skip(code, key=dream_key)
         except Exception:
@@ -705,6 +705,8 @@ class NightRuntime:
         now = self.store.clock()
         proactive_scopes = set()
         proactive_contexts = {c.scope_key: c for c in self._contexts.values()}
+        experience_contexts = {c.persona_id: c for c in self._contexts.values()
+                               if c.scene_kind != SceneKind.PUBLIC_COMMENT}
         for context in tuple(self._contexts.values()):
             if context.scene_kind == SceneKind.PUBLIC_COMMENT:
                 continue
@@ -718,19 +720,23 @@ class NightRuntime:
                     await self._wake_catchup_if_unread(context, night)
                 except Exception:
                     pass
-            if (self.effective_mode(context) != "active"
-                    or not await self.validate_context(context)):
-                continue
-            await self.maybe_dream_wake(context)
-            if self.config.diary_enabled:
+            if (self.effective_mode(context) == "active"
+                    and await self.validate_context(context)):
+                await self.maybe_dream_wake(context)
+            # 每人格只选最近会话；私有写作在发送的实时来源门禁之前调度。
+            write_here = context == experience_contexts.get(context.persona_id)
+            if self.config.diary_enabled and write_here:
                 # 每次调度至多补昨天一篇，独立日期去重，不覆盖现有手动内容。
                 if self.config.diary_backfill_yesterday:
                     yesterday = (datetime.fromtimestamp(now, ZoneInfo(
                         self.config.timezone or "Asia/Shanghai")).date() - timedelta(days=1)).isoformat()
                     await self.queue_experience(context, "diary", day=yesterday)
                 await self.queue_experience(context, "diary")
-            if self.config.dream_enabled:
+            if self.config.dream_enabled and write_here:
                 await self.queue_experience(context, "dream", night=night)
+            if (self.effective_mode(context) != "active"
+                    or not await self.validate_context(context)):
+                continue
             if self.config.autonomy_enabled and len(self._actions) < self.config.queue_size:
                 if (context.scope_key not in proactive_scopes
                         and context == proactive_contexts[context.scope_key]):

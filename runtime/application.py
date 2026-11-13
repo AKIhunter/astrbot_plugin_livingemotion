@@ -68,7 +68,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         self._services = OrderedDict()
         self._contexts = OrderedDict()
         # 只记录“本进程真的见过消息”的会话：启动时从库里回填的上下文
-        # 没有实时来源，不能拿来当写操作的落点，否则动作会以 context_changed 失败。
+        # 没有实时来源，不能拿来作为消息发送落点；私有日记/梦境另行复核持久来源。
         self._live_contexts: set[str] = set()
         self._revision = uuid4().hex
         self._config_fault = False
@@ -400,8 +400,8 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
     async def validate_manual(self, context):
         """手动生成的轻量授权：只复核实例/配置/来源类型，不要求当前有实时事件。
 
-        自动流程仍走 validate_context（要求 bridge.current 可解析）；管理员在
-        控制台点生成时，会话可能已经安静很久，但那不该让素材作废。
+        自动私有生成另走 validate_automatic_experience 复核持久来源和人格；
+        实际消息发送仍要求 validate_context 能解析实时来源。
         """
         if (self.closed or not self.config.enabled
                 or context.instance_id != self.instance_id
@@ -409,6 +409,33 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             return False
         try:
             return Config.from_mapping(self.native_config) == self.config
+        except Exception:
+            return False
+
+    async def automatic_persona(self, context):
+        """Resolve a persisted persona for private writing without fabricating an event."""
+        if (not await self.validate_manual(context)
+                or self.effective_mode(context) != "active"
+                or self.config.persona_mode == "none"
+                or self.config.persona_mode == "explicit"
+                and context.persona_id != self.config.persona_id):
+            raise ValueError("context_changed")
+        registered = await self.store.registered_context(context)
+        if registered != replace(context, route=None):
+            raise ValueError("source_unavailable")
+        manager = getattr(self.host, "persona_manager", None)
+        persona = await manager.get_persona(context.persona_id) if manager else None
+        prompt = getattr(persona, "system_prompt", None)
+        if not isinstance(prompt, str) or len(prompt) > 16000:
+            raise ValueError("persona_unavailable")
+        return prompt, stable_key(context.persona_id, prompt, persona.begin_dialogs)
+
+    async def validate_automatic_experience(self, context, generation=None, *, fingerprint=None):
+        try:
+            _, current = await self.automatic_persona(context)
+            return ((fingerprint is None or current == fingerprint)
+                    and (generation is None
+                         or await self.store.get_generation(context) == generation))
         except Exception:
             return False
 
@@ -874,6 +901,9 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             return
         old = "pending"
         try:
+            affect = source_affect(current_affect(
+                await self.store.get_state(context, "bot"), now=now), context)
+            emotion_snapshot = ",".join(affect.labels)
             period = datetime.fromtimestamp(now, ZoneInfo(self.config.timezone)).date().isoformat()
             quota = await self.store.reserve_quota(
                 key + ":send", context, generation, period=period, purpose="closing", pool="send",
@@ -903,6 +933,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             transition = await self.store.transition_intent(
                 context, key, generation, expected_status=old, status="sending",
                 reason_code="closing_merged_submission",
+                content=text, emotion_snapshot=emotion_snapshot,
             )
             if transition.get("status") != "updated":
                 raise ValueError("closing_intent_changed")
@@ -913,6 +944,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             await self.store.transition_intent(
                 context, key, generation, expected_status="sending", status="unknown",
                 reason_code="closing_host_submission",
+                transport_receipt={"status": "unknown", "receipt_id": None},
             )
             await self.store.finish_quota(key + ":send", status="unknown",
                                           reason_code="closing_host_submission")

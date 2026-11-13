@@ -162,6 +162,13 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = ((
         owner_key TEXT NOT NULL, kind TEXT NOT NULL,
         attempted_at REAL NOT NULL, value_json TEXT NOT NULL,
         PRIMARY KEY(owner_key,kind))""",
+), (
+    # Older samples never recorded their baseline; NULL explicitly preserves that gap.
+    "ALTER TABLE emotion_samples ADD COLUMN baseline_pleasure REAL",
+    "ALTER TABLE emotion_samples ADD COLUMN baseline_arousal REAL",
+    "ALTER TABLE emotion_samples ADD COLUMN baseline_stress REAL",
+    "ALTER TABLE emotion_samples ADD COLUMN baseline_social_need REAL",
+    "ALTER TABLE emotion_samples ADD COLUMN baseline_refined INTEGER",
 ))
 
 

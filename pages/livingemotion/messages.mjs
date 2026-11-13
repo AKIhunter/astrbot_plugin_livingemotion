@@ -996,5 +996,12 @@ LivingEmotion 风格摘要|LivingEmotion style summary|LivingEmotion スタイ�
 情绪静默结束（小时）|Emotion quiet end (hour)|感情の静かな時間 終了（時）
 静默时段请填写 0–23 的整数小时。|Enter an integer hour from 0 to 23 for quiet hours.|静かな時間は 0～23 の整数で入力してください。
 静默时段已关闭：全天都可能调用模型分析情绪。|Quiet hours are off: the model may analyze emotion at any hour.|静かな時間は無効です。どの時間帯でもモデルが感情を分析する可能性があります。
-静默时段（本地时区）：每天 {0} 不调用模型；本地情绪规则仍生效。|Quiet hours (local time): no model calls {0} daily; local emotion rules still apply.|静かな時間（現地時間）：毎日 {0} はモデルを呼びません。ローカル感情ルールは引き続き有効です。`;
+静默时段（本地时区）：每天 {0} 不调用模型；本地情绪规则仍生效。|Quiet hours (local time): no model calls {0} daily; local emotion rules still apply.|静かな時間（現地時間）：毎日 {0} はモデルを呼びません。ローカル感情ルールは引き続き有効です。
+平台已确认|Platform confirmed|送信確認済み
+结果未知|Result unknown|結果不明
+已预留|Reserved|予約済み
+发送中|Sending|送信中
+待处理|Pending|処理待ち
+今日额度占用 {0}/{1} · 平台确认 {2} · 未知 {3} · 取消 {4} · 失败 {5} · 处理中 {6}|Today's quota used {0}/{1} · Confirmed {2} · Unknown {3} · Cancelled {4} · Failed {5} · In progress {6}|本日の使用枠 {0}/{1} · 確認済み {2} · 不明 {3} · 取消 {4} · 失敗 {5} · 処理中 {6}
+旧样本未记录情绪基准，部分历史曲线按默认基准推算。|Older samples lack an emotion baseline; parts of this history use the default baseline.|古いサンプルには感情基準がなく、一部の履歴は既定の基準で推算しています。`;
 export const messages = Object.fromEntries((rows + "\n" + more + "\n" + shell + "\n" + daily + "\n" + saveBar).split("\n").map(row => { const [key, en, ja] = row.split("|"); return [key, [en, ja]]; }));

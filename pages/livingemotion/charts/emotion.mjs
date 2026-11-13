@@ -70,5 +70,8 @@ export function emotionChart(raw) {
   });
   figure.append(heading, legend, svg, tooltip, node("figcaption",
     t("每 5 分钟 · 根据真实状态与自然回落计算，含当日天气加成；未采集时段留空。"), "hint"));
+  if (points.some(point => point.basis === "legacy_baseline_unknown")) {
+    figure.append(node("p", t("旧样本未记录情绪基准，部分历史曲线按默认基准推算。"), "hint"));
+  }
   return figure;
 }

@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from astrbot_plugin_livingemotion.adapters.behavior_sender import AstrBotBehaviorSender
 from astrbot_plugin_livingemotion.contracts import (
     Availability, BehaviorIntent, BotAffect, ContentKind, Context, Event, EvidenceRef,
-    NightState, Relationship, stable_key,
+    NightState, Relationship, StateWrite, stable_key, to_dict,
 )
 from astrbot_plugin_livingemotion.ports.memory import Material, RecallResult, ValidationResult
 from astrbot_plugin_livingemotion.services.behavior import (
@@ -180,6 +180,55 @@ class BehaviorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.store.health())["counts"], before["counts"])
         self.assertEqual(self.model_requests, [])
         self.assertEqual(self.platform_calls, [])
+
+    async def test_control_paths_retain_content_and_generation_emotion(self):
+        from astrbot_plugin_livingemotion.domain.emotion import decay_affect
+        for purpose in ("catchup", "closing", "dream_wake"):
+            affect = BotAffect(pleasure=.8, arousal=.8, updated_at=self.now)
+            old = await self.store.get_state(self.context, "bot")
+            self.assertTrue((await self.store.write_states(self.context, 0, [
+                StateWrite("bot", to_dict(affect), old.version if old else 0)])).accepted)
+            expected = ",".join(decay_affect(affect, now=self.now).labels)
+
+            async def generate():
+                old = await self.store.get_state(self.context, "bot")
+                await self.store.write_states(self.context, 0, [
+                    StateWrite("bot", to_dict(BotAffect(pleasure=-.8, updated_at=self.now)),
+                               old.version)])
+                return "控制消息正文"
+
+            async def permit(*args):
+                return True
+
+            result = await self.service.execute_control(
+                self.context, intent_id=purpose, purpose=purpose, generate=generate,
+                authorize=permit, on_submit=permit, generation=0, revision="loaded-1")
+            self.assertEqual(result, "confirmed")
+            row = await self.store.get_intent(self.context, purpose)
+            self.assertEqual(row["value"]["content"], "控制消息正文")
+            self.assertEqual(row["value"]["emotion_snapshot"], expected)
+            self.assertEqual(row["value"]["transport_receipt"]["status"], "confirmed")
+            self.assertTrue(row["value"]["transport_receipt"]["receipt_id"])
+        counts = await self.store.send_statistics(self.context, "2026-11-05")
+        self.assertEqual(counts["global"]["confirmed"], 3)
+        self.assertEqual(counts["global"]["consumed"], 3)
+
+    async def test_control_unknown_still_keeps_body_and_does_not_count_confirmed(self):
+        self.outcome = None
+        async def permit(*args):
+            return True
+        async def text():
+            return "结果未知也保留正文"
+        result = await self.service.execute_control(
+            self.context, intent_id="unknown-control", purpose="closing", generate=text,
+            authorize=permit, on_submit=permit, generation=0, revision="loaded-1")
+        self.assertEqual(result, "unknown")
+        row = await self.store.get_intent(self.context, "unknown-control")
+        self.assertEqual(row["value"]["content"], "结果未知也保留正文")
+        self.assertTrue(row["value"]["emotion_snapshot"])
+        counts = await self.store.send_statistics(self.context, "2026-11-05")
+        self.assertEqual(counts["global"]["confirmed"], 0)
+        self.assertEqual(counts["global"]["unknown"], 1)
 
     async def test_eligible_preview_does_not_retrieve_generate_or_write(self):
         async def forbidden(*args):

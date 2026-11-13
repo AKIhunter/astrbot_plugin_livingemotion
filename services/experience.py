@@ -797,7 +797,10 @@ class ExperienceService:
                 if type(raw.get(name)) in (int, float) and math.isfinite(raw[name])}
         labels = raw.get("labels") if isinstance(raw.get("labels"), (list, tuple)) else ()
         label = "、".join(str(item) for item in labels if isinstance(item, str)) or "未标注"
-        current = BotAffect(**dims, updated_at=record.updated_at if record else self._now())
+        current = BotAffect(**dims, **{k: raw[k] for k in (
+            "baseline_pleasure", "baseline_arousal", "baseline_stress",
+            "baseline_social_need", "baseline_refined") if k in raw},
+            updated_at=record.updated_at if record else self._now())
         emotions = six_emotions(decay_affect(current, now=self._now()))
         current_emotions = dict(emotions)
         day = datetime.fromtimestamp(self._now(), ZoneInfo(self.policy.timezone)).date().isoformat()

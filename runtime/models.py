@@ -257,14 +257,15 @@ class Generation:
         except Exception:
             return {"available": False, "reason_code": "model_unavailable"}
 
-    async def experience_guard(self, source, generation=None):
+    async def experience_guard(self, source, generation=None, *, identity_guard=None):
         """日记/梦境的最终授权：身份 + 模式 + 来源；生成期间的水位由调用方另查。
 
         手动生成（管理员显式指令）不要求「此刻有实时消息」：会话安静很久时
         bridge.current 已经解析不出 source，但素材还在库里。授权退到
         validate_manual（实例/配置/来源类型），素材范围仍逐条校验。
         """
-        allowed = await self.validate_context(source, generation)
+        validate = identity_guard or self.validate_context
+        allowed = await validate(source, generation)
         if not allowed and LENIENT_SAVE.get():
             allowed = await self.validate_manual(source)
         if not allowed:
@@ -278,7 +279,7 @@ class Generation:
             if self.effective_mode(source) != "active":
                 return False
             for original, gen, watermark in lease:
-                if (not await self.validate_context(original, gen)
+                if (not await validate(original, gen)
                         or watermark is not None
                         and await self.store.human_watermark(original) != watermark):
                     return False
@@ -411,16 +412,34 @@ class Generation:
             purpose="behavior", input_tokens=tokens, output_tokens=request.max_output_tokens,
         )
 
-    async def experience_service(self, context, *, need_model=True):
+    async def experience_service(self, context, *, need_model=True, persistent=False):
+        persona_fingerprint = (await self.automatic_persona(context))[1] if persistent else None
+        revision = self.revision
+
+        async def identity_guard(source, generation=None):
+            if persistent:
+                return (self.revision == revision and source.persona_id == context.persona_id
+                        and await self.validate_automatic_experience(
+                            source, generation, fingerprint=persona_fingerprint))
+            return await self.validate_context(source, generation)
+
+        async def purpose_binding(purpose):
+            if not await identity_guard(context):
+                raise ModelUnavailable("context_changed")
+            # No saved route is reused after restart; explicit configured models only.
+            if persistent:
+                return await self._select_model_binding(purpose)
+            return await self._purpose_binding(context, purpose)
+
         bindings = {}
         if need_model:
             default = None
             for purpose in ("diary", "dream"):
                 try:
                     if getattr(self.config, purpose + "_provider_id", ""):
-                        bindings[purpose] = await self._purpose_binding(context, purpose)
+                        bindings[purpose] = await purpose_binding(purpose)
                     else:
-                        default = default or await self.model_binding(context)
+                        default = default or await purpose_binding("")
                         bindings[purpose] = default
                 except ModelUnavailable:
                     # One unavailable purpose must not disable the other purpose's model.
@@ -428,44 +447,45 @@ class Generation:
             if not bindings:
                 raise ModelUnavailable("provider_budget_contract_unavailable")
         binding = next(iter(bindings.values()), None)
+        fingerprints = {purpose: selected.fingerprint for purpose, selected in bindings.items()}
         # Each closure binds its source/provider; all share the same worker and quota.
-        key = stable_key(context, self._revision,
-                         tuple((p, b.fingerprint) for p, b in bindings.items()) or "read_only")
+        key = stable_key(context, self._revision, persistent, persona_fingerprint,
+                         tuple(fingerprints.items()) or "read_only")
         if key in self._services:
             return self._services[key]
         if len(self._services) >= 64:
             raise ModelUnavailable("experience_service_limit")
 
         async def model(request):
-            if not await self.validate_context(context) or self.effective_mode(context) != "active":
+            if not await identity_guard(context) or self.effective_mode(context) != "active":
                 raise ModelUnavailable("context_changed")
             purpose = request.purpose.removeprefix("share_")
             selected = bindings.get(purpose)
-            current = await self._purpose_binding(context, purpose)
-            if selected is None or current.fingerprint != selected.fingerprint:
+            current = await purpose_binding(purpose)
+            if selected is None or current.fingerprint != fingerprints.get(purpose):
                 raise ModelUnavailable("provider_changed")
             generation = await self.store.get_generation(context)
             watermark = await self.store.human_watermark(context)
             text = await selected.generate(
                 request.system, request.data, request.max_output_tokens, request.timeout_seconds,
             )
-            if (not await self.validate_context(context, generation)
+            if (not await identity_guard(context, generation)
                     or not SEALED_DAY.get()
                     and await self.store.human_watermark(context) != watermark):
                 raise ModelUnavailable("context_changed")
-            if (await self._purpose_binding(context, purpose)).fingerprint != selected.fingerprint:
+            if (await purpose_binding(purpose)).fingerprint != fingerprints.get(purpose):
                 raise ModelUnavailable("provider_changed")
             return text
 
         async def preflight(purpose):
             selected = bindings.get(purpose)
-            current = await self._purpose_binding(context, purpose)
-            if selected is None or current.fingerprint != selected.fingerprint:
+            current = await purpose_binding(purpose)
+            if selected is None or current.fingerprint != fingerprints.get(purpose):
                 raise ModelUnavailable("provider_changed")
             return await selected.preflight()
 
         async def guard(source, generation):
-            return await self.experience_guard(source, generation)
+            return await self.experience_guard(source, generation, identity_guard=identity_guard)
 
         async def authorize(credential, operation, source):
             return (credential is self._admin and operation in ("private_read", "pin")
@@ -514,12 +534,22 @@ class Generation:
 
         if getattr(self, "_weather", None) is None:
             self._weather = OpenMeteoWeather(clock=lambda: self.store.clock())
+        memory = self.memory
+        if persistent:
+            from ..adapters.memory import MemoryGateway
+            # 无实时来源时只读插件本地素材，不能借私有授权读取外部记忆。
+            memory = MemoryGateway(None, clock=self.store.clock,
+                                   context_guard=lambda c, e: identity_guard(c))
+
+        async def night_guard(source, original):
+            return await self.night_guard(source, original, identity_guard=identity_guard)
+
         service = LiveExperienceService(
             self.store, self.runtime, model=model if binding else None,
             count_tokens=binding.count if binding else None,
             guard=guard, authorize=authorize, load=self.store.load_experience,
-            write_pin=pin, save_guarded=save, memory=self.memory,
-            night_guard=self.night_guard,
+            write_pin=pin, save_guarded=save, memory=memory,
+            night_guard=night_guard,
             preflight=preflight if binding else None,
             weather=self._weather,
             policy=ExperiencePolicy(

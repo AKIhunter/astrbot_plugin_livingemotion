@@ -733,6 +733,11 @@ async function loadBehaviorOutcome(root) {
         state.data.config.values.timezone, { year: "numeric", second: "2-digit" }));
       time.append(timestamp);
       const id = node("td"); id.append(node("code", row.dataset.sendId));
+      if (!item.simulated) id.append(node("small", ({
+        succeeded: t("平台已确认"), unknown: t("结果未知"), cancelled: t("已取消"),
+        failed: t("失败"), sending: t("发送中"), generating: t("生成中"),
+        reserved: t("已预留"), pending: t("待处理"),
+      })[item.status ?? item.result] || resultLabel(item.status ?? item.result), "hint"));
       // 旧记录不能用当前情绪补填，「当前情绪」也不是历史快照。
       const emotion = node("td", item.emotion_snapshot ? affectLabel(item.emotion_snapshot) :
         item.emotion_label && item.emotion_label !== "当前情绪" ? controlled(item.emotion_label) : t("未记录"));
@@ -747,7 +752,12 @@ async function loadBehaviorOutcome(root) {
       body.append(row);
     }
     table.append(body);
-    root.replaceChildren(response.items.length ? table : node("p", filter.query ? t("没有匹配日志。") : t("暂无发送日志。"), "hint"));
+    const counts = object(response.send_statistics ?? state.data.behavior.send_statistics).global;
+    const usage = counts ? node("p", t("今日额度占用 {0}/{1} · 平台确认 {2} · 未知 {3} · 取消 {4} · 失败 {5} · 处理中 {6}",
+      [counts.consumed, response.send_daily_limit ?? state.data.behavior.config.behavior_daily_limit,
+        counts.confirmed, counts.unknown, counts.cancelled, counts.failed, counts.in_progress]), "hint") : null;
+    root.replaceChildren(...(usage ? [usage] : []), response.items.length ? table :
+      node("p", filter.query ? t("没有匹配日志。") : t("暂无发送日志。"), "hint"));
     if (response.total > PAGE_SIZE || filter.page > 1) {
       const pager = node("div", undefined, "pager");
       const change = page => { state.filters.behavior.page = page; remember(); void loadBehaviorOutcome(root); };

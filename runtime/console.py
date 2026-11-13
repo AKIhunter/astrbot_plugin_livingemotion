@@ -837,6 +837,9 @@ class Console:
             )
         await self._attach_manual_experience(state)
         await self._attach_emotion_curve(state, context)
+        period = datetime.fromtimestamp(self.store.clock(), ZoneInfo(
+            self.config.timezone or "Asia/Shanghai")).date().isoformat()
+        state["behavior"]["send_statistics"] = await self.store.send_statistics(context, period)
         return state
 
     async def _attach_emotion_curve(self, state, context):
@@ -1081,6 +1084,12 @@ class Console:
                     view = dream_view(entry, now=self.store.clock())
                     item.update(body=view.get("body", ""), clarity=view["clarity"])
             items.append(item)
+        if kind == "behavior":
+            period = datetime.fromtimestamp(self.store.clock(), ZoneInfo(
+                self.config.timezone or "Asia/Shanghai")).date().isoformat()
+            result["send_statistics"] = await self.store.send_statistics(
+                self._contexts.get(context_id), period)
+            result["send_daily_limit"] = self.config.behavior_daily_limit
         return {"api_version": 1, **result, "items": items}
 
     async def console_scopes(self, persona_id="", view_scope="global", context_id="", platform=""):

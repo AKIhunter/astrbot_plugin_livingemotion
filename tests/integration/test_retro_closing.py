@@ -34,6 +34,17 @@ async def test_local_closing_merges_once_without_model_and_uses_shared_send_budg
         assert len(message.result.chain) == 2 and host.sends == 0
         history = await app.store.behavior_history(context, "2026-11-06")
         assert history["global_used"] == 1
+        rows = await app.console_records(context.account_key, "behavior")
+        assert rows["total"] == 1
+        row = rows["items"][0]
+        assert "晚安" in row["content"] and "synthetic reply" not in row["content"]
+        assert row["emotion_snapshot"] and row["result"] == "unknown"
+        assert row["transport_status"] == "unknown" and row["receipt_id"] is None
+        counts = await app.store.send_statistics(context, "2026-11-06")
+        assert counts["global"]["consumed"] == counts["global"]["unknown"] == 1
+        assert counts["global"]["confirmed"] == 0
+        assert rows["send_statistics"]["global"] == counts["global"]
+        assert rows["send_daily_limit"] == app.config.behavior_daily_limit
         batch = await app.catchup_archive.begin(
             context, 0, exclude_source_id="", wake_key="wake", revision=app.revision,
         )
