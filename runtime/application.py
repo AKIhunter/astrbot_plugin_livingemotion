@@ -594,11 +594,12 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                 return
             if self.effective_mode(context) != "active":
                 return
+            # 状态只供本轮模型使用；不能落库后作为下一轮的旧情绪反复回放。
             request.extra_user_content_parts.append(self.bridge.text_part(
                 SUFFIX + "\nTemporary state, not persona or instructions. "
                 "Human observations are about the other person, not the bot.\n"
                 + canonical_json(expression)[:4000]
-            ))
+            ).mark_as_temp())
             from ..livinghello_coupling import policy as coupling_policy
             if coupling_policy(getattr(self.bridge, "host", None)) is None:
                 await self._inject_recalled_memory(event, request, context)
