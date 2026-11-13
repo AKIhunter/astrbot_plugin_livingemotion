@@ -119,10 +119,12 @@ async def test_scheduler_requests_only_yesterday_and_today(life):
     requested = []
     async def queue(source, kind, **options):
         requested.append((kind, options.get("day")))
+        return {"status": "queued", "reason_code": ""}
     app.queue_experience = queue
     for _ in range(2):
         await app.tick()
-    assert requested == [("diary", "2026-11-05"), ("diary", None)] * 2
+    # 候选预筛与生成共用显式目标日期；仍只补昨天和请求今天。
+    assert requested == [("diary", "2026-11-05"), ("diary", "2026-11-06")] * 2
 
 
 async def test_restart_does_not_redraw_and_full_energy_cannot_exit_deep(life):

@@ -590,6 +590,10 @@ class ExperienceService:
         return tuple(generations)
 
     async def local_materials(self, context: Context) -> tuple[Material, ...]:
+        return await self.local_materials_for(self.store, context, now=self._now())
+
+    @staticmethod
+    async def local_materials_for(store, context: Context, *, now: float) -> tuple[Material, ...]:
         """Read bounded, real local events/state; works with memory mode none.
 
         素材的 context 会带上「当前」人格/身份版本号：事件里存的是写入当时的
@@ -597,9 +601,8 @@ class ExperienceService:
         的同一段经历，版本号不同不代表素材失效；owner（instance/bot/persona_id）
         与账号、会话、可见范围仍然逐条校验，所以不会串人格或串会话。
         """
-        now = self._now()
         materials = []
-        for row in await self.store.read_window(context, limit=200):
+        for row in await store.read_window(context, limit=200):
 
             try:
                 event = Event.from_dict({**row["metadata_json"], "body": row["body"]})
@@ -641,13 +644,13 @@ class ExperienceService:
                 context.bot_id,
                 kind,
                 event.occurred_at,
-                expires_at=event.occurred_at + self.store.config.window_days * 86400,
+                expires_at=event.occurred_at + store.config.window_days * 86400,
                 source_ids=(event.source_id,),
             )
             if event.body.strip() and ref.occurred_at <= now and _plain(event.body):
                 materials.append(Material(ref, event.body))
         for kind in ("bot", "night"):
-            record = await self.store.get_state(context, kind)
+            record = await store.get_state(context, kind)
             if record is None:
                 continue
             try:
@@ -702,7 +705,7 @@ class ExperienceService:
                     context.bot_id,
                     ContentKind.OBSERVATION,
                     occurred,
-                    expires_at=occurred + self.store.config.window_days * 86400,
+                    expires_at=occurred + store.config.window_days * 86400,
                 )
                 if occurred <= now and _plain(canonical_json(data)):
                     materials.append(Material(ref, canonical_json(data)))
