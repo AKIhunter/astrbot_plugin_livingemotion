@@ -167,9 +167,13 @@ class LivingEmotionAPI:
             if self._application is not None:
                 if not self._application.config.enabled:
                     return self._result("rejected", "plugin_disabled")
-                if parsed.context.route and not await self._application.validate_context(
-                    parsed.context, generation,
-                ):
+                # 自己登记“回复已提交”这类事件，消息其实已经出去了，
+                # 只是补一笔记录；重启后实时来源不在了也不该把它丢掉。
+                # 其余事件照旧用严格校验，必须有实时来源。
+                relaxed = (getattr(parsed, "event_type", "") == "bot_reply_submitted"
+                           and getattr(self._application, "validate_delivery", None))
+                check = relaxed or self._application.validate_context
+                if parsed.context.route and not await check(parsed.context, generation):
                     return self._result("rejected", "context_changed")
             result = await self._store.commit_event(
                 request_event, generation, writes, contributions, traces=traces,

@@ -74,10 +74,48 @@ class LivingEmotionPlugin(Star):
                     context, exempt=exempt,
                 )
                 if availability.block_chat:
+                    self._note_livinghello_blocked(event, context, availability)
                     event.stop_event()
         except Exception:
             # Optional state must not turn normal chat into a host plugin error.
             event.set_extra("livingemotion:unavailable", "state_unavailable")
+
+    def _note_livinghello_blocked(self, event, context, availability) -> None:
+        """夜间拦截群消息前，给 LivingHello 的「最近判定」补一条可读记录。
+
+        只写日志：不改放行结果、不调模型、不消耗预算。对端没装或没实现这个方法
+        就静默跳过，任何异常都不影响主流程。
+        """
+        try:
+            if getattr(getattr(context, "scene_kind", None), "value", "") != "group":
+                return
+            plugin = None
+            for name in ("astrbot_plugin_LivingHello", "astrbot_plugin_livinghello"):
+                plugin = self.application.bridge.discover(name)
+                if plugin is not None:
+                    break
+            note = getattr(plugin, "note_peer_block", None)
+            if not callable(note):
+                return
+            codes = getattr(availability, "reason_codes", ()) or ()
+            state = str(codes[0]) if codes else "sleep"
+            message_id = ""
+            obj = getattr(event, "message_obj", None)
+            if obj is not None:
+                message_id = str(getattr(obj, "message_id", "") or "")
+            note(
+                peer="livingemotion",
+                reason="blocked_by_night:" + state,
+                group_id=str(getattr(context, "scene_id", "") or ""),
+                platform=str(getattr(context, "platform", "") or ""),
+                session_kind="group",
+                sender_id=str(getattr(context, "account_id", "") or ""),
+                adapter_id=str(getattr(context, "adapter_id", "") or ""),
+                message_id=message_id,
+                detail="夜间睡眠状态，未参与判定",
+            )
+        except Exception:
+            pass
 
     @filter.on_llm_request(priority=11000)
     async def supplement_request(self, event: AstrMessageEvent, request: ProviderRequest):

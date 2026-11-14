@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+import logging
 import re
 
 from ..contracts import Context, stable_key
 from ..services.behavior import SendReceipt, SendRequest
+
+
+logger = logging.getLogger("astrbot_plugin_livingemotion.promise")
 
 
 class AstrBotBehaviorSender:
@@ -70,17 +74,23 @@ class AstrBotBehaviorSender:
     async def __call__(self, request: SendRequest) -> SendReceipt:
         route = await self.recorded_route(request.context)
         if not route or route != request.context.route:
+            logger.warning("[LE-send] 路由不可用 recorded=%r context=%r",
+                           route, request.context.route)
             return SendReceipt(request.intent_id, request.context.route or "", "rejected")
         native = None
         if self.current_source:
             source = await self.current_source(request.context)
-            if source is None:
-                return SendReceipt(request.intent_id, route, "rejected")
-            try:
-                native = self._native_transport(source, request.context, route)
-            except (ValueError, AttributeError):
-                return SendReceipt(request.intent_id, route, "rejected")
+            if source is not None:
+                try:
+                    native = self._native_transport(source, request.context, route)
+                except (ValueError, AttributeError):
+                    # 有实时事件却校验不过：上下文被换掉了，拒发。
+                    logger.warning("[LE-send] 原生通道校验失败 route=%s", route)
+                    return SendReceipt(request.intent_id, route, "rejected")
+            # source 为 None（重启后 sources 为空）时不拒绝：
+            # route 已由桥接按会话表重建，走宿主通道同样送到同一个会话。
         if not await request.authorize():
+            logger.warning("[LE-send] 提交授权失败 route=%s", route)
             return SendReceipt(request.intent_id, route, "rejected")
         if native:
             method, parameters = native
@@ -91,8 +101,15 @@ class AstrBotBehaviorSender:
                 # Submission may have happened. Do not dispatch again via the host.
                 return SendReceipt(request.intent_id, route, "unknown")
             return self._receipt(request.intent_id, route, response)
-        # Do not parse, synthesize or fall back to an account/group ID.
+        # 宿主通道拿不到平台 message_id，但它确实把消息交给了适配器。
+        # 记 "sent"（已受理）而不是 "unknown"：unknown 会触发重发，
+        # 承诺这类直发会因此把同一句说两遍。
         result = await self.send_message(route, self.make_chain(request.text))
+        logger.warning("[LE-send] 宿主通道 route=%s native=%s result=%r",
+                       route, bool(native), result)
+        # 宿主返回的 bool 不是投递凭据，回执状态只能是 unknown；
+        # 用 channel 告诉上游“这是宿主通道”，由业务层决定怎么算。
         return SendReceipt(
-            request.intent_id, route, "rejected" if result is False else "unknown",
+            request.intent_id, route,
+            "rejected" if result is False else "unknown", channel="host",
         )

@@ -126,6 +126,13 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         self.store, self.runtime = self.lifecycle.store, self.lifecycle.runtime
         self.instance_id = self.lifecycle.instance_id
         self.bridge = self.bridge_factory(self.host, self.instance_id, lambda: self.config)
+        # 承诺这类“几十分钟后才到期”的消息要靠会话表重建 route，
+        # 桥接必须能读到登记过的上下文。
+        try:
+            self.bridge.store = self.store
+            logger.warning("[LE-boot] bridge.store 已注入 承诺可重建路由")
+        except Exception as exc:
+            logger.warning("[LE-boot] bridge.store 注入失败 %r", exc)
         self.api = self.lifecycle.api
         self.api._application = self
         self.projector = Projector(self.store, lambda: self.config,
@@ -188,6 +195,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         )
         self.behavior = BehaviorService(
             self.store, current=self.current_snapshot, validate_identity=self.validate_context,
+            validate_delivery=self.validate_delivery,
             validate_evidence=self.validate_behavior_materials,
             materials=self.behavior_materials,
             model=self.behavior_model,
@@ -223,21 +231,41 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             return ""
         return context.platform + ":" + str(self_id)
 
-    async def _preparation_guard(self, context, generation, revision):
-        if (revision != self.revision or self.effective_mode(context) != "active"
-                or not await self.validate_context(context, generation)):
+    async def _preparation_guard(self, context, generation, revision, *, delivery=False):
+        if revision != self.revision:
+            logger.warning("[LE-promise] 授权失败 revision %s!=%s", revision, self.revision)
+            return False
+        mode = self.effective_mode(context)
+        if mode != "active":
+            logger.warning("[LE-promise] 授权失败 mode=%s", mode)
+            return False
+        check = self.validate_delivery if delivery else self.validate_context
+        if not await check(context, generation):
+            logger.warning("[LE-promise] 授权失败 上下文校验 gen=%s delivery=%s",
+                           generation, delivery)
             return False
         # 群聊主动发言必须先过 LivingHello 的静态名单；私聊不判。
-        if not self.livinghello_gate(context).get("reply_allowed"):
+        gate = self.livinghello_gate(context)
+        if not gate.get("reply_allowed"):
+            logger.warning("[LE-promise] 授权失败 livinghello=%s", gate.get("reason"))
             return False
         value = await self.availability(context)
         if not value.block_chat:
             return True
+        # delivery（承诺兑现）是用户自己约好的时间点，熬不熬夜他自己定，
+        # 夜里也照发。作息表只用来管 bot 自己找话说的主动行为。
+        if delivery:
+            return True
         night = await self.night_snapshot(context)
-        return ((night.display_state or night.phase).value != "deep_sleep"
-                and (night.wake_window_deadline is None
-                     or self.store.clock() < night.wake_window_deadline)
-                and any(source == context for source in self._reply_contexts.values()))
+        allowed = ((night.display_state or night.phase).value != "deep_sleep"
+                   and (night.wake_window_deadline is None
+                        or self.store.clock() < night.wake_window_deadline)
+                   and any(source == context for source in self._reply_contexts.values()))
+        if not allowed:
+            logger.warning("[LE-promise] 授权失败 block_chat night=%s deadline=%s reply_ctx=%d delivery=%s",
+                           (night.display_state or night.phase).value,
+                           night.wake_window_deadline, len(self._reply_contexts), delivery)
+        return allowed
 
     def livinghello_gate(self, context):
         """群聊主动发言前查询 LivingHello 的静态名单；私聊与未安装时放行。"""
@@ -368,14 +396,16 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
 
         body = strip_stops(text).strip()
         if not body:
+            logger.warning("[LE-promise] 文案被清空 key=%s raw=%r", str(key)[:20], text[:120])
             return "rejected"
         generation = await self.store.get_generation(context)
         revision = self.revision
         notify_key = key
 
         async def submitted(target, intent, body_text):
-            # 只认同一代际的实时上下文；context 变了一律不提交。
-            if not await self.validate_context(target, generation):
+            # 只认同一代际的上下文；承诺这条允许来源由会话表重建。
+            if not await self.validate_delivery(target, generation):
+                logger.warning("[LE-promise] 提交校验未过 key=%s", str(notify_key)[:20])
                 return False
             event = Event(intent, "livingemotion.host", "bot_reply_submitted", target,
                           ActorRole.BOT, self.store.clock(), intent,
@@ -390,13 +420,16 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                 while len(self._participation) > 512:
                     self._participation.popitem(last=False)
                 return True
+            logger.warning("[LE-promise] 事件未落库 key=%s result=%r",
+                           str(notify_key)[:20], result)
             return False
 
         try:
             return await self.behavior.execute_control(
                 context, intent_id=notify_key, purpose=self.PROMISE_NOTICE_PURPOSE,
                 generate=lambda: self._ready_text(body),
-                authorize=self._preparation_guard,
+                authorize=lambda c, g, r: self._preparation_guard(
+                    c, g, r, delivery=True),
                 on_submit=submitted,
                 generation=generation, revision=revision,
             )
@@ -622,6 +655,37 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         except Exception:
             return False
 
+    async def validate_delivery(self, context, generation=None):
+        """非回复型直发的来源校验：允许来源由会话表重建。
+
+        validate_context 要求 bridge.current 解析出实时事件，而重启后
+        bridge.sources 是空的 —— 承诺兑现于是永远过不了授权，只能干等
+        用户先说话。这里放宽：有实时来源照旧；没有则要求这条会话确实
+        登记在库，且按宿主规则重建出的 route 与 context.route 逐字一致。
+        目标仍是同一个会话，不会因为放宽而发到别处。
+        """
+        if (self.closed or not self.config.enabled
+                or context.instance_id != self.instance_id
+                or context.scene_kind == SceneKind.PUBLIC_COMMENT):
+            return False
+        try:
+            if Config.from_mapping(self.native_config) != self.config:
+                return False
+            if generation is not None and (
+                    await self.store.get_generation(context) != generation):
+                return False
+            if not context.route:
+                return False
+            if await self.bridge.current(context) is not None:
+                return True
+            stored = await self.store.registered_context(context)
+            if stored is None or getattr(stored, "scope_key", "") != context.scope_key:
+                return False
+            rebuilt = self.promises._rebuild_route(stored)
+            return bool(rebuilt) and rebuilt == context.route
+        except Exception:
+            return False
+
     async def validate_manual(self, context):
         """手动生成的轻量授权：只复核实例/配置/来源类型，不要求当前有实时事件。
 
@@ -754,6 +818,40 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         except Exception:
             event.set_extra("livingemotion:unavailable", "source_resolution_failed")
 
+    def _note_livinghello_blocked_llm(self, event, context) -> None:
+        """作息/情绪状态判定不参与时，让 LivingHello 的「最近判定」留一条。
+
+        本钩子优先级高于 LivingHello 的判定钩子，直接 stop_event() 会让它收不到
+        本次请求，于是面板里什么都看不到。这里只补一条可读记录：
+        不调模型、不消耗额度、不改变任何放行结果。
+        """
+        try:
+            if getattr(getattr(context, "scene_kind", None), "value", "") != "group":
+                return
+            plugin = None
+            for name in ("astrbot_plugin_LivingHello", "astrbot_plugin_livinghello"):
+                plugin = self.bridge.discover(name)
+                if plugin is not None:
+                    break
+            note = getattr(plugin, "note_peer_block", None)
+            if not callable(note):
+                return
+            obj = getattr(event, "message_obj", None)
+            message_id = str(getattr(obj, "message_id", "") or "") if obj is not None else ""
+            note(
+                peer="livingemotion",
+                reason="blocked_by_state:night_sleep",
+                group_id=str(getattr(context, "scene_id", "") or ""),
+                platform=str(getattr(context, "platform", "") or ""),
+                adapter_id=str(getattr(context, "adapter_id", "") or ""),
+                session_kind="group",
+                sender_id=str(getattr(context, "account_id", "") or ""),
+                message_id=message_id,
+                detail="作息状态不允许参与，未进入判定",
+            )
+        except Exception:
+            pass
+
     async def on_llm_request(self, event, request):
         # Always remove stale blocks, including when disabled or after a reload.
         request.extra_user_content_parts[:] = [
@@ -782,6 +880,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             if self.config.night_policy_version == 2:
                 await self.advance_scope(context)
             if (await self.availability(context)).block_chat:
+                self._note_livinghello_blocked_llm(event, context)
                 event.stop_event()
                 return
             await self._prepare_catchup(event, request, context)

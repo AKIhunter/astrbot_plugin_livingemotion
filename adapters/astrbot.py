@@ -6,7 +6,7 @@ import weakref
 from collections import OrderedDict
 from dataclasses import dataclass, replace
 
-from ..contracts import ActorRole, Context, Event, SceneKind, stable_key
+from ..contracts import ActorRole, Context, Event, SceneKind, rebuild_route, stable_key
 from .identity import IdentityAdapter, IdentitySnapshot, context_from_event
 from .persona import NativePersona, PersonaAdapter, PersonaSnapshot
 
@@ -26,6 +26,10 @@ class AstrBotBridge:
     def __init__(self, host, instance_id, config):
         self.host, self.instance_id, self.config = host, instance_id, config
         self.sources: OrderedDict[str, Source] = OrderedDict()
+        # 最近一次见过的 route，按 scope_key 记。sources 里的 source 带的是
+        # 弱引用 event，重启就没了；可 route 本身（snowluma_onebot:FriendMessage:xxx）
+        # 是纯字符串，落一份就能让“几十分钟后才到期”的承诺找到回家的路。
+        self.routes: dict[str, str] = {}
         self.identity = IdentityAdapter(lambda: self.discover("astrbot_plugin_livingmemory"))
         self.persona = PersonaAdapter(self.resolve_native)
 
@@ -84,6 +88,10 @@ class AstrBotBridge:
         source = Source(identity.context, persona, identity, weakref.ref(event))
         self.sources[source.context.account_key] = source
         self.sources.move_to_end(source.context.account_key)
+        if source.context.route:
+            self.routes[source.context.scope_key] = source.context.route
+            while len(self.routes) > 256:
+                self.routes.pop(next(iter(self.routes)))
         while len(self.sources) > 128:
             self.sources.popitem(last=False)
         message = event.message_obj
@@ -127,9 +135,34 @@ class AstrBotBridge:
 
     async def recorded_route(self, context):
         source = await self.current(context)
-        if not source or source.context.scene_kind == SceneKind.PUBLIC_COMMENT:
+        if source is not None:
+            if source.context.scene_kind == SceneKind.PUBLIC_COMMENT:
+                return None
+            return source.context.route
+        # 没有实时 source（重启后最常见）时用记下来的 route。
+        # 必须是同一个 context 的那条，否则宁可返回 None 也不乱发。
+        if context.scene_kind == SceneKind.PUBLIC_COMMENT or not context.route:
             return None
-        return source.context.route
+        known = self.routes.get(context.scope_key)
+        if known:
+            return known if known == context.route else None
+        # 内存里没有（重启后最常见）：从会话表按宿主规则重建一次。
+        # 会话表存的是权威三元组，route 是它的纯函数；
+        # 重建值必须与 context.route 逐字相同，不同就是不可信。
+        stored = await self._stored_context(context)
+        if stored is None:
+            return None
+        rebuilt = rebuild_route(stored)
+        return rebuilt if rebuilt == context.route else None
+
+    async def _stored_context(self, context):
+        store = getattr(self, "store", None)
+        if store is None:
+            return None
+        try:
+            return await store.registered_context(context)
+        except Exception:
+            return None
 
     @staticmethod
     def text_part(text):

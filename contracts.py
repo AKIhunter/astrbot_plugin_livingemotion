@@ -209,6 +209,22 @@ class Context:
         return cls(**dict(value))
 
 
+def rebuild_route(context) -> str:
+    """按宿主 MessageSession 的格式把 route 拼回来；缺料返回空串。
+
+    落库的 context_json 一律 route=None（见 storage/sqlite.py），
+    route 只能是 adapter_id / scene_kind / scene_id 三者的纯函数。
+    """
+    adapter = str(getattr(context, "adapter_id", "") or "")
+    scene_id = str(getattr(context, "scene_id", "") or "")
+    if not adapter or not scene_id:
+        return ""
+    scene_kind = getattr(context, "scene_kind", None)
+    kind = {"private": "FriendMessage", "group": "GroupMessage"}.get(
+        getattr(scene_kind, "value", scene_kind))
+    return f"{adapter}:{kind}:{scene_id}" if kind else ""
+
+
 @dataclass(frozen=True)
 class ScopeSelection:
     """Authenticated management selector, never a sending context."""

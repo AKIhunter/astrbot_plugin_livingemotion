@@ -964,7 +964,7 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
             return {"status": "rejected", "reason_code": "invalid_transition"}
         if transport_receipt is not None and (
                 set(transport_receipt) != {"status", "receipt_id"}
-                or transport_receipt["status"] not in ("confirmed", "rejected", "unknown")
+                or transport_receipt["status"] not in ("confirmed", "rejected", "unknown", "sent")
                 or (transport_receipt["receipt_id"] is not None and (
                     not isinstance(transport_receipt["receipt_id"], str)
                     or not 1 <= len(transport_receipt["receipt_id"]) <= 512))):
@@ -1005,6 +1005,12 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
                     previous_context = value["context"]
                     if any(previous_context[name] != getattr(context, name) for name in
                            ("identity_revision", "persona_revision", "route")):
+                        import logging as _logging
+                        _logging.getLogger("astrbot_plugin_livingemotion.promise").warning(
+                            "[LE-intent] context 变化 %r",
+                            {n: (previous_context.get(n), getattr(context, n))
+                             for n in ("identity_revision", "persona_revision", "route")
+                             if previous_context.get(n) != getattr(context, n)})
                         return {"status": "rejected", "reason_code": "context_changed"}
                     watermark = db.execute(
                         "SELECT human_watermark FROM scopes WHERE scope_key=?",

@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+import logging
 import time
 from typing import Any, Protocol
 from weakref import WeakValueDictionary
@@ -22,6 +23,8 @@ from ..domain.emotion import decay_affect
 from ..ports.memory import Material, MemoryRequest, RecallResult, ValidationResult
 from ..storage import SQLiteStore
 from .output import public_text_allowed
+
+logger = logging.getLogger("astrbot_plugin_livingemotion.promise")
 
 SEND_POOL = "send"
 SEND_PURPOSE = "behavior"
@@ -161,6 +164,8 @@ class SendReceipt:
     receipt_id: str | None = None
     confirmed_parts: int = 0
     total_parts: int = 1
+    # "native"（拿到平台回执）/ "host"（只交给宿主的 send_message）
+    channel: str = ""
 
 
 class Sender(Protocol):
@@ -232,6 +237,7 @@ class BehaviorService:
         self, store: SQLiteStore, *,
         current: Callable[[Context], Awaitable[BehaviorSnapshot | None]],
         validate_identity: Callable[[Context], Awaitable[bool]],
+        validate_delivery: Callable[[Context], Awaitable[bool]] | None = None,
         validate_evidence: Callable[
             [MemoryRequest, tuple[Material, ...]], Awaitable[ValidationResult]
         ],
@@ -247,6 +253,9 @@ class BehaviorService:
         self.store = store
         self.current = current
         self.validate_identity = validate_identity
+        # 承诺这类“非回复型直发”没有实时事件，重启后仍要能落地，
+        # 用一条允许来源由会话表重建的校验替代 validate_identity。
+        self.validate_delivery = validate_delivery
         self.validate_evidence = validate_evidence
         self.model = model
         self.sender = sender
@@ -861,12 +870,17 @@ class BehaviorService:
     async def _control(self, context, key, purpose, generate, authorize, on_submit,
                        generation, revision):
         async def permitted():
+            identity = (self.validate_delivery
+                        if purpose == "promise_control" and self.validate_delivery is not None
+                        else self.validate_identity)
             return (not self._closed and not self._faulted
-                    and await self.validate_identity(context)
+                    and await identity(context)
                     and await self.store.get_generation(context) == generation
                     and await authorize(context, generation, revision))
 
         if not await permitted():
+            logger.warning("[LE-control] 前置授权未过 purpose=%s route=%r mode=%s",
+                           purpose, context.route, self._closed)
             return "rejected"
         now = self._now()
         watermark = await self.store.human_watermark(context)
@@ -878,6 +892,7 @@ class BehaviorService:
             return "confirmed" if old and old["status"] == "succeeded" else "unknown"
         current_status, dispatched, reserved = "pending", False, False
         result = "rejected"
+        accepted = False
 
         transport_receipt = None
         sent_content = None
@@ -906,8 +921,13 @@ class BehaviorService:
             current_status = new
 
         async def send_guard():
-            return (await permitted()
-                    and await self.store.human_watermark(context) == watermark)
+            if not await permitted():
+                logger.warning("[LE-control] 发送守卫 permitted 失效 key=%s", str(key)[:24])
+                return False
+            if await self.store.human_watermark(context) != watermark:
+                logger.warning("[LE-control] 发送守卫 watermark 变化 key=%s", str(key)[:24])
+                return False
+            return True
 
         try:
             period = self._period(self.policy(), now)
@@ -963,18 +983,32 @@ class BehaviorService:
                          and type(receipt.total_parts) is int
                          and receipt.confirmed_parts == receipt.total_parts
                          and receipt.total_parts > 0)
-            result = "confirmed" if confirmed else "unknown"
+            # 宿主受理但没有平台回执：重启后 source 不在、route 由会话表
+            # 重建时就是这条路。send_message 返回 True 表示适配器已接手，
+            # 比 unknown 强，按“已发出”记，免得承诺重发说两遍。
+            # 宿主通道拿不到平台回执，status 只能是 unknown。但对承诺这种
+            # 直发，send_message 返回 True 就说明适配器已经接手了 ——
+            # 按“已发出”记，否则 unknown 会触发重发，同一句说两遍。
+            accepted = (isinstance(receipt, SendReceipt)
+                        and receipt.status == "unknown"
+                        and getattr(receipt, "channel", "") == "host"
+                        and purpose == "promise_control"
+                        and receipt.intent_id == key and receipt.route == context.route
+                        and guard_called and guard_allowed)
+            result = "confirmed" if confirmed else ("sent" if accepted else "unknown")
             if (isinstance(receipt, SendReceipt) and receipt.status == "rejected"
                     and receipt.intent_id == key and receipt.route == context.route
                     and receipt.confirmed_parts == 0):
                 result = "rejected"
             transport_receipt = {"status": result,
                                  "receipt_id": receipt.receipt_id if confirmed else None}
-            await transition("succeeded" if confirmed else
+            await transition("succeeded" if confirmed or accepted else
                              "failed" if result == "rejected" else "unknown",
                              "send_" + result)
             return result
         except BaseException as exc:
+            logger.warning("[LE-control] 中断 purpose=%s key=%s stage=%s dispatched=%s %r",
+                           purpose, str(key)[:24], current_status, dispatched, exc)
             status = "unknown" if dispatched else (
                 "cancelled" if current_status == "pending" else "failed")
             if current_status not in TERMINAL:
@@ -987,7 +1021,7 @@ class BehaviorService:
         finally:
             if reserved:
                 await asyncio.shield(self.store.finish_quota(
-                    key + ":send", status=("succeeded" if result == "confirmed" else
+                    key + ":send", status=("succeeded" if result in ("confirmed", "sent") else
                                           "unknown" if dispatched else "failed"),
                     reason_code="control_" + result,
                 ))

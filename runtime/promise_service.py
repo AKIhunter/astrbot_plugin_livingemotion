@@ -10,7 +10,9 @@ import logging
 import re
 import time
 
-from ..contracts import Context
+from dataclasses import replace
+
+from ..contracts import Context, rebuild_route
 from ..storage.promise_store import (
     PromiseStore, bucket_label, fingerprint, parse_bucket,
 )
@@ -217,12 +219,11 @@ class PromiseService:
 
     async def _deliver(self, row: dict) -> bool:
         promise_id = row["promise_id"]
-        context = self._live_context(row)
+        context = await self._live_context(row)
         if context is None:
             # 分两种“找不到”：会话只是暂时不在内存（重启后还没收到消息、
             # 或超出 128 条被挤出）——推后重试即可；会话在库里都不存在了
             # ——那这条承诺永远发不出去，再等也没用，直接判死。
-            # 不区分的话，孤儿承诺会每 60 秒 defer 一次，日志永远刷。
             if not await self._scope_known(row.get("scope_key")):
                 await self.promises.cancel(promise_id)
                 logger.warning("[LE-promise] 会话已不存在 放弃承诺 %s scope=%s",
@@ -254,7 +255,13 @@ class PromiseService:
             await self.promises.defer(promise_id, retry_at=self.store.clock() + 86400,
                                       error="quota", max_retry=MAX_RETRY)
             return False
-        result = await self.app.send_promise_notice(context, text, "promise:" + promise_id)
+        # intent_id 是 intents 表主键，create_intent 走 INSERT OR IGNORE。
+        # 同一条承诺第二次尝试若还沿用 "promise:<id>"，就会撞上第一次失败
+        # 留下的行 → duplicate → _control 只在旧行是 succeeded 时才认，
+        # 于是永远 unknown。一条有失败前科的承诺就再也发不出去。
+        attempt = int(row.get("retry_count") or 0)
+        result = await self.app.send_promise_notice(
+            context, text, "promise:" + promise_id + ("#%d" % attempt if attempt else ""))
         if result in ("confirmed", "sent"):
             await self.promises.move(promise_id, status="sent", expect=("running",))
             logger.warning("[LE-promise] 承诺已发出 %s", promise_id[:8])
@@ -262,8 +269,20 @@ class PromiseService:
         if result in ("rejected", "unknown"):
             # 这两类是“现在发不出去但还有救”：可能撞冷却、可能上下文变了。
             # 绝不能留 running/unknown 这种没人再扫的状态。
-            await self.promises.defer(promise_id, retry_at=self.store.clock() + RETRY_BACKOFF,
-                                      error=str(result), max_retry=MAX_RETRY)
+            retry_at, penalty = self.store.clock() + RETRY_BACKOFF, True
+            # 夜里被静默拦下不算失败：推到醒来再看，别把重试次数烧光，
+            # 否则一个跨夜的承诺第二天只会剩一条 failed。
+            try:
+                night = await self.app.night_snapshot(context)
+                if (night.display_state or night.phase).value == "deep_sleep":
+                    retry_at = max(night.wake_window_deadline or 0,
+                                   self.store.clock() + 3600)
+                    penalty = False
+            except Exception:
+                pass
+            await self.promises.defer(promise_id, retry_at=retry_at,
+                                      error=str(result), max_retry=MAX_RETRY,
+                                      no_penalty=penalty)
             logger.warning("[LE-promise] 承诺发送被拒 %s -> defer(%s)",
                            promise_id[:8], result)
             return False
@@ -274,8 +293,8 @@ class PromiseService:
     async def _scope_known(self, scope) -> bool:
         """这个 scope 在会话库里登记过吗。
 
-        登记过 = 会话还在，只是当前没有实时事件（重启 睡眠 被挤出内存），
-        等用户说话即可。查不到 = 会话被删了或换了实例，承诺无处投递。
+        登记过 = 会话还在，只是当前没有实时事件（重启/睡眠/被挤出内存），
+        等用户说话即可。查不到 = 会话被删或换了实例，承诺无处投递。
         """
         key = str(scope or "")
         if not key:
@@ -291,7 +310,7 @@ class PromiseService:
             # 查不动就别误杀，按“还在”处理。
             return True
 
-    def _live_context(self, row: dict) -> Context | None:
+    async def _live_context(self, row: dict) -> Context | None:
         """按 scope_key 从内存里找**带发送路由**的上下文。
 
         落库的 context_json 一律 route=None（见 storage/sqlite.py:1120），
@@ -313,7 +332,25 @@ class PromiseService:
         for context in reversed(list((getattr(self.app, "_contexts", {}) or {}).values())):
             if getattr(context, "scope_key", "") == scope and getattr(context, "route", None):
                 return context
+        # 最后从会话表还原，并把 route 按宿主规则重建。
+        # 重启后 sources 与 _contexts 都空，但 source_contexts 里
+        # adapter_id / scene_kind / scene_id 三样都在，route 是它们的纯函数：
+        #   f"{adapter_id}:{FriendMessage|GroupMessage}:{scene_id}"
+        # 这是“用户没先说话也能把承诺送出去”的那把钥匙。
+        try:
+            for stored in await self.store.list_contexts():
+                if getattr(stored, "scope_key", "") != scope:
+                    continue
+                route = self._rebuild_route(stored)
+                if route:
+                    return replace(stored, route=route)
+        except Exception as exc:
+            logger.warning("[LE-promise] 会话表还原失败 %r", exc)
         return None
+
+    @staticmethod
+    def _rebuild_route(context) -> str:
+        return rebuild_route(context)
 
     async def _compose(self, context: Context, row: dict) -> str:
         """兑现内容要真说话，这里才走模型。"""
