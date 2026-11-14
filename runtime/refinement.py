@@ -182,9 +182,14 @@ class Refinement:
             "control是你此刻回应的底气0到1：0.5为中性，越高越有把握；"
             "只按对话里的把握程度判断，拿不准就填0.5。Return only JSON "
             '{"rule_version":"emotion-2","delta":{"pleasure":0,"arousal":0,"stress":0,'
-            '"social_need":0},"control":0.5,"confidence":0.8,"appraisals":[]}. '
+            '"social_need":0},"control":0.62,"confidence":0.8,"appraisals":[]}. '
             'Each appraisal is {"signal":"praise","evidence":"你真棒"}. '
-            "Each delta must be within -0.12..0.12."
+            "Each delta must be within -0.12..0.12. "
+            # 示例值原本写死 0.5，模型照抄，底气整天停在 50%。改为非中点示例
+            # 并显式要求按当句把握给值，避免退化成常数。
+            "control 是这一句给你带来的把握感，按语气实给：熟络温和的对话调高，"
+            "冷淡、被忽视或被打断调低，同一段对话里也应跟着变化。"
+            "不要惯性地重复 0.5，也不要每次都写同一个值。"
         )
         # 人格只发送 LivingEmotion 自己的风格摘要（未保存时回退原生人格截断），
         # 记忆压缩到 2 条 × 400 字：只为理解语境，不需要整段原文。

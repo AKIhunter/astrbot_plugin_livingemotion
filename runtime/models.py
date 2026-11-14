@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 from ..adapters.weather import OpenMeteoWeather
 from ..contracts import prompt_json, stable_key
-from ..services.experience import LENIENT_SAVE, ExperiencePolicy, ExperienceService
+from ..services.experience import LENIENT_SAVE, SEALED_DAY, ExperiencePolicy, ExperienceService
 from ..domain.proactivity import motive_for
 from ..storage.proactivity import record_topic_use
 from .background import ModelResultUnknown
@@ -28,7 +28,9 @@ class LiveExperienceService(ExperienceService):
             sources[material.evidence.context.scope_key] = material.evidence.context
         captured = tuple([
             (source, await self.store.get_generation(source),
-             await self.store.human_watermark(source))
+             None if (kwargs.get("day") and kwargs["day"] < datetime.fromtimestamp(
+                 self.store.clock(), ZoneInfo(self.policy.timezone)).date().isoformat())
+             else await self.store.human_watermark(source))
             for source in sources.values()
         ])
         token = _generation_sources.set(captured)
@@ -48,6 +50,43 @@ class LiveExperienceService(ExperienceService):
 
 class ModelUnavailable(ValueError):
     pass
+
+
+class ModelPreflightFailed(ModelUnavailable):
+    def __init__(self, reason, http_status=None):
+        super().__init__(reason)
+        self.http_status = http_status
+
+
+async def check_provider_api(provider):
+    """同一上游的免费模型列表检查；不生成正文、不重试、不保留异常原文。"""
+    try:
+        client = provider.client.with_options(max_retries=0, timeout=5)
+        response = await asyncio.wait_for(client.models.with_raw_response.list(), 5)
+        status = response.status_code
+        if status != 200:
+            raise ModelPreflightFailed("model_preflight_http_error", status)
+        return {"http_status": 200, "reason_code": "model_preflight_ok"}
+    except ModelPreflightFailed:
+        raise
+    except TimeoutError:
+        raise ModelPreflightFailed("model_preflight_timeout") from None
+    except Exception as exc:
+        status = getattr(exc, "status_code", None)
+        raise ModelPreflightFailed(
+            "model_preflight_http_error" if type(status) is int else "model_preflight_unavailable",
+            status if type(status) is int else None,
+        ) from None
+
+
+def _completion(response):
+    if getattr(response, "role", None) != "assistant":
+        raise ModelResultUnknown("model_response_invalid")
+    text = getattr(response, "completion_text", None)
+    # 输出 Token 由请求的 max_tokens 约束，UTF-8 字节数不能当成 Token 数。
+    if not isinstance(text, str) or not text.strip() or len(text.encode("utf-8")) > 32768:
+        raise ModelResultUnknown("model_output_invalid")
+    return text
 
 
 def _text_upper_bound(system, data):
@@ -76,6 +115,9 @@ class OpenAIBinding:
 
     def count(self, system, data):
         return _text_upper_bound(system, data)
+
+    async def preflight(self):
+        return await check_provider_api(self.provider)
 
     async def generate(self, system, data, output_tokens, timeout):
         if type(output_tokens) is not int or not 1 <= output_tokens <= 8192:
@@ -106,12 +148,7 @@ class OpenAIBinding:
             prompt=data, system_prompt=system, contexts=[], func_tool=None,
             request_max_retries=1,
         ), timeout)
-        if getattr(response, "role", None) != "assistant":
-            raise ModelResultUnknown("model_response_invalid")
-        text = getattr(response, "completion_text", None)
-        if not isinstance(text, str) or not text.strip() or self.count("", text) > output_tokens:
-            raise ModelResultUnknown("model_output_invalid")
-        return text
+        return _completion(response)
 
 
 class RouterBinding:
@@ -139,6 +176,14 @@ class RouterBinding:
     def count(self, system, data):
         return _text_upper_bound(system, data)
 
+    async def preflight(self):
+        # 检查 pinned 实例实际使用的子上游，不能拿 router 总入口代替。
+        slot = int(self.provider.meta().id.rsplit("_", 1)[-1])
+        upstream = next((u for u in self.provider.upstreams if u.slot == slot), None)
+        if upstream is None:
+            raise ModelPreflightFailed("model_preflight_unavailable")
+        return await check_provider_api(upstream.client)
+
     async def generate(self, system, data, output_tokens, timeout):
         if type(output_tokens) is not int or not 1 <= output_tokens <= 8192:
             raise ModelUnavailable("invalid_output_budget")
@@ -146,12 +191,7 @@ class RouterBinding:
             prompt=data, system_prompt=system, contexts=[], func_tool=None,
             max_tokens=output_tokens, request_max_retries=1,
         ), timeout)
-        if getattr(response, "role", None) != "assistant":
-            raise ModelResultUnknown("model_response_invalid")
-        text = getattr(response, "completion_text", None)
-        if not isinstance(text, str) or not text.strip() or self.count("", text) > output_tokens:
-            raise ModelResultUnknown("model_output_invalid")
-        return text
+        return _completion(response)
 
 
 def _provider_binding(provider):
@@ -217,14 +257,15 @@ class Generation:
         except Exception:
             return {"available": False, "reason_code": "model_unavailable"}
 
-    async def experience_guard(self, source, generation=None):
+    async def experience_guard(self, source, generation=None, *, identity_guard=None):
         """日记/梦境的最终授权：身份 + 模式 + 来源；生成期间的水位由调用方另查。
 
         手动生成（管理员显式指令）不要求「此刻有实时消息」：会话安静很久时
         bridge.current 已经解析不出 source，但素材还在库里。授权退到
         validate_manual（实例/配置/来源类型），素材范围仍逐条校验。
         """
-        allowed = await self.validate_context(source, generation)
+        validate = identity_guard or self.validate_context
+        allowed = await validate(source, generation)
         if not allowed and LENIENT_SAVE.get():
             allowed = await self.validate_manual(source)
         if not allowed:
@@ -238,8 +279,9 @@ class Generation:
             if self.effective_mode(source) != "active":
                 return False
             for original, gen, watermark in lease:
-                if (not await self.validate_context(original, gen)
-                        or await self.store.human_watermark(original) != watermark):
+                if (not await validate(original, gen)
+                        or watermark is not None
+                        and await self.store.human_watermark(original) != watermark):
                     return False
         return True
 
@@ -370,16 +412,34 @@ class Generation:
             purpose="behavior", input_tokens=tokens, output_tokens=request.max_output_tokens,
         )
 
-    async def experience_service(self, context, *, need_model=True):
+    async def experience_service(self, context, *, need_model=True, persistent=False):
+        persona_fingerprint = (await self.automatic_persona(context))[1] if persistent else None
+        revision = self.revision
+
+        async def identity_guard(source, generation=None):
+            if persistent:
+                return (self.revision == revision and source.persona_id == context.persona_id
+                        and await self.validate_automatic_experience(
+                            source, generation, fingerprint=persona_fingerprint))
+            return await self.validate_context(source, generation)
+
+        async def purpose_binding(purpose):
+            if not await identity_guard(context):
+                raise ModelUnavailable("context_changed")
+            # No saved route is reused after restart; explicit configured models only.
+            if persistent:
+                return await self._select_model_binding(purpose)
+            return await self._purpose_binding(context, purpose)
+
         bindings = {}
         if need_model:
             default = None
             for purpose in ("diary", "dream"):
                 try:
                     if getattr(self.config, purpose + "_provider_id", ""):
-                        bindings[purpose] = await self._purpose_binding(context, purpose)
+                        bindings[purpose] = await purpose_binding(purpose)
                     else:
-                        default = default or await self.model_binding(context)
+                        default = default or await purpose_binding("")
                         bindings[purpose] = default
                 except ModelUnavailable:
                     # One unavailable purpose must not disable the other purpose's model.
@@ -387,36 +447,45 @@ class Generation:
             if not bindings:
                 raise ModelUnavailable("provider_budget_contract_unavailable")
         binding = next(iter(bindings.values()), None)
+        fingerprints = {purpose: selected.fingerprint for purpose, selected in bindings.items()}
         # Each closure binds its source/provider; all share the same worker and quota.
-        key = stable_key(context, self._revision,
-                         tuple((p, b.fingerprint) for p, b in bindings.items()) or "read_only")
+        key = stable_key(context, self._revision, persistent, persona_fingerprint,
+                         tuple(fingerprints.items()) or "read_only")
         if key in self._services:
             return self._services[key]
         if len(self._services) >= 64:
             raise ModelUnavailable("experience_service_limit")
 
         async def model(request):
-            if not await self.validate_context(context) or self.effective_mode(context) != "active":
+            if not await identity_guard(context) or self.effective_mode(context) != "active":
                 raise ModelUnavailable("context_changed")
             purpose = request.purpose.removeprefix("share_")
             selected = bindings.get(purpose)
-            current = await self._purpose_binding(context, purpose)
-            if selected is None or current.fingerprint != selected.fingerprint:
+            current = await purpose_binding(purpose)
+            if selected is None or current.fingerprint != fingerprints.get(purpose):
                 raise ModelUnavailable("provider_changed")
             generation = await self.store.get_generation(context)
             watermark = await self.store.human_watermark(context)
             text = await selected.generate(
                 request.system, request.data, request.max_output_tokens, request.timeout_seconds,
             )
-            if (not await self.validate_context(context, generation)
-                    or await self.store.human_watermark(context) != watermark):
+            if (not await identity_guard(context, generation)
+                    or not SEALED_DAY.get()
+                    and await self.store.human_watermark(context) != watermark):
                 raise ModelUnavailable("context_changed")
-            if (await self._purpose_binding(context, purpose)).fingerprint != selected.fingerprint:
+            if (await purpose_binding(purpose)).fingerprint != fingerprints.get(purpose):
                 raise ModelUnavailable("provider_changed")
             return text
 
+        async def preflight(purpose):
+            selected = bindings.get(purpose)
+            current = await purpose_binding(purpose)
+            if selected is None or current.fingerprint != fingerprints.get(purpose):
+                raise ModelUnavailable("provider_changed")
+            return await selected.preflight()
+
         async def guard(source, generation):
-            return await self.experience_guard(source, generation)
+            return await self.experience_guard(source, generation, identity_guard=identity_guard)
 
         async def authorize(credential, operation, source):
             return (credential is self._admin and operation in ("private_read", "pin")
@@ -449,7 +518,7 @@ class Generation:
                 experience, generations,
                 timezone=self.config.timezone or "Asia/Shanghai", day=day,
                 watermarks=tuple((source, watermark) for source, _, watermark
-                                 in _generation_sources.get()),
+                                 in _generation_sources.get() if watermark is not None),
             )
             auto_memory = getattr(self, "auto_memory", None)
             if result.get("status") in ("created", "duplicate") and auto_memory is not None:
@@ -465,12 +534,23 @@ class Generation:
 
         if getattr(self, "_weather", None) is None:
             self._weather = OpenMeteoWeather(clock=lambda: self.store.clock())
+        memory = self.memory
+        if persistent:
+            from ..adapters.memory import MemoryGateway
+            # 无实时来源时只读插件本地素材，不能借私有授权读取外部记忆。
+            memory = MemoryGateway(None, clock=self.store.clock,
+                                   context_guard=lambda c, e: identity_guard(c))
+
+        async def night_guard(source, original):
+            return await self.night_guard(source, original, identity_guard=identity_guard)
+
         service = LiveExperienceService(
             self.store, self.runtime, model=model if binding else None,
             count_tokens=binding.count if binding else None,
             guard=guard, authorize=authorize, load=self.store.load_experience,
-            write_pin=pin, save_guarded=save, memory=self.memory,
-            night_guard=self.night_guard,
+            write_pin=pin, save_guarded=save, memory=memory,
+            night_guard=night_guard,
+            preflight=preflight if binding else None,
             weather=self._weather,
             policy=ExperiencePolicy(
                 timezone=self.config.timezone or "UTC", diary_at=self.config.diary_at,
@@ -480,9 +560,10 @@ class Generation:
                 diary_retention_days=self.config.diary_retention_days,
                 dream_retention_days=self.config.dream_retention_days,
                 dream_half_life_seconds=self.config.dream_half_life_seconds,
-                body_chars=self.config.experience_body_chars,
+                body_chars=min(2000, self.config.experience_body_chars),
                 input_tokens=self.config.model_input_tokens,
-                output_tokens=self.config.model_output_tokens,
+                # 长正文独立预算，不改情绪分析、主动行为等用途的原配置。
+                output_tokens=8192,
                 # 日记/梦境是长任务：不再被全局 30 秒硬杀，最少给到 90 秒。
                 timeout_seconds=max(90, self.config.model_timeout_seconds),
                 export_enabled=self.config.memory_export,

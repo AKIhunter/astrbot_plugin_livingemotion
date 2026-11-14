@@ -26,6 +26,9 @@ BASELINE = (0.0, 0.3, 0.0, 0.3)
 # 轮询结果写回基准的平滑系数：每次模型分析只把基准拉向当前值 30%，
 # 避免单条消息把长期基准带飞。本地规则仍只在基准上做即时增减。
 BASELINE_BLEND = 0.3
+# 基准安全上限（归一化到 0..1）：平常水平不该是满格。轮询读数达到或超过
+# 这个值时视为饱和，基准只向它收敛，不再被读数顶走；对应愉悦 0.70、其余 0.85。
+BASELINE_CEILING = 0.85
 # 底气（掌控感）：中性 0.5，只由模型轮询写入，EMA 0.2 约等于最近 5 次样本；
 # 没有新样本时按 60 分钟半衰期回落到中性，避免长期停留在一个僵尸数值上。
 CONTROL_NEUTRAL = 0.5
@@ -51,13 +54,31 @@ def _baseline_fields(state: BotAffect) -> dict[str, Any]:
             "baseline_refined": state.baseline_refined}
 
 
+def _unit(name: str, value: float) -> float:
+    """维度值归一化到 0..1：愉悦是 -1..1，其余三维本来就是 0..1。"""
+    return (value + 1) / 2 if name == "pleasure" else value
+
+
+def _restore(name: str, unit: float) -> float:
+    return unit * 2 - 1 if name == "pleasure" else unit
+
+
 def shift_baseline(state: BotAffect, *,
                    blend: float = BASELINE_BLEND) -> BotAffect:
-    """把一次轮询结果写成新的情绪基准（平滑移动，不直接覆盖）。"""
+    """把一次轮询结果写成新的情绪基准（平滑移动，不直接覆盖）。
+
+    饱和读数不当常态：愉悦贴到 1.0、唤醒贴到 1.0 时，读数只说明「这一阵子
+    一直在顶格」，不代表平常水平。旧实现照样把基准拉向读数，基准于是锁在
+    顶格，衰减目标也在顶格，情绪再没有回落空间（实测基线 0.9442/0.9997，
+    四小时里六情绪只有 joy 是活的）。现在饱和区只让基准向安全上限收敛。
+    """
     _number(blend, "blend", 0, 1)
     values = tuple(getattr(state, name) for name in DIMENSIONS)
-    moved = tuple(base + (value - base) * blend
-                  for base, value in zip(baseline_values(state), values))
+    moved = []
+    for name, base, value in zip(DIMENSIONS, baseline_values(state), values):
+        unit, base_unit = _unit(name, value), _unit(name, base)
+        target = (BASELINE_CEILING if unit >= BASELINE_CEILING else unit)
+        moved.append(_restore(name, base_unit + (target - base_unit) * blend))
     return replace(state, **{f"baseline_{name}": value
                              for name, value in zip(DIMENSIONS, moved)},
                    baseline_refined=True)
@@ -151,6 +172,10 @@ class EmotionPolicy:
 
     observation_ttl: float = 7200.0
     event_ttl: float = 7200.0
+    # 幂等守卫只需覆盖宿主的重投与补发，不必等于事件寿命。窗口拉到 2 小时时，
+    # 密集聊天（每小时数百条）会把 seen 顶到 max_events，此后每条消息都被
+    # guard_capacity 拒收，情绪会冻结到旧事件自然过期为止（实测冻住 2 小时）。
+    guard_ttl: float = 900.0
     half_lives: tuple[float, ...] = (1800.0, 1200.0, 2400.0, 3600.0)
     event_cap: float = 0.15
     similar_window: float = 300.0
@@ -166,7 +191,7 @@ class EmotionPolicy:
         return BASELINE
 
     def __post_init__(self) -> None:
-        for name in ("observation_ttl", "event_ttl", "similar_window"):
+        for name in ("observation_ttl", "event_ttl", "guard_ttl", "similar_window"):
             _number(getattr(self, name), name, 1, 86400)
         if len(self.half_lives) != 4:
             raise ValueError("half_lives: expected four dimensions")
@@ -368,12 +393,25 @@ def _labels(values: tuple[float, ...], *, concern: bool = False) -> tuple[str, .
 
 
 def decay_affect(state: BotAffect, *, now: float,
-                 policy: EmotionPolicy = EmotionPolicy()) -> BotAffect:
+                 policy: EmotionPolicy = EmotionPolicy(),
+                 drift: tuple[float, ...] | None = None) -> BotAffect:
+    """按半衰期回落到基准；``drift`` 是环境（天气）对回落目标的附加偏移。
+
+    drift 只改「往哪回落」，不改当前值，因此是幂等的：同一时刻重算结果一致，
+    不会像事件增量那样每条消息累加。传 None 时行为与旧版完全相同。
+    """
     _number(now, "now", 0)
     if now <= state.updated_at:
         return state
     elapsed = now - state.updated_at
     bases = baseline_values(state, policy.baseline)
+    if drift is not None:
+        if len(drift) != len(DIMENSIONS):
+            raise ValueError("drift: expected four dimensions")
+        bases = tuple(
+            min(1.0, max(-1.0 if name == "pleasure" else 0.0, base + _number(offset, "drift")))
+            for name, base, offset in zip(DIMENSIONS, bases, drift)
+        )
     values = tuple(
         baseline + (getattr(state, name) - baseline) * 2 ** (-elapsed / half_life)
         for name, baseline, half_life in zip(DIMENSIONS, bases, policy.half_lives)
@@ -492,7 +530,7 @@ def apply_emotion(
         return result
     guard, problem = _prepare_guard(
         runtime, scope_key=event.context.scope_key, event=event, now=now,
-        updated_at=state.updated_at, ttl=policy.event_ttl,
+        updated_at=state.updated_at, ttl=policy.guard_ttl,
         window=policy.similar_window, max_events=policy.max_events,
     )
     result["runtime"] = guard

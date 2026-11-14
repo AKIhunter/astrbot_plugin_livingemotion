@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 from ..adapters.astrbot import AstrBotBridge
 from ..adapters.behavior_sender import AstrBotBehaviorSender
 from ..adapters.memory import MemoryGateway
+from ..adapters.weather import OpenMeteoWeather
 from ..config import Config
 from ..contracts import (
     Availability,
@@ -42,6 +43,7 @@ from .models import Generation
 from .memory import AutoMemoryIngestor, build_memory_backend
 from .night import NightRuntime
 from .projector import Projector, current_affect, snapshot
+from .weather_factor import WeatherFactor
 from .refinement import Refinement
 from .relationship_projection import read_relationship_projection
 from .state_scope import source_affect
@@ -68,7 +70,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         self._services = OrderedDict()
         self._contexts = OrderedDict()
         # 只记录“本进程真的见过消息”的会话：启动时从库里回填的上下文
-        # 没有实时来源，不能拿来当写操作的落点，否则动作会以 context_changed 失败。
+        # 没有实时来源，不能拿来作为消息发送落点；私有日记/梦境另行复核持久来源。
         self._live_contexts: set[str] = set()
         self._revision = uuid4().hex
         self._config_fault = False
@@ -128,6 +130,14 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         self.catchup_archive = CatchupArchive(self.store)
         await self.catchup_archive.open()
         await self._build_services()
+        # 天气权重因子：后台每小时取一次实况，页面与控制台只读内存快照。
+        # 与页面同用一个限时/有界/single-flight 客户端，不会多开连接。
+        if getattr(self, "_manual_weather", None) is None:
+            self._manual_weather = OpenMeteoWeather(clock=self.store.clock)
+        self.weather_factor = WeatherFactor(
+            config=lambda: self.config, weather=self._manual_weather,
+            clock=self.store.clock)
+        await self.weather_factor.start()
         if self.config.enabled:
             # Restore time, never recover a sending job or replay offline dreams.
             for context in tuple(self._contexts.values()):
@@ -139,6 +149,9 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
     async def _build_services(self):
         backend = await build_memory_backend(
             self.store, self.host, self.bridge.discover, self.config, guard=self.validate_context,
+            event_resolver=lambda context: (
+                source.event() if (source := self.bridge.source(context)) else None
+            ),
         )
         self.memory_backend = backend
         # 手动生成（管理员显式指令）不要求「最近有实时消息」：日记/梦境的依据
@@ -318,6 +331,37 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
     async def _ready_text(text):
         return text
 
+    # 承诺管理的元信息交互（追问 确认 失败告知 清单）内容本身不需要创作，
+    # 一律用固定文案直发：不走模型 不占输入 token 也不受上游抖动影响。
+    # 只有“真正对外说一句话”的兑现内容才需要模型。
+    PROMISE_NOTICE_PURPOSE = "promise_control"
+
+    async def send_promise_notice(self, context, text, key):
+        """把一段模板文案直发出去，仍走配额 发送守卫 与回执落库。"""
+        from .promise_notice import strip_stops
+
+        body = strip_stops(text).strip()
+        if not body:
+            return "rejected"
+        try:
+            generation = await self.store.get_generation(context)
+            return await self.behavior.execute_control(
+                context, intent_id=key, purpose=self.PROMISE_NOTICE_PURPOSE,
+                generate=lambda: self._ready_text(body),
+                authorize=self._preparation_guard,
+                on_submit=self.record_host_submission,
+                generation=generation, revision=self.revision,
+            )
+        except Exception:
+            # 固定文案不该因调度问题拖垮主流程，失败只留痕。
+            return "failed"
+
+    def promise_notice(self, name, seed, **fields):
+        """取一条承诺文案；调用方负责把用过的下标记下来做轮换。"""
+        from .promise_notice import Notice
+
+        return Notice.render(name, seed, **fields)
+
     async def _prepare_catchup(self, event, request, context):
         if not self.config.catchup_enabled:
             return
@@ -400,8 +444,8 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
     async def validate_manual(self, context):
         """手动生成的轻量授权：只复核实例/配置/来源类型，不要求当前有实时事件。
 
-        自动流程仍走 validate_context（要求 bridge.current 可解析）；管理员在
-        控制台点生成时，会话可能已经安静很久，但那不该让素材作废。
+        自动私有生成另走 validate_automatic_experience 复核持久来源和人格；
+        实际消息发送仍要求 validate_context 能解析实时来源。
         """
         if (self.closed or not self.config.enabled
                 or context.instance_id != self.instance_id
@@ -409,6 +453,33 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             return False
         try:
             return Config.from_mapping(self.native_config) == self.config
+        except Exception:
+            return False
+
+    async def automatic_persona(self, context):
+        """Resolve a persisted persona for private writing without fabricating an event."""
+        if (not await self.validate_manual(context)
+                or self.effective_mode(context) != "active"
+                or self.config.persona_mode == "none"
+                or self.config.persona_mode == "explicit"
+                and context.persona_id != self.config.persona_id):
+            raise ValueError("context_changed")
+        registered = await self.store.registered_context(context)
+        if registered != replace(context, route=None):
+            raise ValueError("source_unavailable")
+        manager = getattr(self.host, "persona_manager", None)
+        persona = await manager.get_persona(context.persona_id) if manager else None
+        prompt = getattr(persona, "system_prompt", None)
+        if not isinstance(prompt, str) or len(prompt) > 16000:
+            raise ValueError("persona_unavailable")
+        return prompt, stable_key(context.persona_id, prompt, persona.begin_dialogs)
+
+    async def validate_automatic_experience(self, context, generation=None, *, fingerprint=None):
+        try:
+            _, current = await self.automatic_persona(context)
+            return ((fingerprint is None or current == fingerprint)
+                    and (generation is None
+                         or await self.store.get_generation(context) == generation))
         except Exception:
             return False
 
@@ -874,6 +945,9 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             return
         old = "pending"
         try:
+            affect = source_affect(current_affect(
+                await self.store.get_state(context, "bot"), now=now), context)
+            emotion_snapshot = ",".join(affect.labels)
             period = datetime.fromtimestamp(now, ZoneInfo(self.config.timezone)).date().isoformat()
             quota = await self.store.reserve_quota(
                 key + ":send", context, generation, period=period, purpose="closing", pool="send",
@@ -903,6 +977,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             transition = await self.store.transition_intent(
                 context, key, generation, expected_status=old, status="sending",
                 reason_code="closing_merged_submission",
+                content=text, emotion_snapshot=emotion_snapshot,
             )
             if transition.get("status") != "updated":
                 raise ValueError("closing_intent_changed")
@@ -913,6 +988,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             await self.store.transition_intent(
                 context, key, generation, expected_status="sending", status="unknown",
                 reason_code="closing_host_submission",
+                transport_receipt={"status": "unknown", "receipt_id": None},
             )
             await self.store.finish_quota(key + ":send", status="unknown",
                                           reason_code="closing_host_submission")
@@ -1024,6 +1100,8 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
     async def _stop_business(self):
         if getattr(self, "manual_experience", None) is not None:
             await self.manual_experience.close()
+        if getattr(self, "weather_factor", None) is not None:
+            await self.weather_factor.close()
         if getattr(self, "_manual_weather", None) is not None:
             await self._manual_weather.close()
         if self._scheduler:

@@ -126,6 +126,9 @@ class Config:
     energy_reply_cost: float = 4.0
     energy_fatigue_per_minute: float = 0.8
     energy_recovery_per_minute: float = 1.5
+    # 精力达到这条线即算清醒：正常自主参与，不进入唤醒配额、不受唤醒窗口限制。
+    # 低于这条线又被叫醒时，才开一个短唤醒窗口。
+    energy_comfort_percent: float = 80.0
     catchup_enabled: bool = True
     catchup_reply_enabled: bool = True
     closing_enabled: bool = False
@@ -136,6 +139,18 @@ class Config:
     catchup_provider_id: str = ""
     closing_provider_id: str = ""
     home_city: str = ""
+    # 天气权重因子：本地按时轮询实况，只改四维回落目标，不经过大模型。
+    weather_factor_enabled: bool = True
+    weather_poll_seconds: int = 14400
+    weather_transition_seconds: int = 900
+    weather_weight_scale: float = 1.0
+    weather_stale_seconds: int = 7200
+    weather_forecast_days: int = 7
+    weather_forecast_refresh_seconds: int = 21600
+    weather_window_start_hour: int = 6
+    weather_window_end_hour: int = 1
+    weather_degrade_after_failures: int = 3
+    weather_recover_after_successes: int = 2
     embedding_provider_id: str = ""
     livingmemory_enabled: bool = False
     memory_write: bool = False
@@ -153,6 +168,9 @@ class Config:
     def from_mapping(cls, value: Mapping[str, Any]) -> "Config":
         known = {item.name for item in fields(cls)}
         data = {key: val for key, val in value.items() if key in known}
+        # 旧版允许 8000；升级只收窄正文长度，保留其余原配置。
+        if type(data.get("experience_body_chars")) is int:
+            data["experience_body_chars"] = min(2000, data["experience_body_chars"])
         # Missing new fields identify an old native configuration, not consent
         # to merge its scenes or enable new sleep blocking.
         data.setdefault("persona_shared_state", False)
@@ -223,6 +241,27 @@ class Config:
             raise ValueError("invalid behavior style")
         if self.emotion_intensity not in ("gentle", "normal", "intense"):
             raise ValueError("invalid emotion intensity")
+        if type(self.weather_factor_enabled) is not bool:
+            raise ValueError("weather_factor_enabled: expected bool")
+        for name, low, high in (("weather_poll_seconds", 300, 21600),
+                                ("weather_transition_seconds", 0, 7200),
+                                ("weather_stale_seconds", 300, 86400),
+                                ("weather_forecast_days", 1, 16),
+                                ("weather_forecast_refresh_seconds", 600, 86400),
+                                ("weather_window_start_hour", 0, 23),
+                                ("weather_window_end_hour", 0, 23),
+                                ("weather_degrade_after_failures", 1, 10),
+                                ("weather_recover_after_successes", 1, 7)):
+            value = getattr(self, name)
+            if (isinstance(value, bool) or not isinstance(value, (int, float))
+                    or not math.isfinite(value) or not low <= value <= high):
+                raise ValueError(f"{name}: expected {low}..{high} seconds")
+            object.__setattr__(self, name, int(value))
+        scale = self.weather_weight_scale
+        if (isinstance(scale, bool) or not isinstance(scale, (int, float))
+                or not math.isfinite(scale) or not 0 <= scale <= 3):
+            raise ValueError("weather_weight_scale: expected 0..3")
+        object.__setattr__(self, "weather_weight_scale", float(scale))
         qq_numbers(self.autonomy_qq_ids)
         qq_numbers(self.autonomy_qq_group_ids)
         object.__setattr__(self, "dream_theme_pool", json.dumps(
@@ -284,7 +323,7 @@ class Config:
             ("model_timeout_seconds", 120), ("scheduler_seconds", 3600),
             ("diary_retries", 2), ("dream_per_night", 2),
             ("diary_retention_days", 365), ("dream_retention_days", 30),
-            ("experience_body_chars", 8000),
+            ("experience_body_chars", 2000),
             ("lie_in_max_minutes", 1440), ("wake_reply_limit", 100),
             ("wake_window_minutes", 1440), ("closing_lead_minutes", 60),
             ("behavior_random_max_minutes", 10080), ("behavior_idle_minutes", 1440),

@@ -15,7 +15,8 @@ def external_enabled(config):
                    getattr(config, "memory_mode", "none") == "external") is True
 
 
-async def build_memory_backend(store, host, discover, config, *, guard=None):
+async def build_memory_backend(store, host, discover, config, *, guard=None,
+                               event_resolver=None):
     if external_enabled(config):
         return LivingMemoryAdapter(
             lambda: discover("astrbot_plugin_livingmemory"),
@@ -23,6 +24,7 @@ async def build_memory_backend(store, host, discover, config, *, guard=None):
             write_enabled=getattr(config, "memory_write", False),
             export_enabled=getattr(config, "memory_export", False),
             timeout=getattr(config, "memory_timeout_seconds", 10.0),
+            event_resolver=event_resolver,
         )
     provider_id = getattr(config, "embedding_provider_id", "")
     embedding = (NativeEmbedding(

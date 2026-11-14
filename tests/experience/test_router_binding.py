@@ -55,8 +55,10 @@ async def test_router_binding_only_accepts_pinned_upstreams():
 async def test_router_binding_timeout_and_output_validation():
     with pytest.raises((asyncio.TimeoutError, TimeoutError)):
         await RouterBinding(router(delay=0.05)).generate("sys", "data", 8, 0.001)
+    # 输出长度不能拿字节计数替代 Token；仅限制异常大的原始响应。
+    assert await RouterBinding(router(text="中文" * 200)).generate("sys", "data", 1024, 1)
     with pytest.raises(ModelResultUnknown, match="model_output_invalid"):
-        await RouterBinding(router(text="x" * 9)).generate("sys", "data", 8, 1)
+        await RouterBinding(router(text="x" * 32769)).generate("sys", "data", 8, 1)
 
 
 async def test_select_model_binding_dispatches_router_provider():

@@ -74,7 +74,8 @@ async def test_p4_weather_real_date_city_cache_and_singleflight():
     assert await weather.get("上海", "2026-11-05", "Asia/Shanghai") == a
     clock[0] += 3601
     await weather.get("上海", "2026-11-05", "Asia/Shanghai")
-    assert len(transport.calls) == 4
+    # geocoding 已按城市缓存 7 天：第二次过期重取只多发一次天气请求。
+    assert len(transport.calls) == 3
     assert all(timeout == 5 for _, timeout in transport.calls)
     await weather.close()
 

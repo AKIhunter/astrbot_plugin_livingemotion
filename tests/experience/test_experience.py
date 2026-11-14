@@ -436,13 +436,17 @@ async def test_input_output_budget_and_timeout(h):
     assert not h.model.calls
     h.service = h.make_service(count_tokens=lambda system, _: 10 if system else 99999)
     ticket = await h.diary()
-    assert h.service.outcome(ticket["job_id"])["reason_code"] == "output_token_limit"
+    assert h.service.outcome(ticket["job_id"])["status"] == "created"
+    # 换到新一天测试超时，不能覆盖刚写好的当天日记。
+    h.now += 86400
+    await h.event(source="next-day")
     h.service = h.make_service(policy=ExperiencePolicy(timeout_seconds=0.01))
     h.model.resume.clear()
     ticket = await h.diary()
     assert h.service.outcome(ticket["job_id"])["reason_code"] == "model_timeout"
-    assert not h.records
-    assert await h.store.quota_usage(period="2026-11-05") == 2
+    assert len(h.records) == 1  # 前一天的成功记录保留，超时不保存新一天。
+    assert await h.store.quota_usage(period="2026-11-05") == 1
+    assert await h.store.quota_usage(period="2026-11-06") == 1
 
 
 async def test_cancelled_model_never_saves_and_keeps_charge(h):
@@ -504,10 +508,12 @@ async def test_dream_two_attempts_per_night_even_failure_restart_midnight(h):
     saved = h.records[second["experience_id"]][0]
     assert saved.kind == ContentKind.DREAM
     assert saved.body.startswith("Dream (imagined):")
-    assert (await h.service.queue_dream(h.context, night))[
-        "reason_code"
-    ] == "experience_attempt_limit"
-    assert len(h.model.calls) == 2
+    # 每夜两篇是成功数量；一次明确失败不会吃掉第二篇的名额。
+    third = await h.service.queue_dream(h.context, night)
+    await h.runtime.join()
+    assert h.service.outcome(third["job_id"])["status"] == "created"
+    assert (await h.service.queue_dream(h.context, night))["reason_code"] == "dream_success_limit"
+    assert len(h.model.calls) == 3
 
 
 async def test_dream_expires_while_waiting_for_model(h):

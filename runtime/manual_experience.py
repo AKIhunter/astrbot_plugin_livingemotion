@@ -79,12 +79,14 @@ class ManualExperienceRuntime:
         contexts = await selected_contexts(self.store, self.instance_id,
             {"persona_id": identifier, "view_scope": "global", "context_id": "", "platform": ""})
         mood = six_emotions(BotAffect())
+        current_emotions = mood
         if contexts:
             representative = contexts[0]
             if representative.scope_key not in {c.scope_key for c, _ in generations}:
                 generations = (*generations, (representative, await self.store.get_generation(representative)))
             record = await self.store.get_state(representative, "bot")
             mood = six_emotions(decay_affect(snapshot(record, BotAffect), now=now))
+            current_emotions = dict(mood)
             points = await self.store.emotion_history(representative, since=now - 86400, until=now)
             own = [p["emotions"] for p in points if p["emotions"] is not None
                    and accepted_day(p["at"], timezone)[0] == day]
@@ -92,19 +94,19 @@ class ManualExperienceRuntime:
                 mood = {k: sum(p[k] for p in own) / len(own) for k in mood}
         return ManualSnapshot(request_id, context, kind, day, timezone, now, prompt,
                               fingerprint, binding, generations, materials,
-                              min(8000, self.config.experience_body_chars), self.config.home_city,
+                              min(2000, self.config.experience_body_chars), self.config.home_city,
                               getattr(self.config, kind + "_retention_days"), mood,
-                              json.loads(self.config.dream_theme_pool))
+                              json.loads(self.config.dream_theme_pool), current_emotions)
 
     async def weather_emotions(self, affect):
-        """Daily six-axis overlay; underlying interaction state is never compounded."""
-        from ..domain.dreaming import apply_bonus, weather_bonus
-        day, zone = accepted_day(self.store.clock(), self.config.timezone)
-        weather = getattr(self, "_manual_weather", None)
-        report = await weather.get(self.config.home_city, day, zone) if (
-            weather is not None and self.config.home_city) else None
-        return apply_bonus(six_emotions(affect), weather_bonus(
-            report, city=self.config.home_city, day=day, timezone=zone))
+        """六维情绪 = 五维的纯函数投影。
+
+        天气已下沉为四维回落目标的偏移（见 decay_affect 的 drift），不再在这里
+        叠加：往派生量加常数会在 negative=0（愉悦为正）时凭空造出悲伤。
+        保留方法名与签名，避免改动调用方。
+        """
+        from ..domain.dreaming import six_emotions
+        return six_emotions(affect)
 
     async def manual_snapshot_current(self, snapshot):
         try:

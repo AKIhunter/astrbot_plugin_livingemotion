@@ -204,13 +204,22 @@ export const REASON_CODES = resource({
   output_token_limit: "输出超出 Token 上限。",
   persona_text_invalid: "人格内容无效，无法生成。", model_response_invalid: "模型响应无效，未保存生成内容。",
   generation_failed: "生成失败，请检查宿主记录和额度。", generation_cancelled: "本次生成已取消。",
-  model_timeout: "模型请求超时，结果不明，不自动重试。", queued: "已排队，稍后手动刷新状态和记录。",
+  model_timeout: "模型请求超时，结果不明，不自动重试。", queued: "已排队，完成后自动更新。",
+  model_preflight_http_error: "接口预检查未返回 HTTP 200，本次未生成。",
+  model_preflight_timeout: "接口预检查超时，本次未生成。",
+  model_preflight_unavailable: "接口预检查未连接成功，本次未生成。",
+  dream_success_limit: "这一夜已写够梦境。",
+  generation_in_progress: "同一任务正在生成，完成后自动更新。",
   duplicate_job: "已有相同任务，不重复提交。", job_not_retained: "任务状态已不再保留，请核对记录。",
   dream_remembered: "梦境仍可回忆，内容始终是想象。", dream_faint_no_details: "梦境已模糊，不展示细节。", dream_forgotten: "梦境已淡忘，不补造细节。", 
 });
 export const RESULT_LABELS = resource({ queued: "已排队", completed: "已完成", succeeded: "已完成", success: "已完成", generated: "已生成", updated: "已更新", skipped: "已跳过", rejected: "已拒绝", failed: "失败", cancelled: "已取消", canceled: "已取消", unknown: "结果不明", pending: "等待执行", running: "执行中", blocked: "受限" });
 export const resultLabel = value => Object.hasOwn(RESULT_LABELS, value) ? `${RESULT_LABELS[value]} (${value})` : text(value);
-export function reasonExplanation(code) { return REASON_CODES[code] || t("后端返回了此原因码，详细含义请核对宿主说明；页面不会绕过限制。"); }
+export function reasonExplanation(code) {
+  const http = /^model_preflight_http_error:(\d{3})$/.exec(code);
+  if (http) return `${REASON_CODES.model_preflight_http_error} HTTP ${http[1]}`;
+  return REASON_CODES[code] || t("后端返回了此原因码，详细含义请核对宿主说明；页面不会绕过限制。");
+}
 export function normalizeState(raw) {
   const data = object(raw);
   if (data.api_version !== 1) throw Object.assign(new Error(t("页面 API 版本不兼容，需要 api_version=1。")), { code: "incompatible_version" });

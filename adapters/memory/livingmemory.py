@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import importlib
 from collections import OrderedDict
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from uuid import uuid4
 
-from ...contracts import ContentKind, EvidenceRef, finite
+from ...contracts import ContentKind, EvidenceRef, finite, to_dict
 from ...ports.memory import AppendResult, Material, MemoryCapabilities, MemoryMode, RecallResult
 from ..identity import IdentityAdapter, IdentitySnapshot, is_real_event
 
@@ -50,6 +51,7 @@ class LivingMemoryAdapter:
         export_enabled: bool = False,
         timeout: float = 2.0,
         max_receipts: int = 256,
+        event_resolver=None,
     ):
         finite(timeout, "memory_timeout", 0.001, 60)
         if type(max_receipts) is not int or max_receipts < 1:
@@ -61,26 +63,86 @@ class LivingMemoryAdapter:
         self.timeout = timeout
         self.max_receipts = max_receipts
         self.identity = IdentityAdapter(provider, timeout=timeout)
+        self.event_resolver = event_resolver
         self._receipts: OrderedDict[str, _Receipt] = OrderedDict()
         self._writes = set()
         self._closed = False
 
     def _ready(self, provider: object | None) -> bool:
         try:
-            return provider is not None and all(
+            return provider is not None and (all(
                 callable(getattr(provider, method, None))
                 for method in (
                     "resolve_identity_context",
                     "search_memories_for_event",
                 )
-            )
+            ) or (
+                callable(getattr(getattr(getattr(provider, "initializer", None),
+                                        "memory_engine", None), "search_memories", None))
+                and getattr(provider, "config_manager", None) is not None
+                and getattr(provider, "context", None) is not None
+            ))
         except Exception:  # noqa: BLE001 - a half-unloaded provider is unavailable.
             return False
 
     @staticmethod
     def _profile(provider):
+        if not callable(getattr(provider, "search_memories_for_event", None)):
+            return "native"
         return ("validate" if callable(getattr(provider, "validate_identity_results", None))
                 else "event_requery")
+
+    async def _native_access(self, provider, event, context):
+        if not is_real_event(event, context):
+            raise ValueError("external_native_event_required")
+        package = type(provider).__module__.rsplit(".", 1)[0]
+        scope = importlib.import_module(f"{package}.core.memory_scope")
+        access = await scope.resolve_event_memory_access(
+            provider.config_manager, provider.context, event,
+        )
+        if (not access.allowed or not access.scope
+                or access.persona_id and access.persona_id != context.persona_id):
+            raise ValueError("external_native_scope_denied")
+        return scope, access
+
+    async def _snapshot(self, provider, context, event):
+        identity = await self.identity.resolve(context, event=event)
+        if self._profile(provider) != "native":
+            return identity
+        owner = str(event.get_self_id() or "")
+        if not owner or identity.context != context:
+            raise ValueError("external_native_identity_invalid")
+        # 原生不提供跨平台身份绑定；只使用宿主真实事件的当前账号和机器人。
+        return replace(identity, provider_token=id(provider),
+                       owner_account=context.platform + ":" + owner)
+
+    async def _snapshot_valid(self, provider, identity, event):
+        try:
+            return (self._current_provider() is provider
+                    and (await self._snapshot(provider, identity.context, event)).fingerprint
+                    == identity.fingerprint)
+        except Exception:
+            return False
+
+    async def _rows(self, provider, request, event):
+        if self._profile(provider) != "native":
+            return await provider.search_memories_for_event(
+                request.query, event, persona_id=request.context.persona_id, k=request.limit,
+            )
+        scope, access = await self._native_access(provider, event, request.context)
+        with scope.adapter_access(provider.config_manager, event):
+            rows = await provider.initializer.memory_engine.search_memories(
+                query=request.query, k=request.limit, session_id=access.scope,
+                persona_id=request.context.persona_id,
+            )
+            rows = [row for row in rows if
+                    isinstance(_field(row, "metadata"), Mapping)
+                    and _field(row, "metadata").get("session_id") == access.scope
+                    and scope.adapter_visible(_field(row, "metadata"))]
+        _, checked = await self._native_access(provider, event, request.context)
+        if checked != access:
+            raise ValueError("external_native_scope_changed")
+        return rows
 
     def _current_provider(self) -> object | None:
         try:
@@ -136,6 +198,14 @@ class LivingMemoryAdapter:
                 "sensitivity": 0, "content_kind": kind,
             }
             write_metadata.update(metadata or {})
+            native = self._profile(provider) == "native"
+            if native:
+                event = self.event_resolver(context) if self.event_resolver else None
+                scope, access = await self._native_access(provider, event, context)
+                storage_scope = access.scope
+                write_metadata["livingemotion_source_context"] = to_dict(context)
+            else:
+                storage_scope = route
             owner_account = write_metadata.get("owner_account")
             if not isinstance(owner_account, str) or not owner_account.strip():
                 return AppendResult(reason_code="external_write_owner_unresolved")
@@ -159,10 +229,19 @@ class LivingMemoryAdapter:
                         return AppendResult(True, "duplicate")
                 if self._closed or self._current_provider() is not provider or (guard and not await guard()):
                     return AppendResult(reason_code="external_write_context_changed")
-                await asyncio.wait_for(add_memory(
-                    content=content, session_id=route, persona_id=context.persona_id,
-                    metadata=write_metadata,
-                ), max(10.0, self.timeout))
+                async def store():
+                    return await add_memory(
+                        content=content, session_id=storage_scope,
+                        persona_id=context.persona_id, metadata=write_metadata,
+                    )
+                if native:
+                    _, checked = await self._native_access(provider, event, context)
+                    if checked != access:
+                        return AppendResult(reason_code="external_write_context_changed")
+                    with scope.adapter_access(provider.config_manager, event, write=True):
+                        await asyncio.wait_for(store(), max(10.0, self.timeout))
+                else:
+                    await asyncio.wait_for(store(), max(10.0, self.timeout))
                 return AppendResult(True, "stored")
         except asyncio.CancelledError:
             raise
@@ -179,7 +258,8 @@ class LivingMemoryAdapter:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
 
-    def _material(self, row: object, request, identity: IdentitySnapshot, token: str) -> Material:
+    def _material(self, row: object, request, identity: IdentitySnapshot, token: str,
+                  *, native=False) -> Material:
         metadata = _field(row, "metadata")
         if not isinstance(metadata, Mapping):
             raise TypeError("external_provenance_missing")
@@ -199,6 +279,8 @@ class LivingMemoryAdapter:
         subjects = metadata.get("subject_accounts")
         if not isinstance(subjects, (list, tuple)) or len(subjects) != 1 or not subjects[0]:
             raise ValueError("external_subject_unproven")
+        if native and subjects[0] != identity.source_account:
+            raise ValueError("external_native_subject_mismatch")
         # Current scope grants do not make missing provenance public.
         audience = metadata.get("audience")
         expected_audience = (
@@ -212,8 +294,15 @@ class LivingMemoryAdapter:
         if type(sensitivity) is not int or not 0 <= sensitivity <= 3:
             raise ValueError("external_sensitivity_missing")
         revision = metadata.get("_identity_revision")
-        if ("livingmemory:" + str(revision)) != identity.context.identity_revision:
+        if not native and ("livingmemory:" + str(revision)) != identity.context.identity_revision:
             raise ValueError("external_revision_missing_or_changed")
+        if native:
+            # 来源不完整的原生摘要不能伪装成 Emotion 的可引用证据。
+            # 旧 OneID 记录仍留在库内，待后续单独清洗或补齐来源。
+            from ...contracts import Context
+            source = metadata.get("livingemotion_source_context")
+            if not isinstance(source, Mapping) or Context.from_dict(source) != request.context:
+                raise ValueError("external_native_source_context_unproven")
         source_ids = metadata.get("source_ids")
         window = metadata.get("source_window")
         kind = metadata.get("content_kind")
@@ -261,22 +350,15 @@ class LivingMemoryAdapter:
         provider = self._current_provider()
         if not self._ready(provider):
             return RecallResult(reason_codes=("external_provider_unavailable",))
-        identity = await self.identity.resolve(request.context, event=event)
+        identity = await self._snapshot(provider, request.context, event)
         if identity.provider_token != id(provider) or identity.context != request.context:
             return RecallResult(reason_codes=("external_identity_not_current",))
         try:
             rows = await asyncio.wait_for(
-                provider.search_memories_for_event(
-                    request.query,
-                    event,
-                    persona_id=request.context.persona_id,
-                    k=request.limit,
-                ),
+                self._rows(provider, request, event),
                 self.timeout,
             )
-            if self._current_provider() is not provider or not await self.identity.validate(
-                identity, event=event
-            ):
+            if not await self._snapshot_valid(provider, identity, event):
                 return RecallResult(reason_codes=("external_identity_changed",))
             if not isinstance(rows, list):
                 return RecallResult(reason_codes=("external_result_contract_invalid",))
@@ -284,7 +366,8 @@ class LivingMemoryAdapter:
             for row in rows[: request.limit]:
                 token = uuid4().hex
                 try:
-                    material = self._material(row, request, identity, token)
+                    material = self._material(row, request, identity, token,
+                                              native=self._profile(provider) == "native")
                 except (TypeError, ValueError, KeyError):
                     reasons.add("external_provenance_incomplete_or_out_of_scope")
                     continue
@@ -324,7 +407,7 @@ class LivingMemoryAdapter:
                 return False
             receipts.append(receipt)
         for receipt in receipts:
-            if not await self.identity.validate(receipt.identity, event=event):
+            if not await self._snapshot_valid(provider, receipt.identity, event):
                 return False
         try:
             if receipts[0].profile == "validate":
@@ -336,10 +419,7 @@ class LivingMemoryAdapter:
                 )
             else:
                 rows = await asyncio.wait_for(
-                    provider.search_memories_for_event(
-                        receipts[0].query, event,
-                        persona_id=request.context.persona_id, k=receipts[0].limit,
-                    ),
+                    self._rows(provider, request, event),
                     self.timeout,
                 )
             if (
@@ -355,6 +435,7 @@ class LivingMemoryAdapter:
                         material = self._material(
                             row, request, receipt.identity,
                             receipt.material.evidence.authorization,
+                            native=receipt.profile == "native",
                         )
                     except (TypeError, ValueError, KeyError):
                         continue
@@ -366,7 +447,7 @@ class LivingMemoryAdapter:
                     return False
             return all(
                 [
-                    await self.identity.validate(receipt.identity, event=event)
+                    await self._snapshot_valid(provider, receipt.identity, event)
                     for receipt in receipts
                 ]
             )

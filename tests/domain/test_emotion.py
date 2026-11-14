@@ -18,7 +18,7 @@ from astrbot_plugin_livingemotion.contracts import (
 from astrbot_plugin_livingemotion.domain.emotion import (
     BASELINE, DIMENSIONS, RULE_VERSION, EmotionPolicy, apply_control, apply_emotion,
     control_value, decay_affect, emotion_policy, event_signals, expression_context,
-    observe_human, resolve_mode,
+    observe_human, resolve_mode, shift_baseline,
 )
 
 
@@ -430,6 +430,42 @@ class ControlTests(unittest.TestCase):
         self.assertAlmostEqual(normal.similar_budget, 0.48)
         self.assertEqual(normal.half_lives, EmotionPolicy().half_lives)
         self.assertEqual(emotion_policy("unknown").rule_gain, 1.6)
+
+    def test_saturated_reads_do_not_drag_baseline_to_the_ceiling(self):
+        """贴顶的读数不当平常水平：基准只向安全上限收敛，否则衰减目标也锁死。"""
+        hot = BotAffect(
+            pleasure=1.0, arousal=1.0, stress=.312, social_need=0.0,
+            baseline_pleasure=.9442, baseline_arousal=.9997,
+            baseline_stress=.3345, baseline_social_need=.009,
+            baseline_refined=True, updated_at=0.0)
+        moved = shift_baseline(hot)
+        # 愉悦 ceiling 0.85 归一化 -> 0.70；唤醒 0.85。都不会被 1.0 顶到满格。
+        self.assertLess(moved.baseline_pleasure, .9442)
+        self.assertLess(moved.baseline_arousal, .9997)
+        self.assertAlmostEqual(moved.baseline_pleasure, .70 + (.9442 - .70) * .7, places=6)
+        self.assertAlmostEqual(moved.baseline_arousal, .85 + (.9997 - .85) * .7, places=6)
+        self.assertTrue(moved.baseline_refined)
+        # 非饱和维照旧向读数平滑靠拢。
+        self.assertAlmostEqual(moved.baseline_stress, .3345 + (.312 - .3345) * .3, places=6)
+        self.assertAlmostEqual(moved.baseline_social_need, .009 + (0.0 - .009) * .3, places=6)
+
+    def test_decay_drift_only_moves_the_target_and_is_idempotent(self):
+        """天气 drift 改回落目标、不改当前值；同一时刻重算必须逐位相同。"""
+        state = BotAffect(pleasure=.5, arousal=.5, stress=.5, social_need=.5,
+                          updated_at=0.0)
+        policy = emotion_policy("normal")
+        plain = decay_affect(state, now=1800, policy=policy)
+        rain = (-.05, -.02, .03, .02)
+        drifted = decay_affect(state, now=1800, policy=policy, drift=rain)
+        self.assertLess(drifted.pleasure, plain.pleasure)
+        self.assertLess(drifted.arousal, plain.arousal)
+        self.assertGreater(drifted.stress, plain.stress)
+        self.assertGreater(drifted.social_need, plain.social_need)
+        self.assertEqual(drifted, decay_affect(state, now=1800, policy=policy, drift=rain))
+        # 不传 drift 时与旧行为完全一致。
+        self.assertEqual(plain, decay_affect(state, now=1800, policy=policy))
+        with self.assertRaises(ValueError):
+            decay_affect(state, now=1800, policy=policy, drift=(0.0, 0.0))
 
 
 if __name__ == "__main__":

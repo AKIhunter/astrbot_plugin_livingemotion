@@ -16,7 +16,9 @@ export function energyPoints(raw) {
   return { ...data, from: data.window_start, to: data.window_end, points: data.points.filter(point => Number.isFinite(seconds(point.at ?? point.created_at)) &&
     energyValue(point.energy ?? point.after_energy) !== null).slice(0, 1440) };
 }
-export function energyChart(data) {
+export function energyChart(data, options = {}) {
+  // 清醒线：精力到这条线就算睡够，正常自主参与。画成横向虚线，和 25/50/75 网格区分开。
+  const comfort = Number.isFinite(Number(options.comfort)) ? Math.max(0, Math.min(100, Number(options.comfort))) : null;
   const figure = node("figure", undefined, "energy-figure");
   const svg = svgNode("svg", { viewBox: "0 0 720 240", class: "energy-chart", role: "img", "aria-label": t("最近24小时真实精力时间线，精力上限100，逐事件数值见下表") });
   const start = seconds(data.from), end = seconds(data.to);
@@ -25,6 +27,12 @@ export function energyChart(data) {
     const y = 204 - value * 1.8;
     svg.append(svgNode("line", { x1: 36, y1: y, x2: 708, y2: y, class: "grid" }),
       svgNode("text", { x: 30, y: y + 4, "text-anchor": "end" }, value));
+  }
+  if (comfort !== null) {
+    const y = 204 - comfort * 1.8;
+    svg.append(svgNode("line", { x1: 36, y1: y, x2: 708, y2: y, class: "energy-threshold" }),
+      svgNode("text", { x: 712, y: y + 4, "text-anchor": "start", class: "energy-threshold-label" },
+        t("清醒线 {0}", [comfort])));
   }
   if (validWindow) {
     for (let i = 0; i <= 4; i++) {
@@ -50,9 +58,14 @@ export function energyChart(data) {
   figure.append(svg, node("figcaption", data.points.length && validWindow ?
     t("真实时点 · {0} 至 {1} · 时区 {2} · 上限 100{3} · 竖线保留显示桶极值", [date(data.from, data.timezone || "UTC"), date(data.to, data.timezone || "UTC"), text(data.timezone, "UTC"), data.series_total > 1 ? t(" · 各状态所有者分别连线，不合并精力") : ""]) :
     t("最近24小时未采集精力历史，不补造连续曲线。"), "hint"));
+  // 只有算得出清醒线时才补这句解释；append(null) 会插入字面量 "null"。
+  if (comfort !== null) {
+    figure.append(node("p",
+      t("虚线是清醒线 {0}：在线以上算睡够，可正常自主参与；掉到线以下又在夜里被叫醒，才需要唤醒窗口。", [comfort]), "hint"));
+  }
   return figure;
 }
-export function mountEnergy(root, { api, selection, onError }) {
+export function mountEnergy(root, { api, selection, onError, comfort }) {
   let disposed = false, sequence = 0, page = 1;
   const form = node("form", undefined, "record-toolbar");
   const kind = node("select"); kind.id = "energy-kind"; const all = node("option", t("全部事件")); all.value = ""; kind.append(all);
@@ -66,7 +79,7 @@ export function mountEnergy(root, { api, selection, onError }) {
     try {
       const data = energyPoints(await api.energy({ ...scopeParams(selection), ...(kind.value ? { event_type: kind.value } : {}), page, page_size: 10 }));
       if (disposed || current !== sequence) return;
-      body.replaceChildren(energyChart(data));
+      body.replaceChildren(energyChart(data, { comfort }));
       const wrapper = node("div", undefined, "table-wrap"), table = node("table"), head = node("thead"), tr = node("tr");
       wrapper.tabIndex = 0; wrapper.setAttribute("role", "region"); wrapper.setAttribute("aria-label", t("精力事件表，可左右滚动；每页10条"));
       for (const title of [t("时点"), t("事件 / 状态"), t("前 → 后"), t("变化"), t("原因")]) { const th = node("th", title); th.scope = "col"; tr.append(th); }

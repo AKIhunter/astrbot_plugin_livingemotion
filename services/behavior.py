@@ -18,6 +18,7 @@ from ..contracts import (
     NightState, Relationship, SceneKind, SleepState, finite, stable_key,
 )
 from ..domain.proactivity import emotional_share_allowed
+from ..domain.emotion import decay_affect
 from ..ports.memory import Material, MemoryRequest, RecallResult, ValidationResult
 from ..storage import SQLiteStore
 from .output import public_text_allowed
@@ -844,7 +845,7 @@ class BehaviorService:
         A caller supplies a purpose-specific authorization check. These messages
         concern an existing conversation and do not require idle autonomy.
         """
-        if purpose not in ("closing", "catchup", "dream_wake") or not context.route:
+        if purpose not in ("closing", "catchup", "dream_wake", "promise_control") or not context.route:
             return "rejected"
         task = asyncio.current_task()
         self._tasks.add(task)
@@ -880,6 +881,14 @@ class BehaviorService:
 
         transport_receipt = None
         sent_content = None
+        # 控制消息可能发生在睡眠中，不能依赖会被睡眠门禁拒绝的行为快照。
+        record = await self.store.get_state(context, "bot")
+        # 日志只保留标签；不读取或暴露共享情绪中的其它会话证据。
+        affect = decay_affect(BotAffect(**{k: v for k, v in record.value.items()
+            if k in ("pleasure", "arousal", "stress", "social_need", "labels", "updated_at",
+                     "baseline_pleasure", "baseline_arousal", "baseline_stress",
+                     "baseline_social_need", "baseline_refined")}), now=now) if record else BotAffect()
+        emotion_snapshot = ",".join(affect.labels)
         async def transition(new, reason):
             nonlocal current_status
             outcome = await self.store.transition_intent(
@@ -890,6 +899,7 @@ class BehaviorService:
                 # 与主动发送一致：正文随 sending 一起落库，发送日志才能显示内容。
                 # transition_intent 的正文上限是 2000 字符，超出按上限截断。
                 content=sent_content if new == "sending" and sent_content is not None else None,
+                emotion_snapshot=emotion_snapshot if new == "sending" else None,
             )
             if outcome["status"] != "updated":
                 raise ValueError("control_intent_changed")

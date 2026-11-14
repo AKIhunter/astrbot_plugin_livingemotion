@@ -7,9 +7,9 @@ from zoneinfo import ZoneInfo
 from ..adapters.weather import WeatherReport
 from ..contracts import ContentKind, Experience, prompt_json
 from ..runtime.background import ModelResultUnknown
-from .experience import SYSTEM_PROMPT, parse_entry, perspective, _plain
+from .experience import SYSTEM_PROMPT, parse_entry, perspective, _plain, emotion_snapshot
 from ..storage.experiences import owner_key
-from ..domain.dreaming import DEFAULT_THEMES, dream_profile, apply_bonus, weather_bonus
+from ..domain.dreaming import DEFAULT_THEMES, dream_profile
 
 
 @dataclass(frozen=True)
@@ -30,6 +30,7 @@ class ManualSnapshot:
     retention_days: int = 30
     mood: object = None
     themes: tuple = DEFAULT_THEMES
+    current_emotions: object = None
 
 
 class ManualExperienceService:
@@ -80,6 +81,8 @@ class ManualExperienceService:
             try:
                 if not await self.current(snapshot):
                     raise ValueError("persona_or_model_changed")
+                # 手动与自动共用实际上游检查；离线替身显式提供该契约。
+                await snapshot.binding.preflight()
                 weather = WeatherReport(snapshot.home_city, snapshot.day, snapshot.timezone)
                 if snapshot.home_city:
                     try:
@@ -93,14 +96,14 @@ class ManualExperienceService:
                             weather = candidate
                     except Exception:
                         pass
-                emotions = apply_bonus(snapshot.mood or {}, weather_bonus(
-                    weather, city=snapshot.home_city, day=snapshot.day, timezone=snapshot.timezone))
+                # 六情绪是五维的纯函数投影，天气不再叠加到这里。
+                emotions = dict(snapshot.mood or {})
                 data = prompt_json({
                     "purpose": snapshot.kind, "narrator": "bot_first_person",
                     "persona": snapshot.persona,
                     "program_header": {"date": snapshot.day, "timezone": snapshot.timezone,
                                        "city": snapshot.home_city or "未配置"},
-                    "body_character_limit": max(1, snapshot.body_chars - 100),
+                    "body_character_limit": min(2000, snapshot.body_chars),
                     "mood": {"emotions": emotions, "basis": "daily_recorded_mean"},
                     "dream": dream_profile(emotions, snapshot.themes) if snapshot.kind == "dream" else None,
                     "grounding": ("Use verified materials only." if snapshot.materials else
@@ -122,7 +125,7 @@ class ManualExperienceService:
                 dispatched = True
                 raw = await asyncio.wait_for(snapshot.binding.generate(SYSTEM_PROMPT, data, 8192, 90), 90)
                 parsed = parse_entry(raw, allowed_sources={m.evidence.source_id for m in snapshot.materials},
-                                     max_chars=max(1, snapshot.body_chars - 100))
+                                     max_chars=min(2000, snapshot.body_chars))
                 if not await self.current(snapshot):
                     raise ValueError("persona_or_model_changed")
                 header = (f"日期：{snapshot.day}\n住所：{snapshot.home_city or '未配置'}\n"
@@ -133,7 +136,10 @@ class ManualExperienceService:
                     snapshot.accepted_at, header + parsed.body,
                     evidence=tuple(m.evidence for m in snapshot.materials
                                    if m.evidence.source_id in parsed.source_ids),
-                    expires_at=snapshot.accepted_at + snapshot.retention_days * 86400, clarity=1.0)
+                    expires_at=snapshot.accepted_at + snapshot.retention_days * 86400, clarity=1.0,
+                    title=parsed.title if snapshot.kind == "diary" else "",
+                    emotion_snapshot=                    emotion_snapshot(
+                        dict(snapshot.current_emotions or {}), at=snapshot.accepted_at))
                 await self.commit(snapshot, entry)
                 await self.store.finish_quota("manual:" + snapshot.request_id,
                                              status="succeeded", reason_code="private_archive_updated")
@@ -150,8 +156,20 @@ class ManualExperienceService:
                 status = "unknown" if unknown else "failed"
                 known = {"input_token_limit", "persona_or_model_changed", "entry_changed",
                          "job_changed", "model_body_invalid", "model_sources_invalid",
-                         "model_body_unsafe", "model_error_envelope", "stale_generation"}
-                reason = str(exc) if str(exc) in known else ("model_result_unknown" if unknown else "generation_failed")
+                         "model_body_unsafe", "model_error_envelope", "stale_generation",
+                         "model_preflight_http_error", "model_preflight_timeout",
+                         "model_preflight_unavailable", "model_output_invalid", "model_response_invalid",
+                         "provider_result_unknown"}
+                reason = (str(exc) if str(exc) in known else
+                          "model_timeout" if isinstance(exc, TimeoutError) and not isinstance(
+                              exc, ModelResultUnknown) else
+                          "model_result_unknown" if unknown else "generation_failed")
+                http_status = getattr(exc, "http_status", None)
+                if type(http_status) is int:
+                    reason = f"{reason}:{http_status}"
+                import logging
+                logging.getLogger("astrbot_plugin_livingemotion").info(
+                    "%s completed: day=%s status=%s reason=%s", snapshot.kind, snapshot.day, status, reason)
                 await self.store.mark_experience_job(snapshot.request_id, status, reason)
                 if dispatched:
                     await self.store.finish_quota("manual:" + snapshot.request_id,

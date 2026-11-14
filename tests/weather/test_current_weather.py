@@ -52,7 +52,8 @@ async def test_current_singleflight_bounded_ttl_and_clock():
         assert len(calls) == 2
         clock[0] += 2
         assert (await weather.get_current("上海", "Asia/Shanghai")).fetched_at == clock[0]
-        assert len(calls) == 4
+        # geocoding 已按城市缓存 7 天：两次查询只解析一次坐标，少一次请求。
+        assert len(calls) == 3
         assert all(key[1] == "current" for key in weather._cache)
     finally:
         await weather.close()

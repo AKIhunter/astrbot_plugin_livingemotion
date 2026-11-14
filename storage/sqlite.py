@@ -1055,6 +1055,11 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
                        finished_at=? WHERE status='reserved'""", (now,),
                 )
                 db.execute("UPDATE reply_attempts SET status='cancelled' WHERE status='started'")
+                db.execute(
+                    "UPDATE experience_auto_status SET value_json=json_set(value_json,"
+                    "'$.status','unknown','$.reason_code','runtime_restarted',"
+                    "'$.finished_at',?) WHERE json_extract(value_json,'$.status')='queued'",
+                    (now,))
                 return {"unknown": unknown, "cancelled": cancelled}
             return self._transaction(db, mutate)
         return await self._run(recover)
@@ -1126,6 +1131,14 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
                 (limit,),
             )
         ])
+
+    async def registered_context(self, context: Context) -> Context | None:
+        """Private generation may reuse a registered identity, never its send route."""
+        row = await self._run(lambda db: db.execute(
+            "SELECT context_json FROM source_contexts WHERE context_id=?",
+            (context.account_key,),
+        ).fetchone())
+        return Context.from_dict(json.loads(row[0])) if row else None
 
     async def correct_relationship(self, context: Context, expected_generation: int, *,
                                    expected_version: int, actor_id: str, reason: str,
@@ -1286,6 +1299,30 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
                 "reason_codes": (),
             }
             return history
+        return await self._run(read)
+
+    async def send_statistics(self, context: Context | None, period: str) -> dict[str, Any]:
+        """Quota consumption and transport results are different counters."""
+        def read(db):
+            rows = db.execute(
+                """SELECT q.scope_key,q.units,COALESCE(i.status,
+                       CASE WHEN q.status='succeeded' THEN 'unknown' ELSE q.status END) AS status
+                   FROM quota_reservations q LEFT JOIN intents i
+                   ON i.reservation_id=q.reservation_id
+                   WHERE q.pool='send' AND q.period=?""", (period,)).fetchall()
+            def count(selected):
+                values = dict(consumed=0, confirmed=0, unknown=0, cancelled=0,
+                              failed=0, in_progress=0)
+                for row in selected:
+                    values["consumed"] += row["units"]
+                    key = {"succeeded": "confirmed", "unknown": "unknown",
+                           "cancelled": "cancelled", "failed": "failed"}.get(
+                               row["status"], "in_progress")
+                    values[key] += row["units"]
+                return values
+            return {"global": count(rows),
+                    "scope": (count([r for r in rows if r["scope_key"] == context.scope_key])
+                              if context is not None else None)}
         return await self._run(read)
 
     async def load_experience(self, entry_id: str) -> tuple[Experience, int] | None:

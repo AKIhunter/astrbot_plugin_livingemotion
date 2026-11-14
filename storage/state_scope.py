@@ -336,8 +336,17 @@ class StateScopeStore:
         dims = [value.get(k) for k in ("pleasure", "arousal", "stress", "social_need")]
         if any(type(v) not in (int, float) or not math.isfinite(v) for v in dims):
             return
-        db.execute("INSERT OR REPLACE INTO emotion_samples VALUES(?,?,?,?,?,?,?)",
-                   (key, generation, now, *dims))
+        affect = BotAffect(**{k: value[k] for k in ("pleasure", "arousal", "stress", "social_need")
+                             if k in value}, **{k: value[k] for k in (
+                                 "baseline_pleasure", "baseline_arousal", "baseline_stress",
+                                 "baseline_social_need", "baseline_refined") if k in value})
+        db.execute("""INSERT OR REPLACE INTO emotion_samples
+                   (owner_key,generation,at,pleasure,arousal,stress,social_need,
+                    baseline_pleasure,baseline_arousal,baseline_stress,baseline_social_need,
+                    baseline_refined) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   (key, generation, now, *dims, affect.baseline_pleasure,
+                    affect.baseline_arousal, affect.baseline_stress,
+                    affect.baseline_social_need, int(affect.baseline_refined)))
         db.execute("DELETE FROM emotion_samples WHERE at<?", (now - 172800,))
 
     async def emotion_history(self, context, *, since, until):
@@ -361,14 +370,23 @@ class StateScopeStore:
                 if at < since:
                     continue
                 while index < len(rows) and rows[index]["at"] <= at:
-                    current = rows[index]; index += 1
+                    current = rows[index]
+                    index += 1
                 emotions = None
+                basis = "uncollected"
                 if current is not None:
+                    baseline_known = current["baseline_refined"] is not None
                     affect = BotAffect(**{k: current[k] for k in
-                        ("pleasure", "arousal", "stress", "social_need")}, updated_at=current["at"])
+                        ("pleasure", "arousal", "stress", "social_need")},
+                        **({k: current[k] for k in (
+                            "baseline_pleasure", "baseline_arousal", "baseline_stress",
+                            "baseline_social_need")} if baseline_known else {}),
+                        baseline_refined=bool(current["baseline_refined"]),
+                        updated_at=current["at"])
                     emotions = six_emotions(decay_affect(affect, now=at))
+                    basis = "recorded_decay" if baseline_known else "legacy_baseline_unknown"
                 points.append({"at": at, "emotions": emotions,
-                               "basis": "recorded_decay" if current is not None else "uncollected"})
+                               "basis": basis})
             return points
         return await self._run(read)
 

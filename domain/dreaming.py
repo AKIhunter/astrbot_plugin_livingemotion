@@ -92,6 +92,32 @@ def apply_bonus(emotions, bonus):
     return {k: round(min(1, max(0, emotions.get(k, 0)) + bonus.get(k, 0)), 4) for k in EMOTIONS}
 
 
+def weather_affect(report, *, city, day, timezone):
+    """天气对四维基准的缓慢推力 (pleasure, arousal, stress, social_need)。
+
+    与 ``weather_bonus`` 用同一份判定，但作用对象不同：这里改的是「回落目标」，
+    不是六情绪的展示值。幅度刻意压在 0.04 以内——天气是背景，不是一次互动事件；
+    真要走事件通道，一次雷暴就能盖过十句夸奖。
+    """
+    result = (0.0, 0.0, 0.0, 0.0)
+    if (not city or report is None or report.status != "ok"
+            or (report.city, report.day, report.timezone) != (city, day, timezone)):
+        return result
+    code = getattr(report, "code", None)
+    hazard = getattr(report, "hazard", "")
+    if code in (95, 96, 99) or hazard in ("typhoon", "hail", "natural_disaster"):
+        return (-0.040, 0.050, 0.080, 0.020)
+    if code in (71, 73, 75, 77, 85, 86):
+        return (0.010, -0.010, -0.010, 0.050)
+    if code in (51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82):
+        return (-0.050, -0.020, 0.030, 0.020)
+    if code in (2, 3):
+        return (-0.020, 0.0, 0.010, 0.0)
+    if code in (0, 1):
+        return (0.040, 0.010, -0.020, 0.0)
+    return result
+
+
 def dream_profile(emotions, themes=DEFAULT_THEMES, *, picker=None, nap=False):
     raw = {k: float(emotions.get(k, 0)) for k in EMOTIONS}
     if any(not math.isfinite(v) for v in raw.values()):

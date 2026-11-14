@@ -374,12 +374,117 @@
   "experience_body_chars": {
     "type": "int",
     "default": 2000,
-    "description": "日记或梦境正文1–8000字符。例：2000。"
+    "description": "日记或梦境正文1–2000字符，日期、天气和标题不占正文额度。旧版超过2000的设置升级后按2000执行。例：2000。"
   },
   "home_city": {
     "type": "string",
     "default": "",
     "description": "公开住所城市用于天气，不填详细地址、不替代时区。例：上海。"
+  },
+  "weather_factor_enabled": {
+    "type": "bool",
+    "default": true,
+    "description": "天气权重因子：本地按固定间隔轮询实况天气，换算成四维回落目标的偏移。不经大模型，失败降级为缓存或中性。"
+  },
+  "weather_poll_seconds": {
+    "type": "int",
+    "default": 14400,
+    "slider": {
+      "min": 300,
+      "max": 86400,
+      "step": 300
+    },
+    "description": "天气抓取周期（秒）。默认14400即4小时，配合06:00–次日01:00窗口一天抓5次；改成3600则一天20次，仍在限频内。失败会退避到300秒起重试。"
+  },
+  "weather_transition_seconds": {
+    "type": "int",
+    "default": 900,
+    "slider": {
+      "min": 0,
+      "max": 7200,
+      "step": 60
+    },
+    "description": "权重过渡时间（秒）：天气切换时新权重按指数曲线逼近，避免整点跳变。0表示立即生效。默认900即15分钟。"
+  },
+  "weather_weight_scale": {
+    "type": "float",
+    "default": 1.0,
+    "slider": {
+      "min": 0,
+      "max": 3,
+      "step": 0.1
+    },
+    "description": "天气权重总倍率。1.0为标定值，0关闭天气影响，2.0加倍。只缩放四维回落目标的偏移量，不改半衰期。"
+  },
+  "weather_stale_seconds": {
+    "type": "int",
+    "default": 7200,
+    "slider": {
+      "min": 300,
+      "max": 86400,
+      "step": 300
+    },
+    "description": "缓存保鲜期（秒）：超过该时长没成功取到天气，权重回落到中性0，避免用两天前的晴天影响今天。默认7200即2小时。"
+  },
+  "weather_forecast_days": {
+    "type": "int",
+    "default": 7,
+    "slider": {
+      "min": 1,
+      "max": 16,
+      "step": 1
+    },
+    "description": "一次预取的预报天数。接口一次就能返回多天，实况请求失败时直接改用当天预报，不必回落到中性。默认7天。"
+  },
+  "weather_forecast_refresh_seconds": {
+    "type": "int",
+    "default": 21600,
+    "slider": {
+      "min": 600,
+      "max": 86400,
+      "step": 600
+    },
+    "description": "预报表刷新周期（秒）。默认21600即6小时刷一次，一天最多4次请求；预报不会天天失败，实况失败也能兜住。"
+  },
+  "weather_window_start_hour": {
+    "type": "int",
+    "default": 6,
+    "slider": {
+      "min": 0,
+      "max": 23,
+      "step": 1
+    },
+    "description": "抓取窗口起点（本地时区整点）。默认6即06:00开始；窗口外完全不发请求。"
+  },
+  "weather_window_end_hour": {
+    "type": "int",
+    "default": 1,
+    "slider": {
+      "min": 0,
+      "max": 23,
+      "step": 1
+    },
+    "description": "抓取窗口终点（本地时区整点，可跨夜）。默认1即次日01:00结束；与起点相同表示全天。"
+  },
+  "weather_degrade_after_failures": {
+    "type": "int",
+    "default": 3,
+    "slider": {
+      "min": 1,
+      "max": 10,
+      "step": 1
+    },
+    "description": "连续失败多少次后降级。降级后停止高频抓取，改为每天窗口起点只刷一次日粒度预报，用它保底。默认3次。"
+  },
+  "weather_recover_after_successes": {
+    "type": "int",
+    "default": 2,
+    "slider": {
+      "min": 1,
+      "max": 7,
+      "step": 1
+    },
+    "description": "降级后连续多少次日粒度抓取成功就恢复高频。默认2天，避免刚恢复又撞墙。"
   },
   "livingmemory_enabled": {
     "type": "bool",
@@ -474,7 +579,7 @@
   "model_output_tokens": {
     "type": "int",
     "default": 1024,
-    "description": "每任务请求输出1–8192 Token，主动行为可能更短。例：1024。"
+    "description": "普通后台任务请求输出1–8192 Token。日记/梦境独立使用8192 Token输出预算，正文最多2000字；路由上游自己的输出限制仍生效。例：1024。"
   },
   "model_timeout_seconds": {
     "type": "int",

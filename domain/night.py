@@ -353,9 +353,13 @@ class LifePolicy:
     wake_reply_limit: int = 3
     wake_window_seconds: int = 600
     wake_mode: str = "chat"
+    # 精力达到这条线就是「清醒」，自主参与，不进入唤醒配额。
+    # 只有低于这条线又被叫醒，才开一个短唤醒窗口。
+    comfort_units: int = 800
 
     def __post_init__(self):
-        for name in ("reply_cost_units", "fatigue_units_per_minute", "recovery_units_per_minute"):
+        for name in ("reply_cost_units", "fatigue_units_per_minute", "recovery_units_per_minute",
+                     "comfort_units"):
             if type(getattr(self, name)) is not int or not 0 <= getattr(self, name) <= 1000:
                 raise ValueError("invalid fixed energy rate")
         for name in ("wake_reply_limit", "wake_window_seconds"):
@@ -393,6 +397,7 @@ def life_policy(config):
         int(round(config.energy_fatigue_per_minute * 10)),
         int(round(config.energy_recovery_per_minute * 10)),
         config.wake_reply_limit, config.wake_window_minutes * 60, config.wake_mode,
+        int(round(float(getattr(config, "energy_comfort_percent", 80)) * 10)),
     )
 
 
@@ -427,16 +432,23 @@ def _display(state, display, reason):
                    sleep_stage=None, transition_deadline=None, awaiting_reply_id=None)
 
 
-def _cycle_display(state, at, *, allow_sleep):
+def _cycle_display(state, at, *, allow_sleep, comfort_units=800):
     if not allow_sleep:
         return SleepState.GROGGY if state.energy < 10 or (
             state.cycle_kind == "night" and state.cycle_started_at is not None
             and state.cycle_started_at <= at < (state.wake_at or at)
         ) else SleepState.AWAKE
     if state.wake_at is None:
+        # 没有睡眠周期时只由精力说话：达到舒适线就是清醒，可以自主参与，
+        # 不该因为上一轮残留下来的 DROWSY 标记继续躺平。
+        if state.energy_units >= comfort_units:
+            return SleepState.AWAKE
         return SleepState.DROWSY if state.display_state == SleepState.DROWSY and (
             state.energy_units < 100
         ) else SleepState.GROGGY if state.energy_units < 100 else SleepState.AWAKE
+    # 深睡是硬边界：到点就睡，精力再满也叫不醒，等 base wake 再说。
+    if state.deep_sleep_at is not None and state.deep_sleep_at <= at < state.wake_at:
+        return SleepState.DEEP_SLEEP
     if at >= state.wake_at:
         return SleepState.AWAKE
     # 梦中惊醒有独立的短唤醒窗；到期仍按原夜晚时间重新入睡。
@@ -444,8 +456,6 @@ def _cycle_display(state, at, *, allow_sleep):
             and state.wake_window_deadline is not None and at < state.wake_window_deadline
             and state.wake_replies_used < state.wake_reply_limit):
         return SleepState.GROGGY if state.energy < 10 else SleepState.AWAKE
-    if state.deep_sleep_at is not None and at >= state.deep_sleep_at:
-        return SleepState.DEEP_SLEEP
     if state.wake_session:
         if state.wake_replies_used >= state.wake_reply_limit or (
             state.wake_window_deadline is not None and at >= state.wake_window_deadline
@@ -494,7 +504,8 @@ def advance_life(state, *, now, cycle=None, fatigue_windows=(), policy=LifePolic
     points = sorted(boundaries)
     for left, right in zip(points, points[1:]):
         at = (left + right) / 2
-        display = _cycle_display(state, at, allow_sleep=allow_sleep) if (
+        display = _cycle_display(state, at, allow_sleep=allow_sleep,
+                                 comfort_units=policy.comfort_units) if (
             state.cycle_started_at is None or state.cycle_started_at <= at
         ) else (SleepState.GROGGY if state.energy < 10 else SleepState.AWAKE)
         sleeping = display in (SleepState.NAP, SleepState.DROWSY, SleepState.DEEP_SLEEP)
@@ -517,14 +528,31 @@ def advance_life(state, *, now, cycle=None, fatigue_windows=(), policy=LifePolic
             changes.append({"occurred_at": right, "category": reason, "before_units": before,
                             "after_units": after, "reason_code": reason})
     state = replace(state, updated_at=now)
-    display = _cycle_display(state, now, allow_sleep=allow_sleep)
+    display = _cycle_display(state, now, allow_sleep=allow_sleep,
+                             comfort_units=policy.comfort_units)
     state = _display(state, display, state.reason_codes[0] if state.reason_codes else "clock")
     if display == SleepState.DEEP_SLEEP and state.sleep_started_at is not None:
         state = replace(state, sleep_stage=sleep_stage(state.sleep_started_at, now=now))
-    if state.wake_at is not None and now >= state.wake_at:
-        state = replace(state, wake_score=None, wake_failures=0, wake_session=None,
-                        wake_replies_used=0, wake_reply_limit=0,
+    # 周期已经走完（wake_at 已过或被清空），或精力已经回到舒适线以上，
+    # 残余的唤醒会话必须一起清掉；否则 wake_replies_used 会卡在满额，
+    # 让「精力满却一直不回」重现。
+    settled_cycle = state.wake_at is None or now >= state.wake_at
+    if settled_cycle and (state.wake_session or state.wake_replies_used):
+        state = replace(state, wake_score=None, wake_failures=0,
+                        wake_session=None, wake_replies_used=0, wake_reply_limit=0,
                         first_reply_submitted_at=None, wake_window_deadline=None)
+    # 精力回到舒适线以上：这一轮就算睡够了。
+    # 只覆盖「显示与可用性」，不参与上面的能量结算 —— 否则夜里精力一充足就
+    # 判成清醒去消耗，掉到线下又恢复，会在舒适线附近来回震荡。
+    # 深睡是硬边界，精力再满也不能靠这条豁免叫醒。
+    if (state.energy_units >= policy.comfort_units
+            and state.display_state != SleepState.DEEP_SLEEP
+            and (state.wake_at is None or now >= state.wake_at)):
+        if state.wake_session or state.wake_replies_used or state.wake_reply_limit:
+            state = replace(state, wake_score=None, wake_failures=0,
+                            wake_session=None, wake_replies_used=0, wake_reply_limit=0,
+                            first_reply_submitted_at=None, wake_window_deadline=None)
+        state = _display(state, SleepState.AWAKE, "rested")
     if state.display_state != original.display_state or state.cycle_id != original.cycle_id:
         changes.append({"occurred_at": now, "category": "sleep" if display in (
             SleepState.NAP, SleepState.DROWSY, SleepState.DEEP_SLEEP
@@ -575,6 +603,12 @@ def start_life_reply(state, *, policy=LifePolicy()):
     if state.display_state not in (SleepState.AWAKE, SleepState.GROGGY):
         return state, False
     if state.wake_session:
+        # 唤醒会话不能脱离夜间周期独立存在。周期已经走完（没有 wake_at 或没有 cycle）
+        # 时这条账本是孤儿：就地作废，不能拿它拒答，否则会出现「精力满却一直不回」。
+        if state.wake_at is None or state.cycle_id is None:
+            return replace(state, wake_session=None, wake_replies_used=0, wake_reply_limit=0,
+                           first_reply_submitted_at=None, wake_window_deadline=None,
+                           wake_score=None, wake_failures=0), True
         if state.wake_replies_used >= state.wake_reply_limit:
             return _display(state, SleepState.DROWSY, "wake_rounds_exhausted"), False
         state = replace(state, wake_replies_used=state.wake_replies_used + 1)
@@ -591,11 +625,15 @@ def submit_life_reply(state, *, now, policy=LifePolicy(), allow_sleep=True):
     if state.wake_session and state.first_reply_submitted_at is None:
         state = replace(state, first_reply_submitted_at=now,
                         wake_window_deadline=now + policy.wake_window_seconds)
-    if after < 100 and state.display_state == SleepState.AWAKE:
+    # 只有掉到舒适线以下才降档；满精力回一句不该立刻变成困倦。
+    if after < policy.comfort_units and state.display_state == SleepState.AWAKE:
         state = _display(state, SleepState.GROGGY, "low_energy")
-    if after < 100 and (state.wake_at is None or state.wake_at <= now):
+    if after < policy.comfort_units and (state.wake_at is None or state.wake_at <= now):
         state = replace(state, wake_at=None, cycle_id=None, cycle_kind=None,
-                        cycle_started_at=None, deep_sleep_at=None, drowsy_at=None)
+                        cycle_started_at=None, deep_sleep_at=None, drowsy_at=None,
+                        wake_session=None, wake_replies_used=0, wake_reply_limit=0,
+                        first_reply_submitted_at=None, wake_window_deadline=None,
+                        wake_score=None, wake_failures=0)
         state = _display(state, SleepState.DROWSY if allow_sleep else SleepState.GROGGY,
                          "low_energy_rest")
     return state, ({"occurred_at": now, "category": "reply", "before_units": before,

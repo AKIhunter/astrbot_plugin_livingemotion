@@ -22,6 +22,7 @@ const labels = resource({
   wake_delay_min_minutes: t("赖床最短时间"), wake_delay_max_minutes: t("赖床最长时间"),
   energy_reply_cost: t("每次回复消耗"), energy_fatigue_per_minute: t("疲劳每分钟消耗"),
   energy_recovery_per_minute: t("每分钟恢复"), energy_max: t("精力上限（固定）"),
+  energy_comfort_percent: t("清醒精力线"),
   night_energy_reply_cost: t("每次回复消耗"), night_energy_fatigue_per_minute: t("疲劳每分钟消耗"),
   night_energy_recovery_per_minute: t("每分钟恢复"),
   closing_enabled: t("睡前晚安"), closing_random: t("道别语随机生成"), closing_provider_id: t("收尾模型"),
@@ -129,13 +130,21 @@ function styleSummaryBlock(select, styleApi, sessionPersona = "") {
     node("p", t("仅本插件使用，不改原生人格；留空恢复默认（原生人格前缀）。"), "hint"),
     area, meta, actions);
   area.disabled = save.disabled = reset.disabled = true;
+  // 未改动、或改空之后不允许保存：textarea 里显示的可能是「原生人格前缀」的
+  // 回退内容，一旦点保存就会把这段回退文本固化成自定义摘要（线上踩过一次）。
+  area.dataset.dirty = "false";
+  function canSave() {
+    return !area.disabled && area.dataset.dirty === "true" && area.value.trim().length > 0;
+  }
   function setMeta(extra = "") {
     meta.textContent = t("{0} / {1} 字", [String(area.value.length), String(STYLE_SUMMARY_MAX)]) + " · " +
       (area.dataset.custom === "true" ? t("自定义摘要生效中") : t("未自定义，使用原生人格前缀")) + extra;
+    save.disabled = !canSave();
   }
   async function load() {
     const personaId = currentPersona();
     area.value = ""; area.dataset.custom = "false"; area.disabled = true;
+    area.dataset.dirty = "false";
     save.disabled = reset.disabled = true;
     if (!personaId) {
       meta.textContent = t("先选择人格，再编辑风格摘要。");
@@ -147,8 +156,8 @@ function styleSummaryBlock(select, styleApi, sessionPersona = "") {
       if (currentPersona() !== personaId) return;
       area.value = text(data.text, "");
       area.dataset.custom = String(data.custom === true);
+      area.dataset.dirty = "false";
       area.disabled = false;
-      save.disabled = false;
       reset.disabled = data.custom !== true;
       setMeta();
     } catch (_) {
@@ -159,6 +168,8 @@ function styleSummaryBlock(select, styleApi, sessionPersona = "") {
     const personaId = currentPersona();
     if (!personaId) return;
     const value = forced === undefined ? area.value : forced;
+    // forced 为 undefined 才是「保存摘要」按钮：未改动或内容为空都不提交。
+    if (forced === undefined && !canSave()) return;
     area.disabled = save.disabled = reset.disabled = true;
     meta.textContent = t("正在保存…");
     try {
@@ -170,11 +181,12 @@ function styleSummaryBlock(select, styleApi, sessionPersona = "") {
       meta.textContent = t("风格摘要保存失败；请稍后重试。");
     } finally {
       area.disabled = false;
-      save.disabled = false;
+      area.dataset.dirty = "false";
       reset.disabled = area.dataset.custom !== "true";
+      save.disabled = !canSave();
     }
   }
-  area.addEventListener("input", () => setMeta());
+  area.addEventListener("input", () => { area.dataset.dirty = "true"; setMeta(); });
   select.addEventListener("change", load);
   void load();
   return holder;
@@ -299,7 +311,30 @@ export function renderSettings(root, state, options, updateControls, description
     section.inert = section.hidden;
     section.setAttribute("aria-hidden", String(section.hidden));
     const heading = node("h2", title); heading.tabIndex = -1; section.append(heading);
+    // 「长夜」原来 27 个字段平铺，作息/唤醒/精力/补课/晚安混在一起看不清边界。
+    // 后端给了每个字段的 subsection，这里按它拆成小卡片；其它分组保持原样。
+    const subsectionOrder = list(object(state.data.config.subsections)[group]);
+    const subsectionBodies = new Map();
+    const subsectionCards = new Map();
+    if (subsectionOrder.length) {
+      const grid = node("div", undefined, "settings-subsection-grid");
+      for (const entry of subsectionOrder) {
+        const id = text(entry?.id, "");
+        if (!id) continue;
+        const card = node("section", undefined, "settings-subsection");
+        card.dataset.subsection = id;
+        card.append(node("h3", text(entry.label, id), "settings-subhead"));
+        const body = node("div", undefined, "settings-subsection-body");
+        card.append(body);
+        grid.append(card);
+        subsectionBodies.set(id, body);
+        subsectionCards.set(id, card);
+      }
+      section.append(grid);
+    }
     const common = node("div"), advanced = node("details"); advanced.className = "advanced-settings";
+    // 有二级分组时，普通字段进各自小卡片；没有分组的字段仍落在 common 里。
+    if (subsectionBodies.size) common.hidden = true;
     advanced.append(node("summary", t("高级设置 · 预算、阈值与边界")));
     const advancedBody = node("div", undefined, "details-content"); advanced.append(advancedBody);
     for (const original of orderedFields(selected)) {
@@ -464,8 +499,16 @@ export function renderSettings(root, state, options, updateControls, description
         control = node("div", undefined, "number-list-control"); control.append(input, suggestions);
       }
       wrapper.append(description, control);
-      const body = field.advanced || advancedPattern.test(field.key) ? advancedBody : common;
-      body.append(wrapper);
+      const isAdvanced = field.advanced || advancedPattern.test(field.key);
+      // 先看二级分组：长夜里的字段进各自小卡片；其余回落到原来的 common / advanced。
+      const bucket = !isAdvanced && field.subsection ? subsectionBodies.get(field.subsection) : null;
+      if (bucket) bucket.append(wrapper);
+      else if (isAdvanced) advancedBody.append(wrapper);
+      else {
+        // 只有真的落到 common 的字段才需要把 common 放出来。
+        common.hidden = false;
+        common.append(wrapper);
+      }
       // 人格说明只读展示：内容来自宿主 personas.system_prompt，本页不写入。
       if (field.key === "persona_id") {
         if (typeof descriptionLoader === "function") {
@@ -511,14 +554,25 @@ export function renderSettings(root, state, options, updateControls, description
         node("p", t("「工作模式」只决定要不要参与表达和行动；它不改情绪是否共享。"), "hint"));
     }
     if (group === "night") {
-      section.append(node("p", t("精力上限固定 100，不可修改。"), "hint"));
+      section.append(node("p", t("精力上限固定 100，不可修改。精力达到「清醒精力线」即算睡够，正常自主参与；低于这条线又在夜里被叫醒，才进入下面的唤醒窗口。深睡不受影响。"), "hint"));
       section.append(previewText);
       const preview = object(state.data.night.schedule_preview ?? options.schedule_preview);
       if (Object.keys(preview).length) section.append(node("p",
         t("作息预览：{0} · 恍惚转困 {1} · 实际起床 {2}", [text(preview.reason ?? preview.summary), text(preview.drowsy_at), text(preview.wake_at)]), "hint"));
       else section.append(node("p", t("以上是配置顺序预览，不代表当前周期的持久实际起床时刻。最终作息以宿主状态与校验为准。"), "hint"));
     }
+    // 二级卡片里没有任何字段的，直接不显示，避免空标题占位。
+    for (const [id, card] of subsectionCards) {
+      const body = subsectionBodies.get(id);
+      if (!body || !body.childElementCount) card.remove();
+    }
+    if (subsectionBodies.size && ![...subsectionBodies.values()].some(body => body.childElementCount)) {
+      // 极端情况：所有字段都被判成高级，二级卡片全空，就把 common 放出来兜底。
+      common.hidden = false;
+    }
     if (advancedBody.childElementCount) section.append(advanced);
+    // 有二级卡片时，common 仅在真有非分组字段时才显示；空 div 不占位。
+    if (subsectionBodies.size && !common.childElementCount) common.remove();
     root.append(section);
   }
   mountRelationshipEditor(root, state);

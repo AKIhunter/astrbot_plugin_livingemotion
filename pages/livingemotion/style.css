@@ -58,6 +58,8 @@ body[data-le-section="experience"] #notice[hidden] { display: block !important; 
 .paper-sheet > .paper-heading { padding: 16px 22px; list-style: none; display: block; }
 .paper-heading::-webkit-details-marker { display: none; }
 .paper-heading h3 { margin: 0 0 4px; font: 600 20px/1.5 var(--display); }
+.paper-heading-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
+.paper-title, .paper-emotion { max-width: 100%; overflow-wrap: anywhere; font: 14px/1.6 var(--display); color: var(--text); }
 .paper-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; font: 12px/1.6 var(--mono); color: var(--muted); }
 .paper-sheet[open] { border-radius: 3px; }
 .paper-body { white-space: pre-wrap; overflow-wrap: anywhere; padding: 4px 22px 22px;
@@ -285,6 +287,18 @@ th { color: var(--muted); font-weight: 400; }
 .config-help-dialog h3 { margin: 24px 0 12px; }
 .config-help-dialog .config-example { padding: 16px; background: var(--subtle); border-radius: 12px; }
 .settings-group { margin-top: 32px; } .settings-group h2 { padding-bottom: 12px; border-bottom: 1px solid var(--control); }
+/* 长夜的二级分组：作息 / 精力 / 唤醒 / 补课 / 晚安，各自一张小卡片。 */
+.settings-subsection-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px; margin: 8px 0 20px; align-items: start; }
+.settings-subsection { padding: 4px 18px 8px; background: var(--subtle); border: 1px solid var(--line);
+  border-radius: 14px; }
+.settings-subsection > h3 { margin: 12px 0 4px; font-size: 15px; }
+.settings-subsection-body .field { grid-template-columns: minmax(0, 1fr) minmax(120px, .55fr); gap: 16px; padding: 12px 0; }
+.settings-subsection-body .field:last-child { border-bottom: 0; }
+@media (max-width: 720px) {
+  .settings-subsection-grid { grid-template-columns: minmax(0, 1fr); }
+  .settings-subsection-body .field { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+}
 /* 保存入口固定在视口底边，独立于纸页滚动区；只在有草稿时占用空间。 */
 .editor { position: fixed; z-index: var(--z-editor); left: 20px; right: 20px;
   bottom: max(12px, env(safe-area-inset-bottom)); max-width: 1000px; margin: 0 auto;
@@ -406,6 +420,9 @@ dialog h2 { margin: 12px 0 16px; } dialog input { width: 100%; margin-top: 8px; 
 .energy-chart text { fill: var(--muted); font: 11px var(--mono); }
 .energy-chart .grid { stroke: var(--line); } .energy-chart .energy-line { fill: none; stroke: var(--accent); stroke-width: 2; }
 .energy-chart .energy-range { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 2 2; }
+/* 清醒线：和 25/50/75 的普通网格分开，一眼能看出「睡够」的分界。 */
+.energy-chart .energy-threshold { stroke: var(--accent); stroke-width: 1.6; stroke-dasharray: 6 4; opacity: .9; }
+.energy-chart .energy-threshold-label { fill: var(--accent); font: 600 10px var(--mono); }
 .energy-chart circle { fill: var(--accent); }
 .theme-cover { position: fixed; inset: 0; pointer-events: none; z-index: var(--z-cover); }
 ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }

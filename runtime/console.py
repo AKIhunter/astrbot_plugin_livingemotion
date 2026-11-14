@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import inspect
 import heapq
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from dataclasses import fields, replace
 from uuid import uuid4
 
@@ -14,7 +16,7 @@ from ..contracts import BotAffect, Context, HumanObservation, SceneKind, to_dict
 from ..domain.emotion import (
     DIMENSIONS, baseline_values, decay_affect, emotion_policy,
 )
-from ..domain.dreaming import six_emotions, apply_bonus, weather_bonus
+from ..domain.dreaming import six_emotions, weather_bonus
 from ..domain.relationship import relationship_stage_dto
 from ..storage.console_data import (
     apply_relationship_override, context_dto, query_console_records, query_relationships,
@@ -92,6 +94,35 @@ SETTINGS_GROUPS = (
     ("relationship", "关系"), ("behavior", "主动行为"), ("night", "长夜"),
     ("experience", "日记与梦境"), ("memory", "记忆"),
 )
+
+# 「长夜」原来把作息、唤醒、精力、醒后补课、睡前晚安混在同一张表里，27 项一眼看不出
+# 谁管谁。这里给每个字段再贴一个二级标签，前端按它分成小卡片；字段本身、键名、
+# 校验和存储都不动，只是多一层归类。
+NIGHT_SUBSECTIONS = (
+    ("schedule", "作息时间"),
+    ("energy", "精力与清醒"),
+    ("wake", "聊天唤醒"),
+    ("catchup", "醒后补课"),
+    ("closing", "睡前晚安"),
+)
+NIGHT_SUBSECTION_LABELS = dict(NIGHT_SUBSECTIONS)
+
+
+def night_subsection(name):
+    """长夜分区内的二级归类；非长夜字段返回空串。"""
+    if field_section(name) != "night":
+        return ""
+    if name in ("energy_comfort_percent", "energy_reply_cost",
+                "energy_fatigue_per_minute", "energy_recovery_per_minute"):
+        return "energy"
+    if name.startswith(("catchup_", "wake_autocatchup", "wake_greeting")):
+        return "catchup"
+    if name.startswith("closing_"):
+        return "closing"
+    # wake_at 是「基础起床」，属于作息时间表，不算唤醒规则。
+    if name in ("wake_mode", "wake_reply_limit", "wake_window_minutes"):
+        return "wake"
+    return "schedule"
 FIELD_LABELS = {
     "enabled": "启用插件", "mode": "运行模式", "memory_mode": "旧版记忆模式",
     "memory_read": "允许读取记忆", "memory_export": "允许导出记忆",
@@ -135,6 +166,7 @@ FIELD_LABELS = {
     "wake_reply_limit": "唤醒回复轮数", "wake_window_minutes": "唤醒窗口",
     "energy_reply_cost": "每次回复精力消耗", "energy_fatigue_per_minute": "疲劳精力消耗速率",
     "energy_recovery_per_minute": "精力恢复速率", "catchup_enabled": "醒后阅读未读",
+    "energy_comfort_percent": "清醒精力线",
     "catchup_reply_enabled": "醒后历史补答", "closing_enabled": "睡前晚安",
     "closing_random": "道别语随机生成", "closing_lead_minutes": "晚安提前量",
     "diary_provider_id": "日记模型", "dream_provider_id": "梦境模型",
@@ -199,8 +231,32 @@ AFFECT_REASON_TEXT = {
     "appraisal_concern": "依据最近对话里出现的关切线索更新了情绪。",
     "similar_stimulus_limited": "同类刺激短时间内重复出现，本次只做有限调整。",
     "disabled": "情绪细化模型未启用，仅使用本地数值启发式。",
+    # 规则信号的人话：页面那句「原因」原本只认得上面四个内部码，真正的
+    # reason_codes 全是 rule_*，于是永远落到兜底文案。补齐后每次互动说法都不同。
+    "rule_praise": "刚被夸了一句，心情往上走了一点。",
+    "rule_insult": "刚被顶了一句，情绪往下掉了。",
+    "rule_interaction": "普通的闲聊，只让情绪轻微浮动。",
+    "rule_care": "被关心了一下，整个人松下来。",
+    "rule_gratitude": "被谢了一句，心里舒坦。",
+    "rule_joy": "你带来的好消息让 TA 跟着高兴。",
+    "rule_surprise": "被这份意外提了神。",
+    "rule_sadness": "察觉到你的低落，TA 也跟着揪心。",
+    "rule_anxiety": "你有些焦虑，TA 想靠得更近些。",
+    "rule_conflict": "刚才有点针锋相对，TA 绷紧了。",
+    "rule_apology": "你的道歉让 TA 缓了下来。",
+    "rule_teaching": "你在讲东西，TA 听得很认真。",
+    "rule_constructive_criticism": "收到了有依据的批评，TA 认真对待。",
+    "rule_boundary_respected": "边界被尊重，TA 松了口气。",
+    "rule_boundary_violated": "边界被越过了，TA 不太舒服。",
+    "rule_promise_kept": "约定被守住了，TA 更信你一点。",
+    "rule_promise_broken": "约定没守住，TA 有点失望。",
+    "rule_reply_succeeded": "上一句顺利说出口了。",
+    "model_refined": "模型也参与了这次情绪判定。",
+    "model_invalid_rule_fallback": "模型这次没给出有效结果，只用了本地规则。",
 }
 AFFECT_REASON_FALLBACK = "由本地情绪模型按最近的真实互动更新。"
+# 尾部这句只做摘要，拼三句以上会把 hero 那一行撑成小作文。
+AFFECT_REASON_MAX_PARTS = 2
 
 MODE_REASON_TEXT = {
     "active": "参与表达与行动：可生成内容并按规则自主发送。",
@@ -239,7 +295,8 @@ def affect_reason_text(reason_codes) -> str:
     """把内部状态原因码翻译成一句人话，保留诊断码本身不展示。"""
     codes = [code for code in reason_codes if isinstance(code, str)]
     texts = [AFFECT_REASON_TEXT[code] for code in codes if code in AFFECT_REASON_TEXT]
-    return " ".join(dict.fromkeys(texts)) or AFFECT_REASON_FALLBACK
+    unique = list(dict.fromkeys(texts))[:AFFECT_REASON_MAX_PARTS]
+    return " ".join(unique) or AFFECT_REASON_FALLBACK
 
 
 NIGHT_REASON_TEXT = {
@@ -347,6 +404,9 @@ class Console:
         try:
             value = await self.manual_experience_state()
             state["experience"].update(value)
+            state["experience"]["automatic"] = {
+                kind: await self.store.auto_experience_status(
+                    self.instance_id, value["persona_id"], kind) for kind in ("diary", "dream")}
             state["experience"]["reason"] = ("按当前人格保存。手动生成不看作息、睡眠阶段和每日额度，"
                                              "但需要先在设置里开启对应类型的生成。")
             if not state.get("persona"):
@@ -400,8 +460,14 @@ class Console:
                              else "float" if type(f.default) is float else "string"),
                     "advanced": f.name.startswith(("model_", "window_", "body_", "event_"))
                     or f.name == "scheduler_seconds"}
+            subsection = night_subsection(f.name)
+            if subsection:
+                item["subsection"] = subsection
+                item["subsection_label"] = NIGHT_SUBSECTION_LABELS[subsection]
             parent, level = field_parent(f.name)
             item.update(field_help(f.name), parent=parent, level=level)
+            if f.name == "experience_body_chars":
+                item.update(min=1, max=2000)
             if f.name in enums:
                 # gentle 在主动节奏里是「轻柔」，在情绪强度里是「保守」，按字段取标签。
                 label_of = ({"gentle": "保守", "normal": "平常", "intense": "激进"}
@@ -433,9 +499,14 @@ class Console:
             "revision": self.config_revision, "source": "AstrBot native plugin configuration",
             "values": values, "fields": result_fields,
             "groups": self._settings_groups(),
+            "subsections": {group: [{"id": key, "label": label}
+                                    for key, label in NIGHT_SUBSECTIONS]
+                            for group in ("night",)},
             "readonly": [{"key": "energy_max", "label": "总精力", "type": "float",
                           "value": 100.0, "step": 0.1, "unit": "点", "readonly": True,
-                          "section": "night", "parent": "night_schedule_enabled", "level": 1,
+                          "section": "night", "subsection": "energy",
+                          "subsection_label": NIGHT_SUBSECTION_LABELS["energy"],
+                          "parent": "night_schedule_enabled", "level": 1,
                           **field_help("energy_max")}],
         }
 
@@ -486,6 +557,14 @@ class Console:
         return {"api_version": 1, "config": self.config_dto()}
 
     async def console_state(self, context_id="", persona_id="", view_scope="", platform=""):
+        from .night import NIGHT_DISPLAY_ONLY
+        token = NIGHT_DISPLAY_ONLY.set(True)
+        try:
+            return await self._console_state(context_id, persona_id, view_scope, platform)
+        finally:
+            NIGHT_DISPLAY_ONLY.reset(token)
+
+    async def _console_state(self, context_id="", persona_id="", view_scope="", platform=""):
         self._open()
         await self.refresh_config()
         selection = None
@@ -584,7 +663,11 @@ class Console:
             policy = emotion_policy(getattr(self.config, "emotion_intensity", "normal"))
         if callable(policy):
             policy = policy()
-        bot = decay_affect(snapshot(bot_record, BotAffect), now=self.store.clock(), policy=policy)
+        # 天气只改四维的回落目标，不改六情绪展示值；拿不到天气时 drift 为 None，
+        # 衰减行为与旧版逐位一致。
+        weather_drift = self._weather_drift()
+        bot = decay_affect(snapshot(bot_record, BotAffect), now=self.store.clock(),
+                           policy=policy, drift=weather_drift)
         policy_raw = policy.baseline
         policy_values = (tuple(getattr(policy_raw, name) for name in DIMENSIONS)
                          if isinstance(policy_raw, BotAffect) else tuple(policy_raw))
@@ -705,6 +788,12 @@ class Console:
                       "base_wake_at": night.base_wake_at,
                       "cycle_kind": night.cycle_kind, "lie_in_minutes": night.lie_in_minutes,
                       "reason": night_reason_text(night.reason_codes),
+                      # 清醒线与当前是否算「睡够了」，供长夜页直接画分界线。
+                      "comfort_percent": float(getattr(self.config, "energy_comfort_percent", 80)),
+                      "rested": night.energy >= float(
+                          getattr(self.config, "energy_comfort_percent", 80)),
+                      "wake_replies_used": getattr(night, "wake_replies_used", 0),
+                      "wake_reply_limit": getattr(night, "wake_reply_limit", 0),
                       "schedule": {
                           "schedule_enabled": bool(self.config.night_schedule_enabled),
                           "sleep_enabled": bool(self.config.night_enabled),
@@ -822,6 +911,9 @@ class Console:
             )
         await self._attach_manual_experience(state)
         await self._attach_emotion_curve(state, context)
+        period = datetime.fromtimestamp(self.store.clock(), ZoneInfo(
+            self.config.timezone or "Asia/Shanghai")).date().isoformat()
+        state["behavior"]["send_statistics"] = await self.store.send_statistics(context, period)
         return state
 
     async def _attach_emotion_curve(self, state, context):
@@ -833,37 +925,31 @@ class Console:
         points = (await self.store.emotion_history(context, since=now - 86400, until=now)
                   if context else [{"at": at, "emotions": None, "basis": "uncollected"}
                       for at in range(end - 86100, end + 1, 300)])
-        reports = {}
-        weather = getattr(self, "_manual_weather", None)
         city = self.config.home_city
-        days = {datetime.fromtimestamp(now, ZoneInfo(zone)).date().isoformat()}
-        days.update(datetime.fromtimestamp(p["at"], ZoneInfo(zone)).date().isoformat() for p in points)
-        for day in days:
-            if weather and city:
-                reports[day] = await weather.get(city, day, zone)
         current_day = datetime.fromtimestamp(now, ZoneInfo(zone)).date().isoformat()
-        bonus = weather_bonus(reports.get(current_day), city=city, day=current_day, timezone=zone)
+        # 直接复用轮询器的缓存快照，不再为页面单独请求天气：页面刷新零额外网络。
+        # 六情绪是五维的纯函数投影，天气不往派生量上灌常数（愉悦为正时 negative=0，
+        # 加 0.2 的悲伤等于凭空生成）。天气走五维回落目标，这里只留一份诊断值。
+        factor = getattr(self, "weather_factor", None)
+        report = factor.report() if factor is not None else None
+        bonus = weather_bonus(report, city=city, day=current_day, timezone=zone)
         for target in (state.get("emotion_analysis", {}).get("bot"),
                        state.get("bot_state", {}).get("emotion_analysis")):
             if target:
-                target["emotions"] = apply_bonus(target["emotions"], bonus)
                 target["weather_bonus"] = bonus
-        current_emotions = state.get("emotion_analysis", {}).get("bot", {}).get("emotions", {})
-        if any(bonus.values()) and current_emotions:
-            dominant = max(current_emotions, key=current_emotions.get)
-            state["bot_state"]["label"] = ({
-                "joy": "happy", "anger": "angry", "sadness": "sad",
-                "fear": "anxious", "surprise": "excited", "affection": "caring",
-            }[dominant] if current_emotions[dominant] >= .25 else "calm")
-        for point in points:
-            if point["emotions"] is not None:
-                day = datetime.fromtimestamp(point["at"], ZoneInfo(zone)).date().isoformat()
-                point["emotions"] = apply_bonus(point["emotions"], weather_bonus(
-                    reports.get(day), city=city, day=day, timezone=zone))
+        if factor is not None:
+            state["weather_weight"] = factor.snapshot().as_dict()
         state["emotion_curve"] = {"points": points, "interval_seconds": 300,
             "window_start": now - 86400, "window_end": now, "timezone": zone,
-            "basis": "recorded_state_decay_with_daily_weather",
+            "basis": "recorded_state_decay",
             "collected": any(p["emotions"] is not None for p in points)}
+
+    def _weather_drift(self):
+        """天气权重因子对四维回落目标的偏移；未启用/中性/过期时返回 None。"""
+        factor = getattr(self, "weather_factor", None)
+        if factor is None:
+            return None
+        return factor.drift()
 
     def _behavior_min_score(self):
         try:
@@ -1050,7 +1136,12 @@ class Console:
                 if loaded is None:
                     continue
                 entry, _ = loaded
-                item.update(title=row.get("day") or entry.period, body=entry.body, visibility="private",
+                item.update(title=entry.title, date=row.get("day") or (
+                                entry.period if kind == "diary" else
+                                datetime.fromtimestamp(entry.created_at, ZoneInfo(
+                                    self.config.timezone or "Asia/Shanghai")).date().isoformat()),
+                            emotion_snapshot=entry.emotion_snapshot,
+                            body=entry.body, visibility="private",
                             clarity=entry.clarity, pinned=entry.pinned,
                             context_id=entry.context.account_key,
                             pin_available=(entry.context.platform == "console" or
@@ -1061,6 +1152,12 @@ class Console:
                     view = dream_view(entry, now=self.store.clock())
                     item.update(body=view.get("body", ""), clarity=view["clarity"])
             items.append(item)
+        if kind == "behavior":
+            period = datetime.fromtimestamp(self.store.clock(), ZoneInfo(
+                self.config.timezone or "Asia/Shanghai")).date().isoformat()
+            result["send_statistics"] = await self.store.send_statistics(
+                self._contexts.get(context_id), period)
+            result["send_daily_limit"] = self.config.behavior_daily_limit
         return {"api_version": 1, **result, "items": items}
 
     async def console_scopes(self, persona_id="", view_scope="global", context_id="", platform=""):
@@ -1393,6 +1490,10 @@ class Console:
                 raise ApplicationError("validation_error", "Unknown or empty configuration patch")
             # New list edits replace hidden legacy grants, including on clear.
             patch = dict(patch)
+            if "experience_body_chars" in patch and (
+                    type(patch["experience_body_chars"]) is not int
+                    or not 1 <= patch["experience_body_chars"] <= 2000):
+                raise ApplicationError("validation_error", "正文上限须在1至2000之间")
             if {"autonomy_qq_ids", "autonomy_qq_group_ids"} & patch.keys():
                 patch["autonomy_scopes"] = ""
             # 改作息时间本身就表达「要用这套作息」：自动打开时间表，

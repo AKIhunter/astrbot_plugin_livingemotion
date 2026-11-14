@@ -325,7 +325,10 @@ async def test_simulation_weather_matches_page_without_compounding(
         before = await app.store.get_state(context, "bot")
         page = await app.console_state(persona_id="native", view_scope="global")
         displayed = page["emotion_analysis"]["bot"]["emotions"]
-        assert displayed[axis] == round(min(1, six_emotions(affect)[axis] + bonus), 4)
+        # 天气不再叠加到六情绪：无论天气/城市/日期是否匹配，展示值都等于五维投影。
+        # 参数里的 bonus 保留下来，是为了证明「即使旧口径会加 0.2/0.4，也不再加」。
+        assert bonus >= 0
+        assert displayed[axis] == pytest.approx(six_emotions(affect)[axis], abs=1e-6)
 
         for emotion in ("current", "current", "anger"):
             result = await submit(app, emotion)

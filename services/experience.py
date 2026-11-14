@@ -43,8 +43,9 @@ from ..contracts import (
 )
 from ..ports.memory import Material, MemoryPort, MemoryRequest
 from ..runtime import BackgroundRuntime
+from ..runtime.background import ModelResultUnknown
 from ..storage import SQLiteStore
-from ..domain.dreaming import DEFAULT_THEMES, dream_profile, six_emotions, apply_bonus, weather_bonus
+from ..domain.dreaming import DEFAULT_THEMES, dream_profile, six_emotions
 from ..domain.emotion import decay_affect
 
 PROMPT_VERSION = "experience-2"
@@ -52,6 +53,8 @@ PROMPT_VERSION = "experience-2"
 # 不该让昨天的日记失败。置位后，保存阶段改用写入瞬间的版本号、且不再
 # 要求人类消息水位不变（水位只对仍在增长的那一天有意义）。
 LENIENT_SAVE: ContextVar[bool] = ContextVar("livingemotion_lenient_save", default=False)
+_LOCAL_SNAPSHOTS: ContextVar[tuple] = ContextVar("livingemotion_local_snapshots", default=())
+SEALED_DAY: ContextVar[bool] = ContextVar("livingemotion_sealed_day", default=False)
 # 梦境被门禁静默拒绝时只留在返回值里，页面之外无从发现；这里补一条日志。
 # 调度器每 60 秒会重试同一条梦，按 key 去重，只在原因发生变化时打一行。
 _DREAM_SKIP: dict[str, str] = {}
@@ -98,8 +101,10 @@ SYSTEM_PROMPT = (
     "③ 梦境是想象：可以荒诞、跳跃、人物变形；不要写「这是一个梦」这种话，也不要给完整结尾。"
     "④ 不要写「作为AI」「作为一个模型」之类出戏的话，不要替对方说话，"
     "不要编造素材里没有的具体事件或对话；不确定谁做的就写模糊一点。"
-    "⑤ 正文 300–600 字，自然分段。"
-    'Return only JSON {"body":"plain text","source_ids":["supplied source id"]}.'
+    "⑤ 正文 300–600 字，自然分段，最多 2000 字；遵守 DATA.body_character_limit。"
+    "⑥ 日记另给一句简短标题（title），不在正文重复，不编造事实。"
+    'Return only JSON {"title":"short diary title","body":"plain text",'
+    '"source_ids":["supplied source id"]}.'
 )
 
 ContextGuard = Callable[[Context, int], Awaitable[bool]]
@@ -157,7 +162,7 @@ class ExperiencePolicy:
             ("dream_per_night", 1, 2),
             ("material_limit", 1, 20),
             ("material_chars", 1, 4000),
-            ("body_chars", 1, 8000),
+            ("body_chars", 1, 2000),
             ("input_tokens", 1, 32768),
             ("output_tokens", 1, 8192),
             ("diary_retention_days", 1, 365),
@@ -195,6 +200,18 @@ class ModelRequest:
 class ParsedEntry:
     body: str
     source_ids: tuple[str, ...]
+    title: str = ""
+
+
+def emotion_snapshot(emotions, *, at):
+    values = {key: round(float(value), 4) for key, value in (emotions or {}).items()
+              if key in ("joy", "sadness", "anger", "fear", "affection", "surprise")
+              and type(value) in (int, float) and math.isfinite(value)}
+    labels = {"joy": "喜悦", "sadness": "悲伤", "anger": "愤怒",
+              "fear": "恐惧", "affection": "关爱", "surprise": "惊讶"}
+    label = (labels[max(values, key=values.get)] if values and max(values.values()) >= .25
+             else "平静" if values else "")
+    return {"at": at, "label": label, "emotions": values}
 
 
 @dataclass(frozen=True)
@@ -364,7 +381,12 @@ def parse_entry(raw: Any, *, allowed_sources: set[str], max_chars: int = 2000) -
     ):
         raise ValueError("model_sources_invalid")
     # Missing citations in otherwise valid JSON conservatively retain all inputs.
-    return ParsedEntry(body, tuple(dict.fromkeys(sources or sorted(allowed_sources))))
+    title = raw.get("title", "")
+    # 旧模型不返回 title 仍可保存；不从旧正文凭空补造标题。
+    if (not isinstance(title, str) or len(title) > 80 or not _plain(title)
+            or "\n" in title or "\r" in title):
+        title = ""
+    return ParsedEntry(body, tuple(dict.fromkeys(sources or sorted(allowed_sources))), title.strip())
 
 
 DEFAULT_POLICY = ExperiencePolicy()
@@ -482,6 +504,7 @@ class ExperienceService:
         night_guard: NightGuard | None = None,
         memory: MemoryPort | None = None,
         weather=None,
+        preflight=None,
         policy: ExperiencePolicy = DEFAULT_POLICY,
     ):
         self.store, self.runtime = store, runtime
@@ -492,6 +515,7 @@ class ExperienceService:
         self.night_guard = night_guard
         self.memory = memory or MemoryGateway(clock=store.clock)
         self.weather = weather
+        self.preflight = preflight
         self.policy = policy
         self._outcomes: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self._drafts: dict[str, _Draft] = {}
@@ -566,6 +590,10 @@ class ExperienceService:
         return tuple(generations)
 
     async def local_materials(self, context: Context) -> tuple[Material, ...]:
+        return await self.local_materials_for(self.store, context, now=self._now())
+
+    @staticmethod
+    async def local_materials_for(store, context: Context, *, now: float) -> tuple[Material, ...]:
         """Read bounded, real local events/state; works with memory mode none.
 
         素材的 context 会带上「当前」人格/身份版本号：事件里存的是写入当时的
@@ -573,9 +601,8 @@ class ExperienceService:
         的同一段经历，版本号不同不代表素材失效；owner（instance/bot/persona_id）
         与账号、会话、可见范围仍然逐条校验，所以不会串人格或串会话。
         """
-        now = self._now()
         materials = []
-        for row in await self.store.read_window(context, limit=200):
+        for row in await store.read_window(context, limit=200):
 
             try:
                 event = Event.from_dict({**row["metadata_json"], "body": row["body"]})
@@ -617,13 +644,13 @@ class ExperienceService:
                 context.bot_id,
                 kind,
                 event.occurred_at,
-                expires_at=event.occurred_at + self.store.config.window_days * 86400,
+                expires_at=event.occurred_at + store.config.window_days * 86400,
                 source_ids=(event.source_id,),
             )
             if event.body.strip() and ref.occurred_at <= now and _plain(event.body):
                 materials.append(Material(ref, event.body))
         for kind in ("bot", "night"):
-            record = await self.store.get_state(context, kind)
+            record = await store.get_state(context, kind)
             if record is None:
                 continue
             try:
@@ -678,7 +705,7 @@ class ExperienceService:
                     context.bot_id,
                     ContentKind.OBSERVATION,
                     occurred,
-                    expires_at=occurred + self.store.config.window_days * 86400,
+                    expires_at=occurred + store.config.window_days * 86400,
                 )
                 if occurred <= now and _plain(canonical_json(data)):
                     materials.append(Material(ref, canonical_json(data)))
@@ -721,7 +748,12 @@ class ExperienceService:
             if ref.provider == "livingemotion" and ref.kind != ContentKind.DREAM:
                 local = await self.local_materials(ref.context)
                 if item not in local:
-                    return False
+                    # 只信任本任务从数据库亲自读取的状态快照。正常状态更新不撤销
+                    # 当时的情绪；清空/身份撤销仍以 generation 与授权守卫拦截。
+                    trusted = next((gen for captured, gen in _LOCAL_SNAPSHOTS.get()
+                                    if captured == item), None)
+                    if trusted is None or await self.store.get_generation(ref.context) != trusted:
+                        return False
             if ref.kind == ContentKind.DREAM:
                 if ref.provider != "livingemotion" or self.load is None:
                     return False
@@ -768,8 +800,12 @@ class ExperienceService:
                 if type(raw.get(name)) in (int, float) and math.isfinite(raw[name])}
         labels = raw.get("labels") if isinstance(raw.get("labels"), (list, tuple)) else ()
         label = "、".join(str(item) for item in labels if isinstance(item, str)) or "未标注"
-        current = BotAffect(**dims, updated_at=record.updated_at if record else self._now())
+        current = BotAffect(**dims, **{k: raw[k] for k in (
+            "baseline_pleasure", "baseline_arousal", "baseline_stress",
+            "baseline_social_need", "baseline_refined") if k in raw},
+            updated_at=record.updated_at if record else self._now())
         emotions = six_emotions(decay_affect(current, now=self._now()))
+        current_emotions = dict(emotions)
         day = datetime.fromtimestamp(self._now(), ZoneInfo(self.policy.timezone)).date().isoformat()
         history = await self.store.emotion_history(context, since=self._now() - 86400, until=self._now())
         own = [p["emotions"] for p in history if p["emotions"] is not None
@@ -778,8 +814,10 @@ class ExperienceService:
             emotions = {k: sum(p[k] for p in own) / len(own) for k in emotions}
         report = await self.weather.get(self.policy.home_city, day, self.policy.timezone) if (
             self.weather is not None and self.policy.home_city) else None
-        return {"label": label, "dimensions": dims, "emotions": apply_bonus(emotions, weather_bonus(
-            report, city=self.policy.home_city, day=day, timezone=self.policy.timezone)),
+        # 六情绪保持纯函数：天气只改四维回落目标，不再往派生量上叠常数。
+        return {"label": label, "dimensions": dims,
+            "current_emotions": current_emotions,
+            "emotions": emotions,
             "basis": "daily_recorded_mean" if own else "current_state"}
 
     def _dream_themes(self, night: NightState | None, mood=None) -> dict[str, Any]:
@@ -805,6 +843,7 @@ class ExperienceService:
         limit = self.policy.material_chars if char_limit is None else max(0, char_limit)
         payload = {
             "purpose": purpose,
+            "body_character_limit": min(2000, self.policy.body_chars),
             "bot": context.bot_id,
             "narrator": "bot_first_person",
             "program_header": ({
@@ -842,7 +881,8 @@ class ExperienceService:
             SYSTEM_PROMPT,
             data,
             tokens,
-            min(self.policy.output_tokens, self.runtime.config.model_output_tokens),
+            (self.policy.output_tokens if purpose in ("diary", "dream") else
+             min(self.policy.output_tokens, self.runtime.config.model_output_tokens)),
             self.policy.timeout_seconds,
         )
 
@@ -901,15 +941,12 @@ class ExperienceService:
         self, request: ModelRequest, materials: tuple[Material, ...]
     ) -> ParsedEntry:
         raw = await asyncio.wait_for(self.model(request), timeout=request.timeout_seconds)
-        text = raw if isinstance(raw, str) else canonical_json(raw)
-        tokens = self.count_tokens("", text)
-        if type(tokens) is not int or not 0 < tokens <= request.max_output_tokens:
-            raise _Rejected("output_token_limit")
+        # 输入的字节上界适合预算准入，不能据它拒绝已生成的中文正文。
         try:
             return parse_entry(
                 raw,
                 allowed_sources={item.evidence.source_id for item in materials},
-                max_chars=self.policy.body_chars,
+                max_chars=min(2000, self.policy.body_chars),
             )
         except (ValueError, TypeError, RecursionError) as exc:
             code = str(exc)
@@ -1077,10 +1114,14 @@ class ExperienceService:
             anchor = datetime.combine(local.date(), time.min, ZoneInfo(self.policy.timezone)).timestamp()
         night_id = stable_key("night", _owner(context), anchor)
         used = await self.store.quota_usage(
-            period=night_id, pool="experience_attempt", purpose="dream"
+            period=f"{night_id}:manual" if manual else night_id,
+            pool="experience_attempt", purpose="dream"
         )
         # 手动触发仍保留上限（防狂点烧额度），但比自动流程宽松一些。
-        limit = max(self.policy.dream_per_night, 5) if manual else self.policy.dream_per_night
+        limit = max(self.policy.dream_per_night, 5) if manual else self.policy.dream_per_night * 3
+        if not manual and await self.store.quota_usage(
+                period=night_id, pool="dream_saved", purpose="dream") >= self.policy.dream_per_night:
+            return _result("skipped", "dream_success_limit")
         if used >= limit:
             log_dream_skip("experience_attempt_limit", key=key)
             return _result("skipped", "experience_attempt_limit")
@@ -1127,12 +1168,16 @@ class ExperienceService:
         # relaxed：素材窗口已封存（手动补写过去某天），生成期间的新消息不该
         # 直接判死；授权与素材有效性照常校验，只有版本/水位改为写入瞬间一致。
         token = LENIENT_SAVE.set(bool(relaxed))
+        snapshot_token = _LOCAL_SNAPSHOTS.set(())
+        sealed_token = SEALED_DAY.set(kind == ContentKind.DIARY and end <= self._now())
         try:
             return await self._queue_entry_inner(
                 context, kind, period, entry_id, budget_period, limit, start, end,
                 persona_text, materials, night=night, manual=manual, relaxed=relaxed,
             )
         finally:
+            SEALED_DAY.reset(sealed_token)
+            _LOCAL_SNAPSHOTS.reset(snapshot_token)
             LENIENT_SAVE.reset(token)
 
     async def _queue_entry_inner(
@@ -1166,11 +1211,21 @@ class ExperienceService:
             )
             if not relaxed and used >= limit:
                 return _result("skipped", "experience_attempt_limit")
+            if not manual:
+                progress = await self.store.experience_attempt_progress(budget_period, kind.value)
+                if progress["unknown"]:
+                    return _result("skipped", "model_result_unknown")
+                if progress["reserved"]:
+                    return _result("skipped", "generation_in_progress")
             # Capture before collection so a clear during local reads cannot become fresh.
             initial = ((context, await self.store.get_generation(context)),)
             if not await self._current(initial):
                 return _result("rejected", "context_changed")
-            available = (await self.local_materials(context)) + tuple(materials[:20])
+            own = await self.local_materials(context)
+            _LOCAL_SNAPSHOTS.set(tuple((item, initial[0][1]) for item in own
+                                      if item.evidence.kind == ContentKind.OBSERVATION
+                                      and item.evidence.source_id.startswith("state:")))
+            available = own + tuple(materials[:20])
             eligible = []
             for item in available:
                 if (
@@ -1221,6 +1276,22 @@ class ExperienceService:
             # 把预算键也纳进 job_id：手动（:manual）与历史自动尝试的
             # 「第 N 次」会算出同一个 job_id，撞上旧预留就是 reservation_exists。
             job_id = stable_key("experience-job", entry_id, budget_period, used + 1)
+            # 未提交生成前检查真实上游，非 200 不预留模型/经验额度。
+            if self.preflight is not None:
+                try:
+                    await self.preflight(kind.value)
+                except Exception as exc:
+                    code = str(exc) if str(exc) in (
+                        "model_preflight_http_error", "model_preflight_timeout",
+                        "model_preflight_unavailable", "provider_changed",
+                    ) else "model_preflight_unavailable"
+                    result = _result("failed", code, day=(
+                        period if kind == ContentKind.DIARY else
+                        datetime.fromtimestamp(self._now(), ZoneInfo(self.policy.timezone)).date().isoformat()),
+                        attempted_at=self._now(), http_status=getattr(exc, "http_status", None))
+                    logging.getLogger("astrbot_plugin_livingemotion").info(
+                        "%s preflight failed: %s HTTP=%s", kind.value, code, result["http_status"])
+                    return result
         except _Rejected as exc:
             return _result("rejected", str(exc))
         except Exception:
@@ -1330,6 +1401,8 @@ class ExperienceService:
                         "state_owner": to_dict(dream_owner) if dream_owner else None,
                         "cycle_id": night.cycle_id, "sleep_started_at": night.sleep_started_at,
                         "wake_at": night.wake_at} if themes and night else None),
+                    title=entry.title if kind == ContentKind.DIARY else "",
+                    emotion_snapshot=emotion_snapshot(mood.get("current_emotions"), at=requested_at),
                 )
                 if relaxed:
                     # 已封存窗口：用写入瞬间的版本号做 CAS，避免「生成期间
@@ -1362,10 +1435,24 @@ class ExperienceService:
                     await self.store.finish_quota(
                         marker, status="succeeded", reason_code="experience_saved"
                     )
+                if kind == ContentKind.DREAM and not manual:
+                    success = await self.store.reserve_quota(
+                        f"dream-saved:{entry_id}", context, initial[0][1],
+                        period=budget_period, purpose="dream", pool="dream_saved",
+                        limit=self.policy.dream_per_night)
+                    if success["status"] == "reserved":
+                        await self.store.finish_quota(
+                            f"dream-saved:{entry_id}", status="succeeded", reason_code="experience_saved")
                 status, reason = "succeeded", saved["reason_code"]
                 self._remember(job_id, _result(saved["status"], reason, experience_id=entry_id))
             except asyncio.CancelledError:
                 status, reason = "cancelled", "generation_cancelled"
+                self._remember(job_id, _result(status, reason))
+                raise
+            except ModelResultUnknown as exc:
+                status, reason = "unknown", str(exc) if str(exc) in (
+                    "model_output_invalid", "model_response_invalid", "provider_result_unknown",
+                ) else "model_result_unknown"
                 self._remember(job_id, _result(status, reason))
                 raise
             except TimeoutError:
@@ -1382,7 +1469,16 @@ class ExperienceService:
             finally:
                 if reserved:
                     await self.store.finish_quota(reservation, status=status, reason_code=reason)
+                if not manual:
+                    await self.store.record_auto_experience_status(
+                        context, kind.value, {**self.outcome(job_id), "day": (
+                            period if kind == ContentKind.DIARY else
+                            datetime.fromtimestamp(requested_at, ZoneInfo(self.policy.timezone)).date().isoformat()),
+                            "attempted_at": requested_at, "finished_at": self._now()})
+                logging.getLogger("astrbot_plugin_livingemotion").info(
+                    "%s completed: day=%s status=%s reason=%s", kind.value, period, status, reason)
 
+        requested_at = self._now()
         submitted = await self.runtime.submit(
             job_id,
             context,
@@ -1401,7 +1497,8 @@ class ExperienceService:
             self._remember(job_id, _result("queued", "queued", experience_id=entry_id))
         elif submitted.get("reason_code") != "duplicate_job":
             self._remember(job_id, {**submitted, "experience_id": entry_id})
-        return {**submitted, "job_id": job_id, "experience_id": entry_id}
+        return {**submitted, "job_id": job_id, "experience_id": entry_id,
+                "attempted_at": requested_at}
 
     async def _load_authorized(self, entry_id, context, credential, operation):
         if not await self._access(credential, operation, context):

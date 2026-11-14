@@ -733,6 +733,11 @@ async function loadBehaviorOutcome(root) {
         state.data.config.values.timezone, { year: "numeric", second: "2-digit" }));
       time.append(timestamp);
       const id = node("td"); id.append(node("code", row.dataset.sendId));
+      if (!item.simulated) id.append(node("small", ({
+        succeeded: t("平台已确认"), unknown: t("结果未知"), cancelled: t("已取消"),
+        failed: t("失败"), sending: t("发送中"), generating: t("生成中"),
+        reserved: t("已预留"), pending: t("待处理"),
+      })[item.status ?? item.result] || resultLabel(item.status ?? item.result), "hint"));
       // 旧记录不能用当前情绪补填，「当前情绪」也不是历史快照。
       const emotion = node("td", item.emotion_snapshot ? affectLabel(item.emotion_snapshot) :
         item.emotion_label && item.emotion_label !== "当前情绪" ? controlled(item.emotion_label) : t("未记录"));
@@ -747,7 +752,12 @@ async function loadBehaviorOutcome(root) {
       body.append(row);
     }
     table.append(body);
-    root.replaceChildren(response.items.length ? table : node("p", filter.query ? t("没有匹配日志。") : t("暂无发送日志。"), "hint"));
+    const counts = object(response.send_statistics ?? state.data.behavior.send_statistics).global;
+    const usage = counts ? node("p", t("今日额度占用 {0}/{1} · 平台确认 {2} · 未知 {3} · 取消 {4} · 失败 {5} · 处理中 {6}",
+      [counts.consumed, response.send_daily_limit ?? state.data.behavior.config.behavior_daily_limit,
+        counts.confirmed, counts.unknown, counts.cancelled, counts.failed, counts.in_progress]), "hint") : null;
+    root.replaceChildren(...(usage ? [usage] : []), response.items.length ? table :
+      node("p", filter.query ? t("没有匹配日志。") : t("暂无发送日志。"), "hint"));
     if (response.total > PAGE_SIZE || filter.page > 1) {
       const pager = node("div", undefined, "pager");
       const change = page => { state.filters.behavior.page = page; remember(); void loadBehaviorOutcome(root); };
@@ -870,6 +880,20 @@ function nightDetails(key, title, child) {
   });
   return panel;
 }
+// 长夜页：把「清醒线」讲清楚——在线以上算睡够，自主参与不需要唤醒窗口。
+function nightRestedText(value) {
+  const comfort = Number(value?.comfort_percent);
+  if (!Number.isFinite(comfort)) return t("精力上限固定 100。");
+  const current = Number(value?.energy_percent);
+  if (!Number.isFinite(current)) {
+    return t("清醒线 {0}：精力达到这条线算睡够，可正常自主参与；低于它又被叫醒才进入唤醒窗口。", [comfort]);
+  }
+  const above = current >= comfort;
+  return above
+    ? t("清醒线 {0} · 当前 {1} 已在线上：算睡够，正常自主参与，不消耗唤醒轮次。", [comfort, current.toFixed(1)])
+    : t("清醒线 {0} · 当前 {1} 在线下：夜里被叫醒才进入唤醒窗口（{2} 轮 / {3} 分钟）。",
+      [comfort, current.toFixed(1), text(value?.wake_reply_limit ?? 0), text(value?.schedule?.wake_window_minutes ?? 0)]);
+}
 function renderNight(container) {
   const value = state.data.night;
   const catchUp = object(value.catch_up);
@@ -887,7 +911,8 @@ function renderNight(container) {
     ]);
   container.append(head);
   // 长夜页精简：移除会话提示和周期详情，页头后直接展示精力。
-  container.append(block(t("精力"), metric(t("当前精力"), value.energy)));
+  container.append(block(t("精力"), metric(t("当前精力"), value.energy),
+    node("p", nightRestedText(value), "hint")));
 
   const schedule = node("div");
   schedule.append(
@@ -899,6 +924,7 @@ function renderNight(container) {
       [t("午休"), plan.nap_enabled ? `${clockText(plan.nap_start)} → ${clockText(plan.nap_end)}` : t("未启用")],
       [t("赖床范围"), t("{0}–{1} 分钟", [text(plan.lie_in_min), text(plan.lie_in_max)])],
       [t("聊天唤醒"), `${({ chat: t("仅私聊"), never: t("不可唤醒"), both: t("私聊或群原生 @") })[plan.wake_mode] || text(plan.wake_mode)} · ${t("{0} 轮 / {1} 分钟", [text(plan.wake_reply_limit), text(plan.wake_window_minutes)])}`],
+      [t("清醒线"), t("{0}（线上算睡够，自主参与不占唤醒轮次）", [text(value.comfort_percent)])],
       [t("允许睡眠影响聊天"), yesno(plan.allow_sleep)],
       [t("时区"), clockText(plan.timezone)],
     ]));
@@ -936,7 +962,10 @@ function renderNight(container) {
   container.append(nightDetails("manual", t("手动作息"), manual));
 
   const energy = block(t("精力日志")); container.append(energy);
-  if (state.selection.persona_id) state.dispose = mountEnergy(energy, { api, selection: selectedScope(), onError: handleError });
+  if (state.selection.persona_id) state.dispose = mountEnergy(energy, {
+    api, selection: selectedScope(), onError: handleError,
+    comfort: Number.isFinite(Number(value.comfort_percent)) ? Number(value.comfort_percent) : null,
+  });
   else energy.append(node("p", t("没有已授权人格，不能查询精力历史。"), "empty"));
 }
 function reasonCodeView(code) {
@@ -1031,8 +1060,9 @@ function renderExperienceTask(kind) {
   if (!panel) return;
   const value = state.data.experience;
   const task = object(value[kind]);
+  const automatic = object(object(value.automatic)[kind]);
   const action = state.data.actions.find(item => item.id === `${kind}.generate`);
-  const signature = JSON.stringify([task, action]);
+  const signature = JSON.stringify([task, automatic, action]);
   if (panel.dataset.signature === signature) return;
   panel.dataset.signature = signature;
   const focused = panel.contains(document.activeElement);
@@ -1055,6 +1085,14 @@ function renderExperienceTask(kind) {
   if (task.status === "unknown") taskCard.append(node("p",
     t("模型可能已经消耗费用。再次点击会发起新请求，可能再次计费；不会自动重试。"), "hint warn-text"));
   panel.append(taskCard);
+  if (automatic.status && automatic.status !== "idle") {
+    const card = node("span", `${t("自动")} · ${text(automatic.day, "")} · ${
+      experienceStatus(automatic.status)}`, "micro");
+    card.dataset.automaticTask = kind;
+    if (automatic.reason_code) card.append(node("span", reasonExplanation(automatic.reason_code), "hint"));
+    if (automatic.http_status) card.append(node("span", ` HTTP ${automatic.http_status}`));
+    panel.append(card);
+  }
   if (focused && !panel.closest(".experience-paper").hidden) control.focus({ preventScroll: true });
 }
 function syncExperience() {
@@ -1364,15 +1402,26 @@ function paperView(item, kind) {
   let body = text(item.body, t("正文未提供。"));
   const weatherText = weather.summary ?? header.weather ??
     body.match(/^天气[：:]\s*(.+)$/m)?.[1] ?? "";
-  const day = text(item.date ?? item.period ?? header.date,
+  const day = text(item.date ?? header.date ??
+    (kind === "diary" && /^\d{4}-\d{2}-\d{2}$/.test(item.period) ? item.period : undefined),
     body.match(/^日期[：:]\s*(\d{4}-\d{2}-\d{2})/m)?.[1] ?? date(item.created_at));
   // 程序头只显示一次，正文保持纯文本，不把内容当成 HTML。
   body = body.replace(/^(?:日期|住所|城市|天气)[：:].*(?:\r?\n|$)/gm, "")
     .replace(/^Dream \(imagined\):\s*/, "").trim();
   const summary = node("summary", undefined, "paper-heading");
-  summary.append(node("h3", text(item.title, kind === "diary" ? t("私人日记") : t("梦境"))));
+  const top = node("div", undefined, "paper-heading-top");
+  top.append(node("h3", day));
+  const label = kind === "diary" ? text(item.title, "") : text(object(item.emotion_snapshot).label, "");
+  if (label && label !== day) top.append(node("span", label,
+    kind === "diary" ? "paper-title" : "paper-emotion"));
+  summary.append(top);
   const metadata = node("div", undefined, "paper-meta");
-  metadata.append(node("time", day));
+  const iso = day.match(/^\d{4}-\d{2}-\d{2}/)?.[0];
+  const weekday = iso ? new Date(`${iso}T12:00:00Z`).getUTCDay() : NaN;
+  if (Number.isFinite(weekday)) {
+    const time = node("time", t(["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"][weekday]));
+    time.dateTime = iso; metadata.append(time);
+  }
   if (kind === "diary" && weatherText) metadata.append(node("span", weatherText));
   summary.append(metadata);
   paper.append(summary, node("div", body, "paper-body"));
