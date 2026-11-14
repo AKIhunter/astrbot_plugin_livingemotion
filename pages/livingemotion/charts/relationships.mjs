@@ -1,8 +1,8 @@
-import { t, locale } from "../i18n.mjs";
-import { node, button, svgNode, labelled } from "../dom.mjs";
-import { object, list, text, percent, scopeParams, relationshipStage } from "../model.mjs";
-import { pageError } from "../api.mjs";
-import { seedPeople, constrain3D, separate3D, createForce3D } from "./force3d.mjs";
+import { t, locale } from "../i18n.mjs?v=eff0d6f932b0";
+import { node, button, svgNode, labelled } from "../dom.mjs?v=eff0d6f932b0";
+import { object, list, text, percent, scopeParams, relationshipStage } from "../model.mjs?v=eff0d6f932b0";
+import { pageError } from "../api.mjs?v=eff0d6f932b0";
+import { seedPeople, constrain3D, separate3D, createForce3D } from "./force3d.mjs?v=eff0d6f932b0";
 export const NODE_CAP = 200;
 export const PERSON_RADIUS = 4.5, CENTER_CLEARANCE = 68, PERSON_SPACING = 20;
 // 常驻显示名字的子节点数量：按与中心的距离升序取，其余只在悬浮时出现。

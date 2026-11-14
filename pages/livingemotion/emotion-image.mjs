@@ -1,6 +1,6 @@
-import { t } from "./i18n.mjs";
-import { node, button } from "./dom.mjs";
-import { PageError, pageError } from "./api.mjs";
+import { t } from "./i18n.mjs?v=eff0d6f932b0";
+import { node, button } from "./dom.mjs?v=eff0d6f932b0";
+import { PageError, pageError } from "./api.mjs?v=eff0d6f932b0";
 
 // 图片由管理员自己维护：文件名与情绪名一致（开心.png / 开心-2.webp …）。
 // 上限与后端 storage/emotion_images.py 保持一致，前端先拦一次，避免白跑一趟。

@@ -1,5 +1,5 @@
-import { t, locale, controlled } from "./i18n.mjs";
-import { scopeParams } from "./model.mjs";
+import { t, locale, controlled } from "./i18n.mjs?v=eff0d6f932b0";
+import { scopeParams } from "./model.mjs?v=eff0d6f932b0";
 export class PageError extends Error {
   constructor(code, message) { super(message); this.code = String(code || "unavailable"); }
 }

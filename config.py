@@ -127,10 +127,15 @@ class Config:
     energy_fatigue_per_minute: float = 0.8
     energy_recovery_per_minute: float = 1.5
     # 精力达到这条线即算清醒：正常自主参与，不进入唤醒配额、不受唤醒窗口限制。
-    # 低于这条线又被叫醒时，才开一个短唤醒窗口。
+    # 低于这条线又被叫醒时，才开一个短唤醒窗口。深睡不受影响。
     energy_comfort_percent: float = 80.0
     catchup_enabled: bool = True
     catchup_reply_enabled: bool = True
+    promise_enabled: bool = True
+    promise_max_active: int = 3
+    promise_max_depth: int = 3
+    promise_advance_limit: int = 3
+    promise_tick_seconds: int = 60
     closing_enabled: bool = False
     closing_random: bool = False
     closing_lead_minutes: int = 5

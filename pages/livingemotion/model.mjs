@@ -1,4 +1,4 @@
-import { t, locale, controlled, resource } from "./i18n.mjs";
+import { t, locale, controlled, resource } from "./i18n.mjs?v=eff0d6f932b0";
 export const PAGE_SIZE = 10;
 export const SECTIONS = resource({
   overview: ["01", "PERSONAL TELEMETRY", "TA"],

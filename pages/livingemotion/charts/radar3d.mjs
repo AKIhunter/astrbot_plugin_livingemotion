@@ -1,6 +1,6 @@
-import { t, locale } from "../i18n.mjs";
-import { DIMENSIONS, unit, percent } from "../model.mjs";
-import { node } from "../dom.mjs";
+import { t, locale } from "../i18n.mjs?v=eff0d6f932b0";
+import { DIMENSIONS, unit, percent } from "../model.mjs?v=eff0d6f932b0";
+import { node } from "../dom.mjs?v=eff0d6f932b0";
 
 /**
  * 3D 情绪球（canvas 实现，无第三方库）。

@@ -1,7 +1,7 @@
-import { t, locale, controlled, resource } from "./i18n.mjs";
-import { object, list, text, fieldValue, stageNames, DEFAULT_STAGE_NAMES } from "./model.mjs";
-import { fieldHelp, localizedFieldLabel } from "./config-resources.mjs";
-import { node, button } from "./dom.mjs";
+import { t, locale, controlled, resource } from "./i18n.mjs?v=eff0d6f932b0";
+import { object, list, text, fieldValue, stageNames, DEFAULT_STAGE_NAMES } from "./model.mjs?v=eff0d6f932b0";
+import { fieldHelp, localizedFieldLabel } from "./config-resources.mjs?v=eff0d6f932b0";
+import { node, button } from "./dom.mjs?v=eff0d6f932b0";
 const labels = resource({
   relationship_special_description: t("独特关系说明"),
   relationship_stage_names: t("关系阶段自定义名称"), enabled: t("启用 livingEmotion"), mode: t("工作模式"), persona_mode: t("人格解析方式"), persona_id: t("原生人格"),
@@ -23,6 +23,16 @@ const labels = resource({
   energy_reply_cost: t("每次回复消耗"), energy_fatigue_per_minute: t("疲劳每分钟消耗"),
   energy_recovery_per_minute: t("每分钟恢复"), energy_max: t("精力上限（固定）"),
   energy_comfort_percent: t("清醒精力线"),
+  promise_enabled: t("记住答应过的事"), promise_max_active: t("同时追踪的承诺条数"),
+  promise_max_depth: t("单条承诺最多拆几层"), promise_advance_limit: t("每轮最多推进几条"),
+  promise_tick_seconds: t("承诺推进间隔"),
+  weather_factor_enabled: t("天气影响情绪"), weather_poll_seconds: t("天气抓取间隔"),
+  weather_transition_seconds: t("天气过渡时长"), weather_weight_scale: t("天气影响强度"),
+  weather_stale_seconds: t("天气过期时间"), weather_forecast_days: t("预报天数"),
+  weather_forecast_refresh_seconds: t("预报刷新间隔"),
+  weather_window_start_hour: t("抓取窗口开始"), weather_window_end_hour: t("抓取窗口结束"),
+  weather_degrade_after_failures: t("连续失败降级阈值"),
+  weather_recover_after_successes: t("恢复所需成功次数"),
   night_energy_reply_cost: t("每次回复消耗"), night_energy_fatigue_per_minute: t("疲劳每分钟消耗"),
   night_energy_recovery_per_minute: t("每分钟恢复"),
   closing_enabled: t("睡前晚安"), closing_random: t("道别语随机生成"), closing_provider_id: t("收尾模型"),
@@ -40,7 +50,7 @@ const optionLabels = resource({
   context: t("按真实会话独立"), per_scene: t("按真实会话独立"),
 });
 const groups = resource({ quick: t("快速开始"), persona: t("人格与状态模式"), emotion: t("情绪"), relationships: t("关系"),
-  behavior: t("主动行为"), night: t("长夜"), experience: t("日记与梦境"), memory: t("记忆") });
+  behavior: t("主动行为"), promise: t("承诺代办"), night: t("长夜"), experience: t("日记与梦境"), memory: t("记忆") });
 const quickKeys = new Set(["enabled", "mode", "persona_id", "timezone", "night_timezone", "model_provider_id",
   "residence_city", "home_city", "memory_mode", "use_livingmemory", "night_enabled", "sleep_enabled"]);
 const advancedPattern = /budget|limit|threshold|concurrency|timeout|cooldown|retention|ttl|maximum|max_records|read|export|write|lead|backoff/;
@@ -192,16 +202,26 @@ function styleSummaryBlock(select, styleApi, sessionPersona = "") {
   return holder;
 }
 function setExpandedGroup(root, state, group, toggle = true) {
-  const target = [...root.querySelectorAll("[data-task-group]")].find(section => section.dataset.taskGroup === group);
-  if (!target) return;
+  // 先在 root 里找；settings 节点被宿主搬过位置时，退回到整篇文档再找一次。
+  const pick = scope => [...scope.querySelectorAll("[data-task-group]")];
+  const target = pick(root).find(section => section.dataset.taskGroup === group) ||
+    pick(document).find(section => section.dataset.taskGroup === group);
+  if (!target) {
+    // 找不到分区说明渲染没走完；留一条线索，不再静默返回让人以为是点了没用。
+    console.warn("[livingemotion] 找不到设置分组：", group,
+      "已有分组：", pick(document).map(section => section.dataset.taskGroup));
+    return;
+  }
   state.expandedSettingsGroup = state.expandedSettingsGroup === group && toggle ? "" : group;
-  for (const section of root.querySelectorAll("[data-task-group]")) {
+  const all = pick(document).filter(section => section.dataset.taskGroup);
+  for (const section of all) {
     const expanded = section.dataset.taskGroup === state.expandedSettingsGroup;
     section.hidden = !expanded;
     section.inert = !expanded;
     section.setAttribute("aria-hidden", String(!expanded));
     section.classList.remove("settings-group-opening");
-    const jump = [...root.querySelectorAll("[data-settings-jump]")].find(button => button.dataset.settingsJump === section.dataset.taskGroup);
+    const jump = [...root.querySelectorAll("[data-settings-jump]")]
+      .find(button => button.dataset.settingsJump === section.dataset.taskGroup);
     jump?.setAttribute("aria-expanded", String(expanded));
     if (!expanded && section.contains(document.activeElement)) jump?.focus({ preventScroll: true });
   }
@@ -226,6 +246,7 @@ function groupOf(field) {
   if (/diary|dream|residence|home_city/.test(field.key)) return "experience";
   if (/relation|affinity/.test(field.key)) return "relationships";
   if (/autonomy|behavior|group/.test(field.key)) return "behavior";
+  if (/^promise_/.test(field.key)) return "promise";
   return Object.hasOwn(groups, field.section) ? field.section : "emotion";
 }
 export function settingsGroups(fields, config) {
@@ -282,13 +303,25 @@ export function renderSettings(root, state, options, updateControls, description
     state.expandedSettingsGroup = taskGroups.some(group => group.id === "quick_start") ? "quick_start" : taskGroups[0]?.id || "";
   }
   for (const group of taskGroups) {
-    const jump = button(group.label, () => setExpandedGroup(root, state, group.id));
+    // 只建按钮，不在这里逐个挂监听：统一由 jumps 上的事件委托处理。
+    // 这样即便按钮被重新渲染替换、或某个分组渲染中途出错，点击依然有效。
+    const jump = node("button", group.label);
+    jump.type = "button";
     jump.dataset.settingsJump = group.id;
     jump.setAttribute("aria-controls", `settings-group-${group.id}`);
     jump.setAttribute("aria-expanded", String(state.expandedSettingsGroup === group.id));
     jumps.append(jump);
   }
-  root.append(jumps);
+  // 事件委托：一次绑定，长期有效。用 closest 支持点到按钮内的文字节点。
+  jumps.addEventListener("click", event => {
+    const hit = event.target?.closest?.("[data-settings-jump]");
+    if (!hit) return;
+    event.preventDefault();
+    setExpandedGroup(root, state, hit.dataset.settingsJump);
+  });
+  // 先攒着：等所有分区都建好再一起挂上去。这样某个分组建失败时，
+  // 不会出现「按钮在那儿、却找不到对应分区」的死按钮。
+  const builtSections = [];
   const dialog = node("dialog", undefined, "config-help-dialog");
   dialog.id = "config-help-dialog";
   dialog.setAttribute("aria-labelledby", "config-help-title");
@@ -305,6 +338,9 @@ export function renderSettings(root, state, options, updateControls, description
   if (!fields.length) root.append(node("p", t("宿主未提供可编辑字段，请检查原生配置能力。"), "empty"));
   for (const { id: group, label: title, fields: selected } of taskGroups) {
     if (!selected.length && group !== "night") continue;
+    // 一个分组渲染失败（缺字段、宿主数据异常）不能连累其余分组：
+    // 否则后面的分区节点建不出来，二级按钮点下去就找不到目标。
+    try {
     const section = node("section", undefined, "settings-group"); section.dataset.taskGroup = group;
     section.id = `settings-group-${group}`;
     section.hidden = !experienceOnly && state.expandedSettingsGroup !== group;
@@ -499,23 +535,27 @@ export function renderSettings(root, state, options, updateControls, description
         control = node("div", undefined, "number-list-control"); control.append(input, suggestions);
       }
       wrapper.append(description, control);
-      const isAdvanced = field.advanced || advancedPattern.test(field.key);
+      // 已经有二级分组的字段（长夜的五张卡），一律留在自己的卡片里：
+      // 关键词（limit/read/lead 之类）只用来给「没有分组」的字段兜底，
+      // 否则「唤醒回复轮数」会因为有 limit 被扔进高级设置，卡片里就少一项。
+      const isAdvanced = !field.subsection &&
+        (field.advanced || advancedPattern.test(field.key));
       // 先看二级分组：长夜里的字段进各自小卡片；其余回落到原来的 common / advanced。
       const bucket = !isAdvanced && field.subsection ? subsectionBodies.get(field.subsection) : null;
-      if (bucket) bucket.append(wrapper);
-      else if (isAdvanced) advancedBody.append(wrapper);
-      else {
-        // 只有真的落到 common 的字段才需要把 common 放出来。
-        common.hidden = false;
-        common.append(wrapper);
-      }
+      // 记录这个字段最终落在哪个容器：人格说明、风格摘要要挂在同一处。
+      let mounted;
+      if (bucket) mounted = bucket;
+      else if (isAdvanced) mounted = advancedBody;
+      else mounted = common;
+      mounted.append(wrapper);
+      if (!bucket && !isAdvanced) common.hidden = false;
       // 人格说明只读展示：内容来自宿主 personas.system_prompt，本页不写入。
       if (field.key === "persona_id") {
         if (typeof descriptionLoader === "function") {
-          body.append(personaDescriptionBlock(input, descriptionLoader));
+          mounted.append(personaDescriptionBlock(input, descriptionLoader));
         }
         if (styleApi && typeof styleApi.load === "function" && typeof styleApi.save === "function") {
-          body.append(styleSummaryBlock(input, styleApi, sessionPersona));
+          mounted.append(styleSummaryBlock(input, styleApi, sessionPersona));
         }
       }
     }
@@ -573,8 +613,17 @@ export function renderSettings(root, state, options, updateControls, description
     if (advancedBody.childElementCount) section.append(advanced);
     // 有二级卡片时，common 仅在真有非分组字段时才显示；空 div 不占位。
     if (subsectionBodies.size && !common.childElementCount) common.remove();
-    root.append(section);
+    builtSections.push(section);
+    } catch (error) {
+      console.error("[livingemotion] 设置分组渲染失败：", group, error);
+      // 让失败可见：分区里直接写一句，而不是让页面悄无声息地少一块。
+      const note = node("p", t("「{0}」设置加载失败：{1}", [title, String(error?.message || error)]), "error-text");
+      note.dataset.settingsError = group;
+      builtSections.push(note);
+    }
   }
+  // 分区与按钮一起挂上：有分区才有按钮，不会留下点不动的死按钮。
+  root.append(jumps, ...builtSections);
   mountRelationshipEditor(root, state);
 }
 

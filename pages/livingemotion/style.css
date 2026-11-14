@@ -9,6 +9,21 @@
   --z-sticky: 2; --z-cover: 3; --z-editor: 4; --z-skip: 5;
   color-scheme: light;
 }
+/* 真实发送与测试发送并排；空出的右侧给承诺列表。 */
+.behavior-action-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+@media (max-width: 720px) { .behavior-action-row { grid-template-columns: 1fr; } }
+.behavior-action-row > * { min-width: 0; }
+#behavior-promises { min-height: 40px; }
+.promise-list { display: grid; gap: 10px; }
+.promise-card {
+  border: 1px solid var(--line); border-left: 3px solid var(--accent);
+  border-radius: 8px; padding: 10px 12px; background: var(--surface);
+}
+.promise-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.promise-bucket { font-size: 12px; font-weight: 600; color: var(--accent); }
+.promise-eta { font: 12px/1.6 var(--mono); opacity: .75; }
+.promise-desc { margin: 6px 0 4px; overflow-wrap: anywhere; }
+.promise-card .hint { margin: 0; font-size: 12px; }
 /* 六列发送日志，在窄屏按相同字段纵向排列。 */
 #behavior-log-query { width: 100%; margin-bottom: 12px; }
 .behavior-log-table { width: 100%; table-layout: fixed; }

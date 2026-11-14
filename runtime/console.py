@@ -91,8 +91,8 @@ def emotion_analysis(value: BotAffect):
 
 SETTINGS_GROUPS = (
     ("quick_start", "快速开始"), ("persona", "人格与状态模式"), ("emotion", "情绪"),
-    ("relationship", "关系"), ("behavior", "主动行为"), ("night", "长夜"),
-    ("experience", "日记与梦境"), ("memory", "记忆"),
+    ("relationship", "关系"), ("behavior", "主动行为"), ("promise", "承诺代办"),
+    ("night", "长夜"), ("experience", "日记与梦境"), ("memory", "记忆"),
 )
 
 # 「长夜」原来把作息、唤醒、精力、醒后补课、睡前晚安混在同一张表里，27 项一眼看不出
@@ -180,9 +180,22 @@ FIELD_LABELS = {
     "wake_autocatchup_enabled": "自然醒后主动补答",
     "wake_greeting_enabled": "先发一句刚醒的招呼",
     "wake_greeting_texts": "刚醒招呼候选句子",
-    "wake_autocatchup_enabled": "自然醒后主动补答",
-    "wake_greeting_enabled": "先发一句刚醒的招呼",
-    "wake_greeting_texts": "刚醒招呼候选句子",
+    "promise_enabled": "记住答应过的事",
+    "promise_max_active": "同时追踪的承诺条数",
+    "promise_max_depth": "单条承诺最多拆几层",
+    "promise_advance_limit": "每轮最多推进几条",
+    "promise_tick_seconds": "承诺推进间隔",
+    "weather_factor_enabled": "天气影响情绪",
+    "weather_poll_seconds": "天气抓取间隔",
+    "weather_transition_seconds": "天气过渡时长",
+    "weather_weight_scale": "天气影响强度",
+    "weather_stale_seconds": "天气过期时间",
+    "weather_forecast_days": "预报天数",
+    "weather_forecast_refresh_seconds": "预报刷新间隔",
+    "weather_window_start_hour": "抓取窗口开始",
+    "weather_window_end_hour": "抓取窗口结束",
+    "weather_degrade_after_failures": "连续失败降级阈值",
+    "weather_recover_after_successes": "恢复所需成功次数",
     "autonomy_qq_ids": "主动私聊 QQ 号码", "autonomy_qq_group_ids": "主动发言 QQ 群号",
 }
 
@@ -197,6 +210,7 @@ def field_section(name):
               "allow_sleep", "catchup", "closing"), "night"),
             (("diary", "dream", "experience", "home_city"), "experience"),
             (("autonomy", "group", "behavior", "dnd", "active", "muted"), "behavior"),
+            (("promise",), "promise"),
             (("relationship",), "relationship")):
         if name.startswith(prefixes):
             return group

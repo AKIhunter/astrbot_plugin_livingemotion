@@ -1,4 +1,4 @@
-import { text } from "./model.mjs";
+import { text } from "./model.mjs?v=eff0d6f932b0";
 export function node(tag, content, className) {
   const element = document.createElement(tag);
   if (content !== undefined) element.textContent = text(content, "");

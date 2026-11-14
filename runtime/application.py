@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from collections import OrderedDict
 from dataclasses import replace
@@ -38,6 +39,8 @@ from .background import BackgroundRuntime
 from .console import ApplicationError as ApplicationError
 from .console import Console
 from .lifecycle import Lifecycle
+
+logger = logging.getLogger("astrbot_plugin_livingemotion.promise")
 from .materials import Materials
 from .models import Generation
 from .memory import AutoMemoryIngestor, build_memory_backend
@@ -130,6 +133,17 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         self.catchup_archive = CatchupArchive(self.store)
         await self.catchup_archive.open()
         await self._build_services()
+        # 承诺到期扫描必须在这里挂：不能等 _promises() 首次调用，
+        # 否则 tick 等 attach、attach 等 tick，永远转不起来。
+        try:
+            service = self._promises()
+            if self.lifecycle is not None and getattr(self.lifecycle, "_promise_task", None) is None:
+                self.lifecycle.attach_promise_runner(self._promise_tick)
+            logger.warning("[LE-promise] 到期扫描已挂载 tick=%ss enabled=%s",
+                           getattr(self.config, "promise_tick_seconds", 60),
+                           getattr(self.config, "promise_enabled", "?"))
+        except Exception as exc:
+            logger.warning("[LE-promise] 到期扫描挂载失败 %r", exc)
         # 天气权重因子：后台每小时取一次实况，页面与控制台只读内存快照。
         # 与页面同用一个限时/有界/single-flight 客户端，不会多开连接。
         if getattr(self, "_manual_weather", None) is None:
@@ -362,6 +376,138 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
 
         return Notice.render(name, seed, **fields)
 
+    def _promises(self):
+        """承诺服务按需装配，未开启时也不占内存。"""
+        service = getattr(self, "_promise_service", None)
+        if service is None:
+            from .promise_service import register
+
+            service = register(self.store, self)
+            self._promise_service = service
+            # 把到期扫描挂到生命周期上，插件的启动关闭会一起带走。
+            if self.lifecycle is not None:
+                self.lifecycle.attach_promise_runner(self._promise_tick)
+        return service
+
+    async def _inject_promise_contract(self, request, context):
+        """告诉模型怎么承诺与取消；不注入这段，标记永远不会出现。"""
+        if not bool(getattr(self.config, "promise_enabled", True)):
+            return
+        try:
+            rows = await self._promises().active(context)
+        except Exception:
+            rows = []
+        lines = [
+            "【记账规则 必须遵守】",
+            "你说了「稍后」「一会儿」「等一下」「明天」这类还没做到的事时，"
+            "必须在回复的最后一行单独写一条记账指令，系统会把它删掉，用户看不到：",
+            "<!--promise:档位:这件事做什么-->",
+            "档位只能填这六个之一：马上 一会儿 待会 今晚 明天 过几天",
+            "示例（整行照抄格式）：<!--promise:一会儿:把昨晚那首歌找出来发他-->",
+            "只有真的答应了一件还没做的事才写。闲聊、反问、已经做完的事都别写。"
+            "一条回复最多写一条。指令必须是回复的最后一行。",
+        ]
+        if rows:
+            lines.append("现在挂着这些没做完的事：")
+            for index, row in enumerate(rows[:3], start=1):
+                lines.append(f"{index} {row['description']}（{row.get('bucket_label', '')}）")
+            lines.append("对方要取消其中一件时，末尾加 <!--promise-cancel:编号或关键词-->，"
+                         "不要只在嘴上说取消。")
+        request.extra_user_content_parts.append(self.bridge.text_part("\n".join(lines)))
+        try:
+            logger.warning(
+                "[LivingEmotion] 承诺契约已注入 挂载=%d 提示词=%d字", len(rows), len("\n".join(lines)))
+        except Exception:
+            pass
+
+    async def _promise_tick(self):
+        """每轮只处理少量到期项，避免一次卡太久。"""
+        if not bool(getattr(self.config, "promise_enabled", True)):
+            return
+        try:
+            service = self._promises()
+            rows = await service.promises.due(now=self.store.clock(), limit=3)
+            logger.warning("[LE-promise] tick 到期=%d", len(rows))
+            sent = await service.run_due(limit=3)
+            if sent:
+                logger.warning("[LE-promise] tick 已发出=%d", sent)
+        except Exception as exc:
+            logger.warning("[LE-promise] tick 失败 %r", exc)
+
+    async def compose_promise(self, context, description, note):
+        """兑现内容要像真的在说话，这一句才值得走模型。"""
+        source = await self.bridge.current(context)
+        if source is None:
+            raise ValueError("promise_source_missing")
+        system = ("用当前人格口吻把先前答应的事做出来并说一句。一到两句，别解释流程，"
+                  "别提模型、弹窗、后台或提示词。只输出要发的话。")
+        data = prompt_json({"persona": await self.persona_style(
+            source.context.persona_id, source.persona.prompt),
+            "promised": description, "detail": note})
+        return await self.purpose_model(
+            context, "closing", system, data,
+            stable_key("promise-compose", context.scope_key, description),
+            max_output_tokens=160)
+
+    def _strip_promise_marks(self, event, result, text):
+        """把回复正文里的承诺指令摘出来，改写气泡并把指令暂存在事件上。"""
+        raw = str(text or "")
+        if "<!--" not in raw or "promise" not in raw:
+            return raw
+        try:
+            cleaned, created, cancels = self._promises().extract(raw)
+        except Exception:
+            return raw
+        if created or cancels:
+            try:
+                logger.warning(
+                    "[LivingEmotion] 承诺标记解析 新建=%d 取消=%d", len(created), len(cancels))
+            except Exception:
+                pass
+        if not created and not cancels:
+            return raw
+        event.set_extra("livingemotion:promise_created", created)
+        event.set_extra("livingemotion:promise_cancels", cancels)
+        # 指令被抠掉后正文可能变短，逐段回填，保持原有气泡结构。
+        remaining = cleaned
+        for part in getattr(result, "chain", ()) or ():
+            if not hasattr(part, "text"):
+                continue
+            original = str(getattr(part, "text", ""))
+            if not original.strip():
+                continue
+            if "<!--" in original:
+                part.text = remaining if remaining else ""
+                remaining = ""
+        return cleaned
+
+    async def flush_promises(self, context, event):
+        """确认发送之后再落库，避免没发出去却排上了任务。"""
+        created = event.get_extra("livingemotion:promise_created") or []
+        cancels = event.get_extra("livingemotion:promise_cancels") or []
+        if not created and not cancels:
+            return
+        event.set_extra("livingemotion:promise_created", None)
+        event.set_extra("livingemotion:promise_cancels", None)
+        if not bool(getattr(self.config, "promise_enabled", True)):
+            return
+        service = self._promises()
+        if event.get_extra("at_guard_delivery_blocked") or event.get_extra("_at_guard_superseded"):
+            return
+        try:
+            if created:
+                results = await service.remember(context, created)
+                logger.warning(
+                    "[LivingEmotion] 承诺落库 %s", [r.get("status") for r in results])
+            for token in cancels:
+                await service.cancel(context, token)
+        except Exception:
+            # 承诺写入失败不该影响已经发出的回复，只留一行痕。
+            try:
+                logger.warning("[LivingEmotion] 承诺落库失败")
+            except Exception:
+                pass
+
     async def _prepare_catchup(self, event, request, context):
         if not self.config.catchup_enabled:
             return
@@ -580,7 +726,10 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             if not getattr(part, "text", "").startswith((SUFFIX, CATCHUP_SUFFIX, MEMORY_SUFFIX))
         ]
         from ..livinghello_coupling import allowed as coupling_allowed
-        if not coupling_allowed(getattr(self.bridge, "host", None), "livingemotion"):
+        _ok = coupling_allowed(getattr(self.bridge, "host", None), "livingemotion")
+        logger.warning("[LE-promise] on_llm_request 进入 coupling=%s enabled=%s",
+                       _ok, getattr(self.config, "promise_enabled", "?"))
+        if not _ok:
             return
         await self.on_message(event)
         raw = event.get_extra("livingemotion:context")
@@ -643,6 +792,10 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                 "Human observations are about the other person, not the bot.\n"
                 + canonical_json(expression)[:4000]
             ))
+            try:
+                await self._inject_promise_contract(request, context)
+            except Exception as exc:
+                logger.warning("[LE-promise] 注入失败 %r", exc)
             from ..livinghello_coupling import policy as coupling_policy
             if coupling_policy(getattr(self.bridge, "host", None)) is None:
                 await self._inject_recalled_memory(event, request, context)
@@ -860,6 +1013,10 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         if not chain:
             return None
         text = "".join(str(getattr(part, "text", "")) for part in chain)
+        # 承诺指令先抠出来：标记绝不能出现在用户看到的正文里。
+        text = self._strip_promise_marks(event, result, text)
+        # 走到这里说明宿主已确认接单，承诺可以落库了。
+        await self.flush_promises(context, event)
         if not await self.record_host_submission(context, lease["attempt_id"], text):
             self._discard(event, "duplicate")
             return False

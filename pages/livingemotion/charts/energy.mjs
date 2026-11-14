@@ -1,6 +1,6 @@
-import { t, locale, controlled, resource } from "../i18n.mjs";
-import { node, button, labelled, svgNode } from "../dom.mjs";
-import { object, list, text, date, scopeParams, energyValue, NIGHT_STATES } from "../model.mjs";
+import { t, locale, controlled, resource } from "../i18n.mjs?v=eff0d6f932b0";
+import { node, button, labelled, svgNode } from "../dom.mjs?v=eff0d6f932b0";
+import { object, list, text, date, scopeParams, energyValue, NIGHT_STATES } from "../model.mjs?v=eff0d6f932b0";
 export const ENERGY_KINDS = resource({
   reply: t("回复消耗"), fatigue: t("疲劳消耗"), recovery: t("恢复"), sleep: t("入睡"), wake: t("唤醒"), manual: t("手动"), config: t("配置"),
 });

@@ -1,4 +1,4 @@
-import { messages } from "./messages.mjs";
+import { messages } from "./messages.mjs?v=eff0d6f932b0";
 const reverseMessages = new Map(Object.entries(messages).flatMap(([key, values]) => values.map(value => [value, key])));
 const storageKey = "livingemotion.locale.v1";
 export const locales = ["zh-CN", "en", "ja"];

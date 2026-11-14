@@ -17,6 +17,31 @@ class Lifecycle:
         self.api = None
         self.instance_id: str | None = None
         self._lock = asyncio.Lock()
+        # 承诺到期扫描：独立于模型运行时，不占 worker 也不受其并发限制。
+        self._promise_task: asyncio.Task | None = None
+        self._promise_hook = None
+
+    def attach_promise_runner(self, runner) -> None:
+        """由应用层注入真正能发送的实现；没有它就只扫描不投递。"""
+        self._promise_hook = runner
+        if self._promise_task is None and self.store is not None:
+            self._promise_task = asyncio.create_task(
+                self._promise_loop(), name="livingemotion-promise-tick")
+
+    async def _promise_loop(self) -> None:
+        interval = max(15, int(getattr(self.config, "promise_tick_seconds", 60) or 60))
+        while True:
+            try:
+                await asyncio.sleep(interval)
+                if not bool(getattr(self.config, "promise_enabled", True)):
+                    continue
+                if self._promise_hook is not None:
+                    await self._promise_hook()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # 单轮失败不能让扫描停摆，下一轮继续。
+                continue
 
     async def initialize(self) -> None:
         # Local import keeps the API/background runtime dependency acyclic.
@@ -45,6 +70,13 @@ class Lifecycle:
         async with self._lock:
             if self.api is not None:
                 self.api.stop_accepting()
+            if self._promise_task is not None:
+                self._promise_task.cancel()
+                try:
+                    await self._promise_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+                self._promise_task = None
             try:
                 if self.runtime is not None:
                     await self.runtime.stop()

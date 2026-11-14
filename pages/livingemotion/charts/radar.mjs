@@ -1,6 +1,6 @@
-import { t, locale, controlled } from "../i18n.mjs";
-import { DIMENSIONS, unit, percent } from "../model.mjs";
-import { node, svgNode } from "../dom.mjs";
+import { t, locale, controlled } from "../i18n.mjs?v=eff0d6f932b0";
+import { DIMENSIONS, unit, percent } from "../model.mjs?v=eff0d6f932b0";
+import { node, svgNode } from "../dom.mjs?v=eff0d6f932b0";
 export function radar(current, baseline) {
   const figure = node("figure", undefined, "radar-figure");
   const keys = Object.keys(DIMENSIONS), c = keys.map(key => unit(current[key])), b = keys.map(key => unit(baseline[key]));

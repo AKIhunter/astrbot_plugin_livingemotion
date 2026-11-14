@@ -278,6 +278,51 @@
     "default": true,
     "description": "允许醒后有限历史补答，需阅读、模型与预算。例：和醒后阅读同时开启。"
   },
+  "promise_enabled": {
+    "type": "bool",
+    "default": true,
+    "description": "识别并兑现承诺。例：机器人说了稍后给你就真的会去做；关掉只记录不执行。"
+  },
+  "promise_max_active": {
+    "type": "int",
+    "default": 3,
+    "slider": {
+      "min": 1,
+      "max": 10,
+      "step": 1
+    },
+    "description": "单会话同时挂起的承诺上限。例：默认 3，满了就不再新建，先催办更早的。"
+  },
+  "promise_max_depth": {
+    "type": "int",
+    "default": 3,
+    "slider": {
+      "min": 1,
+      "max": 6,
+      "step": 1
+    },
+    "description": "同一件事最多续几次。例：默认 3，防止反复说下次却不落实。"
+  },
+  "promise_advance_limit": {
+    "type": "int",
+    "default": 3,
+    "slider": {
+      "min": 0,
+      "max": 10,
+      "step": 1
+    },
+    "description": "允许被催着提前的次数上限。例：默认 3，避免无限提前永远差一点。"
+  },
+  "promise_tick_seconds": {
+    "type": "int",
+    "default": 60,
+    "slider": {
+      "min": 15,
+      "max": 600,
+      "step": 5
+    },
+    "description": "扫描到期承诺的间隔秒数。例：默认 60，最小 15。"
+  },
   "catchup_provider_id": {
     "type": "string",
     "default": "",
@@ -344,11 +389,13 @@
     "description": "梦境池：每次随机两个不同主题，结合当日情绪。支持JSON列表、逗号或换行分隔，2–32项。"
   },
   "dream_owner_notify": {
-    "type": "bool", "default": false,
+    "type": "bool",
+    "default": false,
     "description": "自动梦境因愤怒或恐惧惊醒时给主人发一次消息。默认关闭，开启允许夜间专用通知；手动生成不发送。"
   },
   "dream_owner_qq": {
-    "type": "string", "default": "",
+    "type": "string",
+    "default": "",
     "description": "梦中惊醒消息接收人，仅一个主人QQ，须已有真实私聊来源。"
   },
   "dream_provider_id": {

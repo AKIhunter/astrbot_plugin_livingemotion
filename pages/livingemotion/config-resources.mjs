@@ -1,4 +1,4 @@
-import { locale, controlled, t } from "./i18n.mjs";
+import { locale, controlled, t } from "./i18n.mjs?v=eff0d6f932b0";
 // 按配置键维护帮助，避免依赖后端自由文本的逐词翻译。
 const rows = `enabled|Enable lifecycle processing. Module switches and operating mode still apply.|生活イベント処理を有効にします。モードと各モジュールの制限にも従います。
 mode|Observe-only records state without autonomous sending. Active mode still requires authorization.|観察モードは状態を記録し自発送信しません。通常モードでも許可が必要です。

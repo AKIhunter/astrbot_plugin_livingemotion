@@ -1,22 +1,24 @@
-import { t, locale, controlled, setLocale, staticUI } from "./i18n.mjs";
-import { createApi, pageError, PageError } from "./api.mjs";
+import { t, locale, controlled, setLocale, staticUI } from "./i18n.mjs?v=eff0d6f932b0";
+import { createApi, pageError, PageError } from "./api.mjs?v=eff0d6f932b0";
 import {
   PAGE_SIZE, SECTIONS, DIMENSIONS, ACTIONS, object, list, text, unit, percent, yesno,
   reasons, hasRevision, date, expired, normalizeState, normalizeRecords, baselineDimensions, scopeParams, NIGHT_STATES,
   behaviorFields, behaviorReason, emotionAnalysis, emotionOwnership, BOT_DIMENSIONS, ANALYSIS_DIMENSIONS, affectLabel, analysisBasis,
   experienceStatus, reasonExplanation, resultLabel, AFFECT_LABELS, modelDiagnosticText,
-} from "./model.mjs";
-import { radar3d } from "./charts/radar3d.mjs";
-import { mountRelationships, emotionExplainer } from "./charts/relationships.mjs";
-import { mountEnergy } from "./charts/energy.mjs";
-import { emotionChart } from "./charts/emotion.mjs";
-import { renderSettings as settingsView, jumpToSettingsGroup, syncSettingsValues } from "./settings.mjs";
-import { EXPERIENCE_TABS, experienceTabs, selectExperienceTab, turnPage, cancelPageTurn } from "./experience.mjs";
-import { reconcileDraft } from "./draft.mjs";
+} from "./model.mjs?v=eff0d6f932b0";
+import { radar3d } from "./charts/radar3d.mjs?v=eff0d6f932b0";
+import { mountRelationships, emotionExplainer } from "./charts/relationships.mjs?v=eff0d6f932b0";
+import { mountEnergy } from "./charts/energy.mjs?v=eff0d6f932b0";
+import { emotionChart } from "./charts/emotion.mjs?v=eff0d6f932b0";
+import { renderSettings as settingsView, jumpToSettingsGroup, syncSettingsValues } from "./settings.mjs?v=eff0d6f932b0";
+import { EXPERIENCE_TABS, experienceTabs, selectExperienceTab, turnPage, cancelPageTurn } from "./experience.mjs?v=eff0d6f932b0";
+import { reconcileDraft } from "./draft.mjs?v=eff0d6f932b0";
 
 const $ = id => document.getElementById(id);
 const api = createApi(() => window.AstrBotPluginView || window.AstrBotPluginPage);
 const uiKey = "livingemotion.view.v1";
+// 发送日志只展示最近十条，多的一条也不留。
+const PANEL_LOG_LIMIT = 10;
 const emptyFilters = () => Object.fromEntries(["emotion", "behavior", "diary", "dream"].map(kind => [kind, { page: 1, query: "" }]));
 const state = {
   data: null, section: "overview", contextId: "", filters: emptyFilters(), kind: "diary",
@@ -702,6 +704,47 @@ function renderPreview(root) {
   root.append(node("p", t("模型调用 0 · 消息发送 0"), "hint"));
   if (list(preview.candidates).length) root.append(clientList(list(preview.candidates), candidate, ""));
 }
+// 承诺列表：只读展示，不在这里提供写操作，避免和聊天里的取消指令抢语义。
+function promiseWithin(seconds) {
+  const value = Number(seconds);
+  if (!Number.isFinite(value) || value < 0) return "";
+  if (value <= 90) return t("马上");
+  if (value < 3600) return t("{0} 分钟后", [Math.max(1, Math.round(value / 60))]);
+  if (value < 86400) return t("{0} 小时后", [Math.max(1, Math.round(value / 3600))]);
+  return t("{0} 天后", [Math.max(1, Math.round(value / 86400))]);
+}
+function renderPromisePanel(data) {
+  const host = $("behavior-promises");
+  if (!host) return;
+  const items = list(data && data.items);
+  if (!data || data.enabled === false) {
+    host.replaceChildren(node("p", t("承诺识别已关闭，不会新建也不会兑现。"), "hint"));
+    return;
+  }
+  if (!items.length) {
+    // 没有承诺时给出下一步提示，不留空白区域。
+    host.replaceChildren(node("p", t("现在没有待兑现的承诺。机器人说了稍后给你之后会出现在这里。"), "hint"));
+    return;
+  }
+  const cards = node("div", undefined, "promise-list");
+  for (const item of items) {
+    const card = node("article", undefined, "promise-card");
+    const head = node("div", undefined, "promise-head");
+    head.append(node("span", controlled(String(item.bucket_label || t("待办"))), "promise-bucket"));
+    head.append(node("span", promiseWithin(item.eta_seconds), "promise-eta"));
+    card.append(head);
+    card.append(node("p", controlled(String(item.description || "")), "promise-desc"));
+    const meta = node("p", t("状态 {0}", [item.status === "running" ? t("正在发送") : t("排队中")]), "hint");
+    if (Number(item.advance_count) > 0) {
+      meta.textContent += t(" · 已提前 {0} 次", [item.advance_count]);
+    }
+    card.append(meta);
+    card.dataset.promiseId = controlled(String(item.promise_id || ""));
+    cards.append(card);
+  }
+  host.replaceChildren(cards);
+}
+
 const SIMULATION_EMOTIONS = [["current", "当前情绪"], ["calm", "平静"], ["joy", "喜悦"],
   ["sadness", "悲伤"], ["anger", "愤怒"], ["fear", "恐惧"], ["surprise", "惊讶"], ["disgust", "厌恶"]];
 async function loadBehaviorOutcome(root) {
@@ -712,14 +755,14 @@ async function loadBehaviorOutcome(root) {
   root.setAttribute("aria-busy", "true");
   state.behaviorLogLoading = true;
   try {
+    // 日志只保留最近十条，不做分页也不回看历史。
     const response = normalizeRecords(await api.records({
-      ...scopeParams(selectedScope()), kind: "behavior", page: filter.page, page_size: PAGE_SIZE, query: filter.query,
-    }), filter.page);
+      ...scopeParams(selectedScope()), kind: "behavior", page: 1, page_size: PANEL_LOG_LIMIT,
+      query: filter.query,
+    }), 1);
     if (!root.isConnected || sequence !== state.behaviorLogSequence || scope !== JSON.stringify(selectedScope())) return;
-    if (filter.page > 1 && !response.items.length && response.total <= (filter.page - 1) * PAGE_SIZE) {
-      state.filters.behavior.page = Math.max(1, Math.ceil(response.total / PAGE_SIZE));
-      return void loadBehaviorOutcome(root);
-    }
+    // 承诺列表跟着同一次响应回来，日志为空时照样能渲染挂载区。
+    renderPromisePanel(response.promises || state.data.behavior?.promises);
     const table = node("table", undefined, "behavior-log-table");
     const head = node("thead"), titles = node("tr");
     const labels = [t("时间"), t("发送 ID"), t("当时情绪"), t("目标 ID（QQ号）"), t("发送内容"), t("是否回应")];
@@ -758,15 +801,7 @@ async function loadBehaviorOutcome(root) {
         counts.confirmed, counts.unknown, counts.cancelled, counts.failed, counts.in_progress]), "hint") : null;
     root.replaceChildren(...(usage ? [usage] : []), response.items.length ? table :
       node("p", filter.query ? t("没有匹配日志。") : t("暂无发送日志。"), "hint"));
-    if (response.total > PAGE_SIZE || filter.page > 1) {
-      const pager = node("div", undefined, "pager");
-      const change = page => { state.filters.behavior.page = page; remember(); void loadBehaviorOutcome(root); };
-      const previous = button(t("上一页"), () => change(filter.page - 1));
-      const next = button(t("下一页"), () => change(filter.page + 1));
-      previous.disabled = filter.page <= 1; next.disabled = filter.page * PAGE_SIZE >= response.total;
-      pager.append(previous, node("span", `${filter.page} / ${Math.max(1, Math.ceil(response.total / PAGE_SIZE))}`), next);
-      root.append(pager);
-    }
+    // 不再提供翻页：超出十条的部分由服务端裁剪，页面不保留历史。
   } catch (error) {
     if (root.isConnected && sequence === state.behaviorLogSequence) handleError(error);
   } finally {
@@ -803,15 +838,24 @@ function renderBehavior(container) {
   const cancel = button(t("取消"), () => dialog.close());
   const actions = node("div", undefined, "simulation-actions"); actions.append(cancel, generate);
   dialog.append(title, label, select, actions);
-  // 真实发送是主动行为页的主操作，固定在最上方，避免被其它区块挤到视野外。
+  // 真实发送与测试发送并排：左侧留给操作，右侧挂当前承诺列表。
   const send = button(t("真实发送"), () => runAction("behavior.send"), "primary");
   send.dataset.operation = "behavior.send";
-  const sendBlock = block(t("真实发送"), node("p", t("根据当前人格、情绪、关系和聊天素材生成，发送到当前会话。"), "hint"), send);
+  const sendBlock = block(t("真实发送"),
+    node("p", t("根据当前人格、情绪、关系和聊天素材生成，发送到当前会话。"), "hint"), send);
   sendBlock.id = "behavior-real-send";
-  panel.append(sendBlock);
   const test = button(t("测试发送"), () => { select.value = "current"; dialog.showModal(); });
   test.dataset.operation = "behavior.simulate";
-  panel.append(block(t("测试发送"), node("p", t("按人格、所选情绪和现有素材生成；无素材也生成，结果写入下方日志。"), "hint"), test));
+  const testBlock = block(t("测试发送"),
+    node("p", t("按人格、所选情绪和现有素材生成；无素材也生成，结果写入下方日志。"), "hint"), test);
+  testBlock.id = "behavior-test-send";
+  const actionsRow = node("div", undefined, "behavior-action-row");
+  actionsRow.append(sendBlock, testBlock);
+  panel.append(actionsRow);
+  // 当前挂载的承诺；数据来自同一次 records 响应，日志为空也不影响显示。
+  const promisePanel = node("div"); promisePanel.id = "behavior-promises";
+  promisePanel.setAttribute("aria-live", "polite");
+  panel.append(block(t("当前承诺"), node("p", t("待兑现的约定按到期时间排列，最多三项。"), "hint"), promisePanel));
   const query = node("input"); query.type = "search"; query.maxLength = 200;
   query.id = "behavior-log-query"; query.placeholder = t("查询 ID、号码或内容");
   query.setAttribute("aria-label", query.placeholder); query.value = state.filters.behavior.query;
