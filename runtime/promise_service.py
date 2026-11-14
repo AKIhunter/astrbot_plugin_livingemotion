@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 
@@ -14,6 +15,8 @@ from ..storage.promise_store import (
     PromiseStore, bucket_label, fingerprint, parse_bucket,
 )
 
+logger = logging.getLogger("astrbot_plugin_livingemotion.promise")
+
 # 模型在回复末尾附带的指令；装饰阶段剔除，用户永远看不到。
 MARK = re.compile(r"<!--\s*promise\s*:\s*([^:：|]{1,12})\s*[:：|]\s*([^>\n]{1,300}?)\s*-->")
 # 取消指令：可以带短编号，也可以只给关键词，由插件负责对上号。
@@ -21,6 +24,11 @@ CANCEL = re.compile(r"<!--\s*promise-cancel\s*:\s*([^>\n]{0,120}?)\s*-->")
 MAX_ACTIVE = 3
 MAX_DEPTH = 3
 MAX_ADVANCE = 3
+# 发不出去时的重试：每次推后 5 分钟，最多 3 次，之后才落 failed。
+RETRY_BACKOFF = 300.0
+MAX_RETRY = 3
+# 会话不在内存时多久再试。用户一说话 source 就回来，所以不必等太久。
+CONTEXT_WAIT = 60.0
 
 
 def strip_marks(text: str) -> tuple[str, list[tuple[str, str]], list[str]]:
@@ -168,8 +176,35 @@ class PromiseService:
 
     # ---------- 到期执行 ----------
 
+    async def heal(self) -> int:
+        """把卡在 running/unknown 的行拉回队列。
+
+        这两种状态没人再扫：move 的目标集里没有它们往回走的路。
+        进程被 kill、上游超时、宿主导回 unknown 都会留在这里。
+        启动时跑一次，之后每轮 tick 也顺手跑，成本是一次 UPDATE。
+        """
+        await self.promises.ensure()
+
+        def read(db):
+            return [row["promise_id"] for row in db.execute(
+                "SELECT promise_id FROM promises WHERE status IN ('running','unknown')")]
+
+        try:
+            stuck = await self.store._run(read)
+        except Exception:
+            return 0
+        healed = 0
+        for promise_id in stuck:
+            outcome = await self.promises.reclaim(promise_id)
+            if outcome.get("status") == "ok":
+                healed += 1
+        if healed:
+            logger.warning("[LE-promise] 自愈 %d 条卡死承诺", healed)
+        return healed
+
     async def run_due(self, now: float | None = None, *, limit: int = 4) -> int:
         """到点就跑。返回成功发出的条数。"""
+        await self.heal()
         moment = self.store.clock() if now is None else float(now)
         rows = await self.promises.due(now=moment, limit=limit)
         sent = 0
@@ -182,12 +217,24 @@ class PromiseService:
 
     async def _deliver(self, row: dict) -> bool:
         promise_id = row["promise_id"]
-        context = self._context_for(row)
+        context = self._live_context(row)
         if context is None:
-            context = await self.restore_context(row)
-        if context is None:
-            # 找不到会话就留着等下一轮，别把承诺判死。
-            await self.promises.move(promise_id, status="failed", error="context_missing")
+            # 分两种“找不到”：会话只是暂时不在内存（重启后还没收到消息、
+            # 或超出 128 条被挤出）——推后重试即可；会话在库里都不存在了
+            # ——那这条承诺永远发不出去，再等也没用，直接判死。
+            # 不区分的话，孤儿承诺会每 60 秒 defer 一次，日志永远刷。
+            if not await self._scope_known(row.get("scope_key")):
+                await self.promises.cancel(promise_id)
+                logger.warning("[LE-promise] 会话已不存在 放弃承诺 %s scope=%s",
+                               promise_id[:8], str(row.get("scope_key") or "")[:12])
+                return False
+            # 这不是“永久失败”——用户一说话 source 就回来了。推后重试，
+            # 而不是把承诺判死。耗尽重试次数才落 failed。
+            outcome = await self.promises.defer(
+                promise_id, retry_at=self.store.clock() + CONTEXT_WAIT,
+                error="context_unavailable", no_penalty=True)
+            logger.warning("[LE-promise] 会话不在内存 推迟承诺 %s -> %s",
+                           promise_id[:8], outcome.get("status"))
             return False
         moved = await self.promises.move(promise_id, status="running", expect=("scheduled",))
         if moved.get("status") != "ok":
@@ -195,48 +242,77 @@ class PromiseService:
         try:
             text = await self._compose(context, row)
         except Exception as exc:
-            await self.promises.move(promise_id, status="failed", error=f"{type(exc).__name__}")
+            await self.promises.defer(promise_id, retry_at=self.store.clock() + RETRY_BACKOFF,
+                                      error=f"compose:{type(exc).__name__}", max_retry=MAX_RETRY)
             return False
         if not text:
-            await self.promises.move(promise_id, status="failed", error="empty")
+            await self.promises.defer(promise_id, retry_at=self.store.clock() + RETRY_BACKOFF,
+                                      error="empty", max_retry=MAX_RETRY)
             return False
         if not await self.promises.advance_quota_block(context, self.store.clock()):
-            await self.promises.move(promise_id, status="failed", error="quota")
+            # 配额不足要等到明天，直接推后一天。
+            await self.promises.defer(promise_id, retry_at=self.store.clock() + 86400,
+                                      error="quota", max_retry=MAX_RETRY)
             return False
         result = await self.app.send_promise_notice(context, text, "promise:" + promise_id)
         if result in ("confirmed", "sent"):
             await self.promises.move(promise_id, status="sent", expect=("running",))
+            logger.warning("[LE-promise] 承诺已发出 %s", promise_id[:8])
             return True
-        await self.promises.move(promise_id, status="unknown", expect=("running",), error=str(result))
+        if result in ("rejected", "unknown"):
+            # 这两类是“现在发不出去但还有救”：可能撞冷却、可能上下文变了。
+            # 绝不能留 running/unknown 这种没人再扫的状态。
+            await self.promises.defer(promise_id, retry_at=self.store.clock() + RETRY_BACKOFF,
+                                      error=str(result), max_retry=MAX_RETRY)
+            logger.warning("[LE-promise] 承诺发送被拒 %s -> defer(%s)",
+                           promise_id[:8], result)
+            return False
+        await self.promises.defer(promise_id, retry_at=self.store.clock() + RETRY_BACKOFF,
+                                  error=str(result), max_retry=MAX_RETRY)
         return False
 
-    def _context_for(self, row: dict) -> Context | None:
-        """把落库的 scope 还原成可发送的会话上下文。
+    async def _scope_known(self, scope) -> bool:
+        """这个 scope 在会话库里登记过吗。
 
-        重启后 _contexts 可能还没填满，这时不能直接判死；
-        按落库的 scope 反查 store 里登记过的会话。
+        登记过 = 会话还在，只是当前没有实时事件（重启 睡眠 被挤出内存），
+        等用户说话即可。查不到 = 会话被删了或换了实例，承诺无处投递。
+        """
+        key = str(scope or "")
+        if not key:
+            return False
+
+        def read(db):
+            return db.execute(
+                "SELECT 1 FROM source_contexts WHERE scope_key=? LIMIT 1", (key,)).fetchone()
+
+        try:
+            return await self.store._run(read) is not None
+        except Exception:
+            # 查不动就别误杀，按“还在”处理。
+            return True
+
+    def _live_context(self, row: dict) -> Context | None:
+        """按 scope_key 从内存里找**带发送路由**的上下文。
+
+        落库的 context_json 一律 route=None（见 storage/sqlite.py:1120），
+        所以重启后靠它永远发不出去；route 只存在于 bridge.sources 的实时
+        source 上。承诺的到期距离用户上一条消息可能隔了几十分钟，
+        这段时间里 source 还在（保留最近 128 个），这才是可用的那一个。
         """
         scope = str(row.get("scope_key") or "")
         if not scope:
             return None
-        for context in list((getattr(self.app, "_contexts", {}) or {}).values()):
-            if getattr(context, "scope_key", "") == scope:
+        # 先看 bridge.sources：这里存的是真实事件解析出的 source，
+        # context.route 一定非空，且和向宿主发消息用的是同一条路由。
+        sources = getattr(getattr(self.app, "bridge", None), "sources", None) or {}
+        for source in reversed(list(sources.values())):
+            real = getattr(source, "context", None)
+            if real is not None and getattr(real, "scope_key", "") == scope and real.route:
+                return real
+        # 再看 _contexts：同一进程内收到过消息的话，这里也是带 route 的。
+        for context in reversed(list((getattr(self.app, "_contexts", {}) or {}).values())):
+            if getattr(context, "scope_key", "") == scope and getattr(context, "route", None):
                 return context
-        return None
-
-    async def restore_context(self, row: dict):
-        """兜底：从持久化的会话表里把上下文补回内存，再发给它。"""
-        scope = str(row.get("scope_key") or "")
-        contexts = getattr(self.app, "_contexts", None)
-        if not scope or contexts is None:
-            return None
-        try:
-            for context in await self.store.list_contexts():
-                if getattr(context, "scope_key", "") == scope:
-                    contexts[context.account_key] = context
-                    return context
-        except Exception:
-            return None
         return None
 
     async def _compose(self, context: Context, row: dict) -> str:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from collections import OrderedDict
 from dataclasses import replace
@@ -51,12 +52,17 @@ from .refinement import Refinement
 from .relationship_projection import read_relationship_projection
 from .state_scope import source_affect
 from .proactivity import Proactivity
+from .promise_service import MARK
 from .manual_experience import ManualExperienceRuntime
 from .persona_style import PersonaStyle
 
 SUFFIX = "<!--livingemotion:state:v1-->"
 CATCHUP_SUFFIX = "<!--livingemotion:crawled_history:v2-->"
 MEMORY_SUFFIX = "<!--livingemotion:memory:v2-->"
+
+# 睡前晚安的去重闸门：本条回复已经在道晚安时，插件再追加一句就是重复。
+# 词面刻意收窄到明确的道别说法，避免把「我不困」这类句子误拦。
+_GOODNIGHT_RE = re.compile(r"晚安|该睡了|先睡了|去睡了|这就睡|要睡了|休息了|早点休息")
 
 
 class Application(Console, NightRuntime, Generation, Materials, Refinement, Proactivity,
@@ -351,23 +357,52 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
     PROMISE_NOTICE_PURPOSE = "promise_control"
 
     async def send_promise_notice(self, context, text, key):
-        """把一段模板文案直发出去，仍走配额 发送守卫 与回执落库。"""
+        """把一段模板文案直发出去，仍走配额 发送守卫 与回执落库。
+
+        这里**不能**复用 record_host_submission：它开头就查 _reply_tickets，
+        而工单只登记“对用户消息的回复”，承诺通知没有来路消息，key 也永远
+        不在表里 —— 于是 authorize 恒 False，sender 恒返回 rejected。
+        自己写 submitted，与 dream_wake 同款：只做真实提交登记，不认工单。
+        """
         from .promise_notice import strip_stops
 
         body = strip_stops(text).strip()
         if not body:
             return "rejected"
+        generation = await self.store.get_generation(context)
+        revision = self.revision
+        notify_key = key
+
+        async def submitted(target, intent, body_text):
+            # 只认同一代际的实时上下文；context 变了一律不提交。
+            if not await self.validate_context(target, generation):
+                return False
+            event = Event(intent, "livingemotion.host", "bot_reply_submitted", target,
+                          ActorRole.BOT, self.store.clock(), intent,
+                          actor_id=target.bot_id,
+                          body=body_text[:self.config.body_max_chars])
+            result = await self.api.ingest_event(event)
+            status = result.get("status")
+            if status in ("accepted", "duplicate"):
+                # 承诺兑现进了对话流，顺手刷新参与度，别让画像以为它没说过话。
+                self._participation[target.scope_key] = self.store.clock()
+                self._participation.move_to_end(target.scope_key)
+                while len(self._participation) > 512:
+                    self._participation.popitem(last=False)
+                return True
+            return False
+
         try:
-            generation = await self.store.get_generation(context)
             return await self.behavior.execute_control(
-                context, intent_id=key, purpose=self.PROMISE_NOTICE_PURPOSE,
+                context, intent_id=notify_key, purpose=self.PROMISE_NOTICE_PURPOSE,
                 generate=lambda: self._ready_text(body),
                 authorize=self._preparation_guard,
-                on_submit=self.record_host_submission,
-                generation=generation, revision=self.revision,
+                on_submit=submitted,
+                generation=generation, revision=revision,
             )
-        except Exception:
+        except Exception as exc:
             # 固定文案不该因调度问题拖垮主流程，失败只留痕。
+            logger.warning("[LE-promise] 通知发送异常 %s %r", notify_key[:16], exc)
             return "failed"
 
     def promise_notice(self, name, seed, **fields):
@@ -1004,8 +1039,6 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         if not await self._native_reply_valid(event, context, lease, memory=False):
             return False
         await self.advance_scope(context)
-        await self.maybe_close_conversation(context, merge_event=event)
-        # Closing can await a model. Revalidate recalled sources after that wait.
         if not await self._native_reply_valid(event, context, lease):
             return False
         result = event.get_result() if callable(getattr(event, "get_result", None)) else None
@@ -1026,6 +1059,28 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         # Persistence is also asynchronous; authorization is the last awaited
         # operation before handing the buffered result back to the host.
         return await self._native_reply_valid(event, context, lease)
+
+    async def merge_closing_into_reply(self, event):
+        """把睡前晚安并入本条正在提交的原生回复。
+
+        调用时机是宿主装饰链的早段（main.py 的 merge_closing 钩子，priority
+        高于 LivingHello 的发送前复核）：只有在这时追加 chain，晚安文本才会
+        被 LivingHello 的分段、表情装饰与逐包投递照常处理；拖到它之后就是
+        在分段完成后私接一段裸文本，既不分段也不受逐包复核。
+        """
+        if self.closed or not self.config.enabled:
+            return
+        # 只有走过准入的回复才带 lease；其它结果（报错、流式壳）不参与。
+        if not event.get_extra("livingemotion:reply_lease"):
+            return
+        raw = event.get_extra("livingemotion:context")
+        if not raw:
+            return
+        try:
+            context = Context.from_dict(raw)
+        except Exception:
+            return
+        await self.maybe_close_conversation(context, merge_event=event)
 
     async def _closing_due(self, context, *, active_reply=False):
         if (not self.config.closing_enabled or not self.config.timezone
@@ -1099,6 +1154,22 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                                 human_watermark=await self.store.human_watermark(context))
         created = await self.store.create_intent(intent)
         if created.get("status") != "created":
+            return
+        # 本条回复自己带着没说完的事，晚安不许插队：
+        #   - 正文仍带承诺标记：模型刚应承了要做的活，紧接着说晚安自相矛盾；
+        #   - 正文已经在道晚安：模型自己收了尾，再补一句就是重复。
+        # 拦下时把本周期账本记为 cancelled：意图键按周期唯一，之后不会再有
+        # 第二次追加或独立发送，避免「刚说完就晚安」的插队换个路径重来。
+        merge_text = "".join(str(getattr(part, "text", "")) for part in
+                             (getattr(merge_event.get_result(), "chain", None) or ()))
+        blocked = ("closing_reply_has_promise" if MARK.search(merge_text)
+                   else "closing_reply_already_goodnight" if _GOODNIGHT_RE.search(merge_text)
+                   else "")
+        if blocked:
+            await self.store.transition_intent(
+                context, key, generation, expected_status="pending",
+                status="cancelled", reason_code=blocked,
+            )
             return
         old = "pending"
         try:

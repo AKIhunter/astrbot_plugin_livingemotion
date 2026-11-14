@@ -30,10 +30,16 @@ SCHEMA = (
         created_at REAL NOT NULL,
         updated_at REAL NOT NULL,
         sent_at REAL,
+        retry_count INTEGER NOT NULL DEFAULT 0,
         last_error TEXT NOT NULL DEFAULT '')""",
     "CREATE INDEX IF NOT EXISTS promises_scope ON promises(scope_key, status)",
     "CREATE INDEX IF NOT EXISTS promises_due ON promises(status, due_at)",
     "CREATE INDEX IF NOT EXISTS promises_fp ON promises(scope_key, fingerprint, status)",
+)
+
+# 老库升级：字段不存在时补上，已存在就跳过。
+MIGRATIONS = (
+    "ALTER TABLE promises ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0",
 )
 
 # 允许的状态转换；越界的写入一律拒绝，避免状态机被绕过。
@@ -77,6 +83,11 @@ class PromiseStore:
         def create(db):
             for statement in SCHEMA:
                 db.execute(statement)
+            for statement in MIGRATIONS:
+                try:
+                    db.execute(statement)
+                except Exception:
+                    pass  # 字段已存在
 
         await self.store._run(create)
         self._ready = True
@@ -218,6 +229,65 @@ class PromiseStore:
                 if changed.rowcount == 0:
                     return {"status": "raced"}
                 return {"status": "ok", "advance_count": row["advance_count"] + 1}
+
+            return self.store._transaction(db, mutate)
+
+        return await self.store._run(write)
+
+    async def defer(self, promise_id: str, *, retry_at: float, error: str = "",
+                    max_retry: int = 3, no_penalty: bool = False) -> dict[str, Any]:
+        """发送没成但还值得再试：回到 scheduled，并把 due_at 推后。
+
+        与 failed 的区别：failed 是终态，不再尝试；defer 是“这一轮不行，
+        过一会儿再来”。上下文没恢复、上游抖动、瞬时被拒都该走这里。
+        """
+        await self.ensure()
+        now = self.store.clock()
+
+        def write(db):
+            def mutate():
+                row = db.execute(
+                    "SELECT status, retry_count, created_at FROM promises WHERE promise_id=?",
+                    (promise_id,)).fetchone()
+                if not row:
+                    return {"status": "missing"}
+                # 会话不在内存不是发送失败，只是“还不到时候”。
+                # 这种等待不消耗重试预算，否则用户睡一觉承诺就全死了。
+                if no_penalty:
+                    db.execute(
+                        """UPDATE promises SET status='scheduled', due_at=?, updated_at=?,
+                           last_error=? WHERE promise_id=?""",
+                        (retry_at, now, str(error or "")[:300], promise_id))
+                    return {"status": "deferred", "retry_count": int(row["retry_count"] or 0)}
+                tries = int(row["retry_count"] or 0)
+                if tries >= max_retry:
+                    db.execute(
+                        """UPDATE promises SET status='failed', updated_at=?, last_error=?
+                           WHERE promise_id=?""",
+                        (now, str(error or "retry_exhausted")[:300], promise_id))
+                    return {"status": "exhausted", "retry_count": tries}
+                db.execute(
+                    """UPDATE promises SET status='scheduled', due_at=?, updated_at=?,
+                       retry_count=retry_count+1, last_error=? WHERE promise_id=?""",
+                    (retry_at, now, str(error or "")[:300], promise_id))
+                return {"status": "deferred", "retry_count": tries + 1}
+
+            return self.store._transaction(db, mutate)
+
+        return await self.store._run(write)
+
+    async def reclaim(self, promise_id: str) -> dict[str, Any]:
+        """把卡在 running/unknown 的行拉回 scheduled，供重启后自愈。"""
+        await self.ensure()
+        now = self.store.clock()
+
+        def write(db):
+            def mutate():
+                changed = db.execute(
+                    """UPDATE promises SET status='scheduled', updated_at=?
+                       WHERE promise_id=? AND status IN ('running','unknown')""",
+                    (now, promise_id))
+                return {"status": "ok" if changed.rowcount else "noop"}
 
             return self.store._transaction(db, mutate)
 

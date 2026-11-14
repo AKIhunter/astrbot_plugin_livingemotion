@@ -28,8 +28,11 @@ async def test_local_closing_merges_once_without_model_and_uses_shared_send_budg
         async def forbidden(*args, **kwargs):
             raise AssertionError("random disabled must not call a model")
         app.purpose_model = forbidden
+        # 晚安在装饰链早段并入（merge_closing 钩子），提交钩子只做收尾校验。
+        await app.merge_closing_into_reply(message)
         assert await app.on_reply_submitted(message) is True
         assert "晚安" in "".join(part.text for part in message.result.chain)
+        await app.merge_closing_into_reply(message)
         assert await app.on_reply_submitted(message) is True
         assert len(message.result.chain) == 2 and host.sends == 0
         history = await app.store.behavior_history(context, "2026-11-06")
@@ -71,6 +74,7 @@ async def test_closing_model_wait_cannot_reuse_revoked_memory_authorization(tmp_
 
         app.purpose_model = generate
         app.memory.validate_evidence = validate
+        await app.merge_closing_into_reply(message)
         assert await app.on_reply_submitted(message) is False
         assert checks == [True] and host.sends == 0
         history = await app.store.energy_history(context, category="reply")
@@ -88,6 +92,7 @@ async def test_new_message_during_random_closing_keeps_old_result_without_closin
             return "晚安。"
         app.purpose_model = generate
         # 新消息撤销的是这次临时的晚安合并，不撤销已经生成好的正文。
+        await app.merge_closing_into_reply(message)
         assert await app.on_reply_submitted(message) is True
         assert len(message.result.chain) == 1 and host.sends == 0
         assert (await app.store.energy_history(context, category="reply"))["total"] == 1
@@ -108,7 +113,47 @@ async def test_closing_without_shared_send_quota_does_not_append_or_generate(tmp
         async def forbidden(*args, **kwargs):
             raise AssertionError("exhausted send budget must stop generation")
         app.purpose_model = forbidden
+        await app.merge_closing_into_reply(message)
         assert await app.on_reply_submitted(message) is True
         assert len(message.result.chain) == 1 and host.sends == 0
     finally:
         await app.terminate()
+
+
+@pytest.mark.asyncio
+async def test_closing_skipped_when_reply_still_carries_promise_marks(tmp_path):
+    """回复还带着承诺指令时，晚安不许插队：刚应承了要做的活就说晚安自相矛盾。"""
+    app, host, _, _, message, _ = await prepared(tmp_path)
+    try:
+        message.result.chain.append(SimpleNamespace(
+            text="我现在给你补 <!-- promise:一会儿:补拍那两张照片 -->"))
+        await app.merge_closing_into_reply(message)
+        await app.on_reply_submitted(message)
+        assert "晚安" not in "".join(part.text for part in message.result.chain)
+        assert host.sends == 0
+        history = await app.store.behavior_history(
+            await first_context(app), "2026-11-06")
+        assert history["global_used"] == 0
+    finally:
+        await app.terminate()
+
+
+@pytest.mark.asyncio
+async def test_closing_skipped_when_reply_already_says_goodnight(tmp_path):
+    """模型自己已经在道晚安时，插件再补一句就是用户看到的重复消息。"""
+    app, host, _, _, message, _ = await prepared(tmp_path)
+    try:
+        message.result.chain = [SimpleNamespace(text="好了，我今天真该睡了。晚安。")]
+        await app.merge_closing_into_reply(message)
+        await app.on_reply_submitted(message)
+        text = "".join(part.text for part in message.result.chain)
+        assert text.count("晚安") == 1 and host.sends == 0
+        history = await app.store.behavior_history(
+            await first_context(app), "2026-11-06")
+        assert history["global_used"] == 0
+    finally:
+        await app.terminate()
+
+
+async def first_context(app):
+    return next(iter(app._contexts.values()))

@@ -106,6 +106,20 @@ class LivingEmotionPlugin(Star):
             return
         await self.application.mark_request_read(event)
 
+    # 必须排在 LivingHello 的发送前复核（priority=-sys.maxsize）之前：
+    # 睡前晚安在这时并入 chain，才会被它的分段、表情装饰与逐包投递照常处理。
+    # 与下方 submit_reply 同款防御式取钩子：测试桩与旧宿主可能没有这个钩子。
+    @getattr(filter, "on_decorating_result", lambda **kw: lambda fn: fn)(
+        priority=-sys.maxsize + 1)
+    async def merge_closing(self, event: AstrMessageEvent):
+        if not coupling_allowed(self.context, "livingemotion"):
+            return
+        try:
+            await self.application.merge_closing_into_reply(event)
+        except Exception:
+            # 并入失败只放弃晚安本身，绝不能拖垮正常回复的投递。
+            logger.warning("[LE-closing] 睡前晚安并入失败", exc_info=True)
+
     # Runs after LivingHello's last decoration. The time is a host submission
     # boundary; neither this hook nor after-sent proves platform delivery.
     @getattr(filter, "on_decorating_result", lambda **kw: lambda fn: fn)(
