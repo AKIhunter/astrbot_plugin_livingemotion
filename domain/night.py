@@ -599,13 +599,18 @@ def chat_wake(state, event, *, policy=LifePolicy(), dice=(0, 0)):
     ), True, "chat_wake"
 
 
-def start_life_reply(state, *, policy=LifePolicy()):
+def start_life_reply(state, *, now=None, policy=LifePolicy()):
     if state.display_state not in (SleepState.AWAKE, SleepState.GROGGY):
         return state, False
     if state.wake_session:
-        # 唤醒会话不能脱离夜间周期独立存在。周期已经走完（没有 wake_at 或没有 cycle）
-        # 时这条账本是孤儿：就地作废，不能拿它拒答，否则会出现「精力满却一直不回」。
-        if state.wake_at is None or state.cycle_id is None:
+        # 唤醒会话必须依附于一个**仍然有效**的夜间周期。以下三种都是失效账本：
+        #   1) 缺 wake_at 或 cycle_id —— 周期字段已被清，会话是残留；
+        #   2) 周期已过期（调用方传了 now 时）—— 结算可能因时钟回拨等路径没跑到；
+        #   3) 配额 <= 0 —— 压根没有配置额度，0/0 不是「用尽」。
+        # 失效账本一律就地作废并放行，否则会重现「精力满却一直不回」。
+        expired = now is not None and state.wake_at is not None and now >= state.wake_at
+        if (state.wake_at is None or state.cycle_id is None or expired
+                or state.wake_reply_limit <= 0):
             return replace(state, wake_session=None, wake_replies_used=0, wake_reply_limit=0,
                            first_reply_submitted_at=None, wake_window_deadline=None,
                            wake_score=None, wake_failures=0), True

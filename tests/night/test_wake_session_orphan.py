@@ -71,11 +71,42 @@ def test_submit_life_reply_clears_ledger_when_cycle_ends():
 def test_active_cycle_still_enforces_round_limit():
     """回归保护：有活跃夜间周期时，额度耗尽依然必须拒答。"""
     state = orphan_state(wake_at=NOW + 3600, cycle_id="cycle-night")
-    state, allowed = start_life_reply(state)
+    state, allowed = start_life_reply(state, now=NOW)
 
     assert allowed is False
     assert state.display_state is SleepState.DROWSY
     assert state.wake_session == SESSION
+
+
+def test_expired_cycle_releases_ledger_when_settlement_skipped():
+    """周期已过期但结算没跑到（时钟回拨早退）：传了 now 就必须放行。
+
+    这类状态里 wake_at / cycle_id 都还在，按「缺字段即孤儿」是判不出来的，
+    只有把 now 一起看才能认出「周期已经走完了」。
+    """
+    stale = orphan_state(wake_at=NOW - 600, cycle_id="cycle-night", updated_at=NOW + 600)
+    settled, _ = advance_life(stale, now=NOW, cycle=None)
+    assert settled.wake_session == SESSION      # 时钟回拨，advance_life 早退未结算
+    assert settled.wake_at is not None          # 周期字段还在，不属于「缺字段」型孤儿
+
+    state, allowed = start_life_reply(settled, now=NOW)
+
+    assert allowed is True
+    assert state.wake_session is None
+    assert state.wake_replies_used == 0
+    assert state.wake_reply_limit == 0
+
+
+def test_zero_quota_is_not_exhaustion():
+    """0/0 不是「用尽」：没有配置额度时不该拿它拒答。"""
+    state = orphan_state(wake_at=NOW + 3600, cycle_id="cycle-night",
+                         wake_replies_used=0, wake_reply_limit=0)
+
+    state, allowed = start_life_reply(state, now=NOW)
+
+    assert allowed is True
+    assert state.wake_session is None
+    assert state.wake_replies_used == 0
 
 
 def test_active_cycle_consumes_round_then_blocks():

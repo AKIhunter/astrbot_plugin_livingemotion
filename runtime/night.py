@@ -200,7 +200,8 @@ class NightRuntime:
 
         def transform(state, runtime, now, attempt):
             state, changes = self._advance_life(state, now, runtime)
-            state, allowed = start_life_reply(state, policy=life_policy(self.config))
+            # 传 now：结算可能因时钟回拨早退，过期会话要在这里兜住，不能再拒答。
+            state, allowed = start_life_reply(state, now=now, policy=life_policy(self.config))
             return state, changes, {"allowed": allowed,
                                     "reason_code": "reply_started" if allowed else "sleep_blocks_reply"}
         return await self.store.night_operation(
