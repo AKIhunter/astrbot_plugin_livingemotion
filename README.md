@@ -3,7 +3,7 @@
 ![livingEmotion 原创 LE 字标与四维状态线](.github/img/Banner.png)
 
 开发者：[AKIhunter](https://github.com/AKIhunter)。这是 AstrBot 的 LivingEmotion 插件手册入口；
-完整使用说明与运行流程见 [插件帮助手册](docs/plugin-manual.md)。
+完整使用说明与运行流程见 [插件帮助手册](docs/plugin-manual.md)。有问题可以加入qq群聊反馈：991350637
 
 LivingEmotion 给你的 AstrBot 角色增加持续变化的心情、人物关系、作息和精力。
 你可以在页面上看状态，再按需开启主动聊天、日记、梦境和记忆。
