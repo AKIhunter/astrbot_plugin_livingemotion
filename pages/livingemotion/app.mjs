@@ -705,14 +705,24 @@ function renderPreview(root) {
   if (list(preview.candidates).length) root.append(clientList(list(preview.candidates), candidate, ""));
 }
 // 承诺列表：只读展示，不在这里提供写操作，避免和聊天里的取消指令抢语义。
-function promiseWithin(seconds) {
-  const value = Number(seconds);
-  if (!Number.isFinite(value) || value < 0) return "";
-  if (value <= 90) return t("马上");
-  if (value < 3600) return t("{0} 分钟后", [Math.max(1, Math.round(value / 60))]);
-  if (value < 86400) return t("{0} 小时后", [Math.max(1, Math.round(value / 3600))]);
-  return t("{0} 天后", [Math.max(1, Math.round(value / 86400))]);
+// 倒计时固定 时:分:秒，并且本地每秒递减——只靠 8 秒轮询会出现
+// 「先显示好几分钟、过一会儿才跳」的错觉，分钟取整更是看不出秒。
+function formatCountdown(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  const pad = (value) => String(value).padStart(2, "0");
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  return `${pad(hours)}:${pad(minutes)}:${pad(total % 60)}`;
 }
+function tickPromiseCountdowns() {
+  for (const card of document.querySelectorAll(".promise-card")) {
+    const deadline = Number(card.dataset.deadline);
+    const eta = card.querySelector(".promise-eta");
+    if (!eta || !Number.isFinite(deadline)) continue;
+    eta.textContent = formatCountdown((deadline - Date.now()) / 1000);
+  }
+}
+window.setInterval(tickPromiseCountdowns, 1000);
 function renderPromisePanel(data) {
   const host = $("behavior-promises");
   if (!host) return;
@@ -731,7 +741,10 @@ function renderPromisePanel(data) {
     const card = node("article", undefined, "promise-card");
     const head = node("div", undefined, "promise-head");
     head.append(node("span", controlled(String(item.bucket_label || t("待办"))), "promise-bucket"));
-    head.append(node("span", promiseWithin(item.eta_seconds), "promise-eta"));
+    // 用绝对截止时刻驱动本地倒计时，轮询只负责校准。
+    const eta = Math.max(0, Number(item.eta_seconds) || 0);
+    card.dataset.deadline = String(Date.now() + eta * 1000);
+    head.append(node("span", formatCountdown(eta), "promise-eta"));
     card.append(head);
     card.append(node("p", controlled(String(item.description || "")), "promise-desc"));
     const meta = node("p", t("状态 {0}", [item.status === "running" ? t("正在发送") : t("排队中")]), "hint");

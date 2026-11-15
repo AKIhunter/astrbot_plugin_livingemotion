@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 import logging
 import re
@@ -11,6 +12,9 @@ from ..services.behavior import SendReceipt, SendRequest
 
 
 logger = logging.getLogger("astrbot_plugin_livingemotion.promise")
+
+# 分段之间的间隔：同一瞬间连发三条容易被适配器合并或触发频率限制。
+BUBBLE_GAP = 0.35
 
 
 class AstrBotBehaviorSender:
@@ -71,6 +75,27 @@ class AstrBotBehaviorSender:
             return SendReceipt(intent_id, route, "confirmed", str(message_id), 1, 1)
         return SendReceipt(intent_id, route, "unknown")
 
+    @staticmethod
+    def _bubbles(text: str) -> list[str]:
+        """按空行切段：主动行为自己分的段要变成多个气泡。
+
+        一个气泡里塞三段回车，读起来就是一坨；分成几条才像在说话。
+        任何换行都算分段——聊天里换行本来就是"这句说完了"的意思。
+        最多 6 条，避免模型偶尔刷一大段把对面淹了。
+        """
+        raw = str(text or "").replace("\r\n", "\n").strip()
+        if not raw:
+            return []
+        chunks = [chunk.strip() for chunk in re.split(r"\n+", raw) if chunk.strip()]
+        if not chunks:
+            return [raw]
+        if len(chunks) > 6:
+            # 超过 6 段就并回来：宁可少分，也别一口气刷六条以上。
+            head = chunks[:5]
+            head.append("\n".join(chunks[5:]))
+            return head
+        return chunks
+
     async def __call__(self, request: SendRequest) -> SendReceipt:
         route = await self.recorded_route(request.context)
         if not route or route != request.context.route:
@@ -92,24 +117,50 @@ class AstrBotBehaviorSender:
         if not await request.authorize():
             logger.warning("[LE-send] 提交授权失败 route=%s", route)
             return SendReceipt(request.intent_id, route, "rejected")
+        parts = self._bubbles(request.text)
+        if not parts:
+            return SendReceipt(request.intent_id, route, "rejected")
         if native:
             method, parameters = native
-            try:
-                response = await method(
-                    **parameters, message=[{"type": "text", "data": {"text": request.text}}])
-            except Exception:
-                # Submission may have happened. Do not dispatch again via the host.
-                return SendReceipt(request.intent_id, route, "unknown")
-            return self._receipt(request.intent_id, route, response)
+            confirmed, receipt_id = 0, None
+            status = "confirmed"
+            for index, part in enumerate(parts):
+                try:
+                    response = await method(
+                        **parameters, message=[{"type": "text", "data": {"text": part}}])
+                except Exception:
+                    # Submission may have happened. Do not dispatch again via the host.
+                    status = "unknown"
+                    break
+                one = self._receipt(request.intent_id, route, response)
+                if one.status != "confirmed":
+                    status = one.status
+                    break
+                confirmed += 1
+                receipt_id = receipt_id or one.receipt_id
+                if index + 1 < len(parts):
+                    await asyncio.sleep(BUBBLE_GAP)
+            if status == "confirmed" and confirmed != len(parts):
+                status = "unknown"
+            return SendReceipt(request.intent_id, route, status, receipt_id,
+                               confirmed, len(parts))
         # 宿主通道拿不到平台 message_id，但它确实把消息交给了适配器。
         # 记 "sent"（已受理）而不是 "unknown"：unknown 会触发重发，
         # 承诺这类直发会因此把同一句说两遍。
-        result = await self.send_message(route, self.make_chain(request.text))
-        logger.warning("[LE-send] 宿主通道 route=%s native=%s result=%r",
-                       route, bool(native), result)
+        confirmed, result = 0, True
+        for index, part in enumerate(parts):
+            result = await self.send_message(route, self.make_chain(part))
+            if result is False:
+                break
+            confirmed += 1
+            if index + 1 < len(parts):
+                await asyncio.sleep(BUBBLE_GAP)
+        logger.warning("[LE-send] 宿主通道 route=%s native=%s parts=%d/%d result=%r",
+                       route, bool(native), confirmed, len(parts), result)
         # 宿主返回的 bool 不是投递凭据，回执状态只能是 unknown；
         # 用 channel 告诉上游“这是宿主通道”，由业务层决定怎么算。
         return SendReceipt(
             request.intent_id, route,
-            "rejected" if result is False else "unknown", channel="host",
+            "rejected" if result is False else "unknown",
+            confirmed_parts=confirmed, total_parts=len(parts), channel="host",
         )

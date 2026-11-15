@@ -167,9 +167,9 @@ class PromiseService:
                 return {"status": "ambiguous", "items": rows}
             target = hit[0]
         timezone = getattr(self.app.config, "timezone", "") or "Asia/Shanghai"
-        due_at = parse_bucket("马上", self.store.clock(), timezone)
-        if not await self.promises.advance_quota_block(context, due_at):
-            return {"status": "quota_blocked", "description": target["description"]}
+        # 用户要求提前就是"现在就办"：二三十秒后触发，不再走档位随机，
+        # 也不查行为额度——承诺兑现本来就不占额度。
+        due_at = self.store.clock() + 20
         result = await self.promises.reschedule(target["promise_id"], due_at=due_at, bucket="马上",
                                                 max_advance=MAX_ADVANCE)
         if result.get("status") == "ok":
@@ -186,6 +186,14 @@ class PromiseService:
         启动时跑一次，之后每轮 tick 也顺手跑，成本是一次 UPDATE。
         """
         await self.promises.ensure()
+        # 旧版本把到点项挂成 awaiting 等下一轮回复；现在到点就发，
+        # 那些遗留行没人再取，启动和每轮 tick 顺手放回队列。
+        try:
+            released = await self.promises.release_awaiting(self.store.clock())
+            if released:
+                logger.warning("[LE-promise] 放回待交付 %d 条", released)
+        except Exception:
+            pass
 
         def read(db):
             return [row["promise_id"] for row in db.execute(
@@ -255,24 +263,10 @@ class PromiseService:
 
     async def _deliver(self, row: dict) -> bool:
         promise_id = row["promise_id"]
-        # 耦合生效时改走「并轨」：不单独发消息、不为兑现文案调模型。
-        # 单独发一条必然和对方的被动回复撞车（用户实测两条内容一模一样），
-        # 而为一句话再调一次模型纯属浪费。这里只把承诺标成 awaiting，
-        # 等下一轮回复进来时由 _inject_pending_promises 一并交付。
-        if self.app.promise_actions_active():
-            if not await self._scope_known(row.get("scope_key")):
-                await self.promises.cancel(promise_id)
-                logger.warning("[LE-promise] 会话已不存在 放弃承诺 %s", promise_id[:8])
-                return False
-            handed = await self.promises.move(
-                promise_id, status="awaiting", expect=("scheduled",))
-            if handed.get("status") == "ok":
-                logger.warning("[LE-promise] 耦合生效 转待交付(不单独发送) %s | %s",
-                               promise_id[:8], str(row.get("description") or "")[:24])
-                return False
-            logger.warning("[LE-promise] 转待交付失败 %s -> %s",
-                           promise_id[:8], handed)
-            return False
+        # 到点就是到点了：这里必须自己把消息发出去。
+        # 曾经为了躲开「和被动回复内容重合」改成 awaiting + 并进下一轮，
+        # 结果是用户不开口就永远不提醒（实测 2 分钟的浇水提醒卡了一晚上）。
+        # 并轨只适用于"正好在生成回复"的场景，而到点触发时没有正在进行的回复。
         context = await self._live_context(row)
         if context is None:
             # 分两种“找不到”：会话只是暂时不在内存（重启后还没收到消息、
@@ -304,11 +298,8 @@ class PromiseService:
             await self.promises.defer(promise_id, retry_at=self.store.clock() + RETRY_BACKOFF,
                                       error="empty", max_retry=MAX_RETRY)
             return False
-        if not await self.promises.advance_quota_block(context, self.store.clock()):
-            # 配额不足要等到明天，直接推后一天。
-            await self.promises.defer(promise_id, retry_at=self.store.clock() + 86400,
-                                      error="quota", max_retry=MAX_RETRY)
-            return False
+        # 承诺兑现不占主动行为额度：这是用户点名要的东西，不是机器人想说话。
+        # 占额度会导致"聊得多的日子，答应的事直接发不出来"。
         # intent_id 是 intents 表主键，create_intent 走 INSERT OR IGNORE。
         # 同一条承诺第二次尝试若还沿用 "promise:<id>"，就会撞上第一次失败
         # 留下的行 → duplicate → _control 只在旧行是 succeeded 时才认，
@@ -411,16 +402,22 @@ class PromiseService:
         from .promise_notice import strip_stops
 
         description = row["description"]
-        # 注意：耦合生效时根本走不到这里（_deliver 已提前转 awaiting）。
-        # 这一条路只在纯文字模式（未耦合 / 手动关闭）下使用。
         try:
             reply = await self.app.compose_promise(context, description, row["note"])
-        except Exception:
+        except Exception as exc:
+            logger.warning("[LE-promise] 兑现文案模型失败 %s: %r",
+                           str(row.get("promise_id") or "")[:8], exc)
             reply = ""
         if reply:
             return strip_stops(reply).strip()
-        # 模型不可用时不留空，用固定句式保底，至少把话说出去。
-        return strip_stops(f"之前说好的 {description} 现在给你").strip()
+        # 模型不可用时不留空。提醒类不能套「现在给你」——那是交付东西的说法，
+        # 用在「提醒给花浇水」上就成了病句。
+        import re as _re
+        body = _re.sub(r"^\s*\d+\s*(?:分钟|分|小时|秒)\s*(?:后|之后|以后)?\s*[，,]?\s*",
+                       "", str(description or "")).strip() or str(description or "").strip()
+        if body.startswith(("提醒", "记得", "别忘了")):
+            return strip_stops(f"到点了 {body}").strip()
+        return strip_stops(f"之前说好的 {body} 现在给你").strip()
 
 
 def register(store, application) -> PromiseService:

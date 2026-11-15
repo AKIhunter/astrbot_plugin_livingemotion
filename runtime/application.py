@@ -494,8 +494,10 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             "档位只能填这六个之一：马上 一会儿 待会 今晚 明天 过几天",
             "怎么选：几分钟内=马上；半小时左右=一会儿；一小时内=待会；",
             "今晚八到十一点=今晚；跨天=明天；更远=过几天。",
-            "用户给了具体时间（「六点过」「八点」「明天上午」）就按那个时间取最近的档位，",
-            "不许因为时间说不准就不记账。",
+            "用户给了具体分钟数（「2分钟后」「10分钟后」「半小时」「1小时后」），",
+            "就把这个数原样写进档位，例如 <!--promise:2分钟:提醒他给花浇水-->、",
+            "<!--promise:30分钟:...-->、<!--promise:1小时:...-->；不要换成「马上」。",
+            "只说「六点过」「八点」这类钟点的，按那个时间取最近的档位，不许不记账。",
             "要照片、自拍、图、语音，但这会儿还不到时候的：也只记账。",
             "现在绝对不要调用生图或发图工具——先把承诺记下来，到点再给。",
             "这条只约束「还没到时候」的这一轮；到点的那一轮会另行通知你直接生成。",
@@ -554,22 +556,25 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         return await self.purpose_model(
             context, "closing", system, data,
             stable_key("promise-action-line", context.scope_key, description),
-            max_output_tokens=80)
+            max_output_tokens=80, delivery=True)
 
     async def compose_promise(self, context, description, note):
         """兑现内容要像真的在说话，这一句才值得走模型。"""
+        # 不再要求实时事件：承诺最典型的场景就是隔了几十分钟、
+        # 甚至跨了一次重启，这时候 bridge 里根本没有 source。
+        # 人格从上下文取，取不到就用适配器默认人格，别因此退化成死模板。
         source = await self.bridge.current(context)
-        if source is None:
-            raise ValueError("promise_source_missing")
+        persona_id = (getattr(getattr(source, "context", None), "persona_id", "")
+                      or getattr(context, "persona_id", ""))
+        persona_prompt = getattr(getattr(source, "persona", None), "prompt", "")
         system = ("用当前人格口吻把先前答应的事做出来并说一句。一到两句，别解释流程，"
                   "别提模型、弹窗、后台或提示词。只输出要发的话。")
-        data = prompt_json({"persona": await self.persona_style(
-            source.context.persona_id, source.persona.prompt),
+        data = prompt_json({"persona": await self.persona_style(persona_id, persona_prompt),
             "promised": description, "detail": note})
         return await self.purpose_model(
             context, "closing", system, data,
             stable_key("promise-compose", context.scope_key, description),
-            max_output_tokens=160)
+            max_output_tokens=160, delivery=True)
 
     def _strip_promise_marks(self, event, result, text):
         """把回复正文里的承诺指令摘出来，改写气泡并把指令暂存在事件上。"""

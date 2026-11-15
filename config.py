@@ -135,7 +135,7 @@ class Config:
     promise_max_active: int = 3
     promise_max_depth: int = 3
     promise_advance_limit: int = 3
-    promise_tick_seconds: int = 60
+    promise_tick_seconds: int = 15
     # 承诺代办与可耦合插件的协作方式：auto 跟随检测，on 强制动作，off 强制纯文本。
     # 动作模式只执行具体事件（发图等）并附一句承接语，不生成“被动回复式”正文。
     coupling_promise_actions: str = "auto"

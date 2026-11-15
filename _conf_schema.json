@@ -1,4 +1,4 @@
-{
+﻿{
   "enabled": {
     "type": "bool",
     "default": true,
@@ -315,7 +315,7 @@
   },
   "promise_tick_seconds": {
     "type": "int",
-    "default": 60,
+    "default": 15,
     "slider": {
       "min": 15,
       "max": 600,

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Any
 
@@ -409,6 +410,21 @@ class PromiseStore:
         return used < limit
 
 
+# 确切延后：「2分钟」「10分钟后」「90秒」「1小时」。
+# 用户既然给了数字，落点就必须是这个数字；语义档的随机区间只在没给数字时兜底。
+EXACT_DELAY = re.compile(
+    r"^\s*(\d+(?:\.\d+)?)\s*(秒钟|秒|分钟|分|小时|钟头|sec|min|hr|s|m|h)"
+    r"(?:后|之后|以后|内)?\s*$", re.IGNORECASE)
+# 「半小时」不带数字，单独认一下；否则会被当成语义档随机到二十几分钟。
+EXACT_HALF = re.compile(r"^\s*半\s*个?\s*(?:小时|钟头|h|hr)\s*(?:后|之后|以后)?\s*$",
+                        re.IGNORECASE)
+EXACT_UNIT = {
+    "秒钟": 1, "秒": 1, "s": 1, "sec": 1,
+    "分钟": 60, "分": 60, "m": 60, "min": 60,
+    "小时": 3600, "钟头": 3600, "h": 3600, "hr": 3600,
+}
+
+
 def parse_bucket(bucket: str, now: float, timezone: str = "Asia/Shanghai") -> float:
     """把语义档换算成时间点。档位由模型给，落点由本地时钟算。"""
     import random
@@ -418,6 +434,12 @@ def parse_bucket(bucket: str, now: float, timezone: str = "Asia/Shanghai") -> fl
     tz = ZoneInfo(timezone or "Asia/Shanghai")
     current = datetime.fromtimestamp(now, tz)
     name = str(bucket or "一会儿").strip()
+
+    if EXACT_HALF.match(name):
+        return now + 1800
+    exact = EXACT_DELAY.match(name)
+    if exact:
+        return now + float(exact.group(1)) * EXACT_UNIT[exact.group(2).lower()]
 
     if name in ("马上", "now"):
         return now + random.uniform(120, 300)
@@ -441,6 +463,19 @@ def parse_bucket(bucket: str, now: float, timezone: str = "Asia/Shanghai") -> fl
 
 
 def bucket_label(bucket: str) -> str:
+    name = str(bucket or "").strip()
+    if EXACT_HALF.match(name):
+        return "30 分钟后"
+    exact = EXACT_DELAY.match(name)
+    if exact:
+        total = int(round(float(exact.group(1)) * EXACT_UNIT[exact.group(2).lower()]))
+        if total < 60:
+            return "%d 秒后" % total
+        if total < 3600:
+            return ("%d 分钟后" % (total // 60) if total % 60 == 0
+                    else "%d 分 %d 秒后" % (total // 60, total % 60))
+        return ("%d 小时后" % (total // 3600) if total % 3600 == 0
+                else "%d 小时 %d 分后" % (total // 3600, total % 3600 // 60))
     return {"马上": "几分钟内", "now": "几分钟内", "一会儿": "过一会儿", "soon": "过一会儿",
             "待会": "等会儿", "later": "等会儿", "今晚": "今晚", "tonight": "今晚",
             "明天": "明天", "tomorrow": "明天", "过几天": "过几天",

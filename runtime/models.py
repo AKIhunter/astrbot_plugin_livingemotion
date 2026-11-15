@@ -201,8 +201,11 @@ def _provider_binding(provider):
 
 
 class Generation:
-    async def model_binding(self, context, purpose=""):
-        if not await self.validate_context(context) or self.effective_mode(context) != "active":
+    async def model_binding(self, context, purpose="", delivery=False):
+        # delivery=True：承诺兑现没有实时事件，严格版校验会在选模型这一步
+        # 就抛 context_changed（实测 170ms 退成死模板），改用放宽版。
+        check = self.validate_delivery if delivery else self.validate_context
+        if not await check(context) or self.effective_mode(context) != "active":
             raise ModelUnavailable("context_changed")
         return await self._select_model_binding(purpose, context.route)
 
@@ -285,21 +288,26 @@ class Generation:
                     return False
         return True
 
-    async def _purpose_binding(self, context, purpose):
+    async def _purpose_binding(self, context, purpose, delivery=False):
         # Keep existing one-argument host fixtures and consumers valid by default.
         if getattr(self.config, purpose + "_provider_id", ""):
-            return await self.model_binding(context, purpose=purpose)
-        return await self.model_binding(context)
+            return await self.model_binding(context, purpose=purpose, delivery=delivery)
+        return await self.model_binding(context, delivery=delivery)
 
     async def purpose_model(self, context, purpose, system, data, job_id, *,
-                            max_output_tokens=None):
-        """One budgeted dispatch. Never call inside another model=True worker."""
+                            max_output_tokens=None, delivery=False):
+        """One budgeted dispatch. Never call inside another model=True worker.
+
+        delivery=True 时用 validate_delivery：承诺兑现发生在到点那一刻，
+        用户上一次说话可能是几十分钟前、甚至跨了一次重启，严格版校验
+        （要求实时事件）会直接判失败——实测整句只花 170ms 就退成死模板。
+        """
         if purpose not in ("diary", "dream", "catchup", "closing"):
             raise ModelUnavailable("model_purpose_invalid")
         if (not isinstance(system, str) or not isinstance(data, str)
                 or not isinstance(job_id, str) or not job_id or len(job_id) > 256):
             raise ModelUnavailable("model_request_invalid")
-        binding = await self._purpose_binding(context, purpose)
+        binding = await self._purpose_binding(context, purpose, delivery)
         tokens = binding.count(system, data)
         output = self.config.model_output_tokens if max_output_tokens is None else max_output_tokens
         if (type(tokens) is not int or not 0 < tokens <= self.config.model_input_tokens
@@ -308,18 +316,19 @@ class Generation:
         generation = await self.store.get_generation(context)
         watermark = await self.store.human_watermark(context)
         revision = self.revision
+        check = self.validate_delivery if delivery else self.validate_context
 
         async def generate():
-            current = await self._purpose_binding(context, purpose)
+            current = await self._purpose_binding(context, purpose, delivery)
             if (current.fingerprint != binding.fingerprint or self.revision != revision
-                    or not await self.validate_context(context, generation)
+                    or not await check(context, generation)
                     or self.effective_mode(context) != "active"
                     or await self.store.human_watermark(context) != watermark):
                 raise ModelUnavailable("context_or_provider_changed")
             text = await binding.generate(system, data, output, self.config.model_timeout_seconds)
-            current = await self._purpose_binding(context, purpose)
+            current = await self._purpose_binding(context, purpose, delivery)
             if (current.fingerprint != binding.fingerprint or self.revision != revision
-                    or not await self.validate_context(context, generation)
+                    or not await check(context, generation)
                     or await self.store.human_watermark(context) != watermark):
                 raise ModelUnavailable("context_or_provider_changed")
             return text

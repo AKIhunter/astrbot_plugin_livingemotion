@@ -936,10 +936,14 @@ class BehaviorService:
             period = self._period(self.policy(), now)
             if not period:
                 raise ValueError("timezone_required")
+            # 承诺兑现不占主动行为额度：那是用户点名要的东西，不是机器人
+            # 自己想说话。走独立池子，只留统计痕迹，不参与 behavior_daily_limit。
+            free = purpose == "promise_control"
+            pool = "promise" if free else "send"
+            limit = 10 ** 6 if free else self.store.config.behavior_daily_limit
             quota = await self.store.reserve_quota(
                 key + ":send", context, generation, period=period, purpose=purpose,
-                pool="send", limit=self.store.config.behavior_daily_limit,
-                global_limit=self.store.config.behavior_daily_limit,
+                pool=pool, limit=limit, global_limit=limit,
             )
             if quota.get("status") != "reserved":
                 raise ValueError("control_quota_unavailable")
