@@ -187,6 +187,9 @@ FIELD_LABELS = {
     "promise_max_depth": "单条承诺最多拆几层",
     "promise_advance_limit": "每轮最多推进几条",
     "promise_tick_seconds": "承诺推进间隔",
+    "promise_recall_limit": "预取几条记忆材料",
+    "promise_trace_ttl_hours": "兑现片段保留时长",
+    "proactive_native_yield": "宿主主动聊天时让行",
     "weather_factor_enabled": "天气影响情绪",
     "weather_poll_seconds": "天气抓取间隔",
     "weather_transition_seconds": "天气过渡时长",
@@ -211,7 +214,7 @@ def field_section(name):
             (("night", "sleep", "wake", "nap", "fatigue", "deep_sleep", "lie_in", "energy",
               "allow_sleep", "catchup", "closing"), "night"),
             (("diary", "dream", "experience", "home_city"), "experience"),
-            (("autonomy", "group", "behavior", "dnd", "active", "muted"), "behavior"),
+            (("autonomy", "group", "behavior", "proactive", "dnd", "active", "muted"), "behavior"),
             (("promise",), "promise"),
             (("coupling",), "coupling"),
             (("relationship",), "relationship")):

@@ -23,6 +23,10 @@ CONFIG_HELP = {
     "autonomy_qq_ids": ("允许主动私聊的 QQ 号码。", "手写号码或在输入框中选择建议；逗号、空格或换行分隔。只匹配已有真实QQ私聊，不会凭号码创建会话。空白不授权新私聊。", "填 12345678, 23456789，允许主动联系这两位；从下拉选择会追加到现有名单。"),
     "autonomy_qq_group_ids": ("限定允许主动发言的 QQ 群号。", "填写群号码而非成员QQ号；只匹配已知真实QQ群，并且必须同时开启群聊主动行为。留空表示所有已知真实QQ群；群总开关、静默、时段及预算仍然生效。群号与私聊QQ号分开判断，私聊名单留空仍不授权私聊。", "留空并开启群聊总开关可作用于所有已知真实QQ群；填写 34567890, 45678901 则只作用于这些群。"),
     "group_autonomy_enabled": ("允许在已授权的群聊主动发言。", "群聊总开关独立于私聊；关闭时即使填了群号也不主动发送，不向群聊分享私聊情绪或私有记忆。", "只希望主动私聊：保持关闭，群号可留空。"),
+    "proactive_native_yield": ("检测到宿主主动聊天时让行。",
+     "只读宿主任务表，不修改、不删除任何任务；让行只作用于随机主动行为，承诺兑现、晚安与补课不受影响。"
+     "关掉宿主那条任务后，最长5分钟自动恢复接管。",
+     "宿主里还留着「主动找主人聊话题」时保持开启，避免同一时段各说一次。"),
     "muted_scopes": ("暂停指定真实会话的主动行为。", "填写现有完整范围标识，多个用空格分隔；静默优先于允许名单。通常先从号码名单移除即可。", "临时停用一个范围：复制该真实会话scope_key填入；清空后仍需满足号码授权。"),
     "active_start": ("每天允许主动行为的开始时间。", "使用本地24小时HH:MM，与结束时间组成主动窗口；免打扰与睡眠限制仍优先。", "09:00至22:00，表示只在白天与晚间尝试。"),
     "active_end": ("每天允许主动行为的结束时间。", "结束边界不包含在主动窗口内；开始晚于结束表示跨午夜。两端不能相同。", "开始20:00、结束00:30，表示可延续到次日零点半之前。"),
@@ -67,9 +71,17 @@ CONFIG_HELP = {
     "promise_advance_limit": ("一轮对话里最多推进几条承诺。",
      "范围1–10；避免一次回复里连珠炮似地追问一堆事。",
      "填3表示每轮最多推进3条。"),
-    "promise_tick_seconds": ("后台推进承诺的间隔。",
-     "单位秒，范围30–3600；只做状态推进，不主动发消息。",
-     "填60表示每分钟检查一次。"),
+    "promise_tick_seconds": ("后台检查到期承诺的间隔。",
+     "单位秒，范围15–600；到点会单独发消息，不并入下一轮回复。",
+     "填15表示每15秒检查一次，2分钟的承诺通常几秒内发出。"),
+    "promise_recall_limit": ("承诺落库时预取几条记忆材料。",
+     "范围1–8；外部 LivingMemory 只接受真实事件授权，必须在消息刚提交时取，"
+     "等到点再取会返回空。取不到时只用概要生成，不影响兑现。",
+     "填4表示最多带4条相关材料进到期生成。"),
+    "promise_trace_ttl_hours": ("兑现后片段缓存保留多久。",
+     "范围1–168小时；期间用户追问直接读缓存，不再走向量检索；"
+     "到期自动释放，追问回到正常检索。",
+     "填24表示刚兑现的一天内，追问「刚才那张」能直接接上。"),
     "energy_comfort_percent": ("精力达到这条线就算清醒，自主参与不用唤醒。", "数值0–100，步进0.1，默认80。达到或超过时正常参与，不计唤醒轮次、不受唤醒窗口约束；低于此值又在夜里被叫醒，才开启唤醒窗口。深睡不受此项影响。", "设80：精力85可以自己接话；精力60需要在夜里被叫醒才进入唤醒窗口。"),
     "energy_max": ("总精力固定为100点。", "只读上限，用于统一精力曲线和展示，不能通过配置修改。", "当前74点表示上限100中的74点。"),
     "catchup_enabled": ("醒来后阅读已保存的未读消息。", "从本插件有真实来源的未读归档读取；不等于访问平台全部历史，补答开关独立。", "只希望醒后了解聊天：开启阅读、关闭历史补答。"),
@@ -201,14 +213,16 @@ def field_parent(name):
     if name.startswith("coupling_"):
         return "", 0
     if name in ("enabled", "mode", "timezone", "provider_id", "home_city",
-                "persona_mode", "autonomy_enabled", "night_schedule_enabled",
+                "persona_mode", "autonomy_enabled", "promise_enabled", "night_schedule_enabled",
                 "diary_enabled", "dream_enabled", "livingmemory_enabled",
                 "emotion_model_enabled"):
         return "", 0
+    if name.startswith("promise_"):
+        return "promise_enabled", 1
     if name in ("nap_enabled", "catchup_enabled", "closing_enabled"):
         return "night_schedule_enabled", 1
     for prefixes, parent in (
-        (("behavior", "autonomy_qq", "group_autonomy", "dnd", "active", "muted"), "autonomy_enabled"),
+        (("behavior", "autonomy_qq", "group_autonomy", "proactive", "dnd", "active", "muted"), "autonomy_enabled"),
         (("diary",), "diary_enabled"), (("dream",), "dream_enabled"),
         (("memory", "embedding", "window", "body", "event_days"), "livingmemory_enabled"),
         (("persona",), "persona_mode"),
