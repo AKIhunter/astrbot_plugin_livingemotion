@@ -121,6 +121,14 @@ CONFIG_HELP = {
     "model_timeout_seconds": ("后台模型任务的超时时间。", "范围1–120秒；超时不证明上游没有执行，结果未知时不会自动重复发送。", "30秒适合通常响应较快的模型；较慢模型可填60。"),
 }
 
+CONFIG_HELP["coupling_promise_actions"] = (
+    "承诺到点时怎么交付：并进下一轮回复，还是单独发一条。",
+    "auto：检测到 LivingHello 且两侧都启用时走并轨——不单独发消息、不为兑现文案额外调模型，"
+    "由对话里下一轮回复顺带交付（有图就发图），因此不会和被动回复出现两条一样的话；"
+    "on：始终并轨；off：始终单独发送一条文字（这时可能与被动回复重复，属预期）。",
+    "auto 适合长期使用；off 仅用于排查「承诺到底有没有到点」这类问题。",
+)
+
 CONFIG_HELP[RELATIONSHIP_STAGE_NAMES_FIELD] = (
     "关系页面11个阶段的自定义显示名称。",
     "填写11项JSON字符串数组；空项使用默认名称。仅修改显示文案，不改变0–100分阶段边界或内部0–1000分数；非空名称须互不相同。",
@@ -180,13 +188,17 @@ CONFIG_HELP["relationship_stage_names"] = (
 
 
 def field_help(name):
-    short, details, example = CONFIG_HELP[name]
+    short, details, example = CONFIG_HELP.get(
+        name, ("", "这个字段还没有补充说明；请以配置项名称和默认值为准。", ""))
     return {"help": short, "details": details, "example": example}
 
 
 def field_parent(name):
     """Indent child settings beneath their module controls."""
     if name == RELATIONSHIP_STAGE_NAMES_FIELD:
+        return "", 0
+    # 耦合开关是独立分组的一级项，不该缩进到任何模块下面。
+    if name.startswith("coupling_"):
         return "", 0
     if name in ("enabled", "mode", "timezone", "provider_id", "home_city",
                 "persona_mode", "autonomy_enabled", "night_schedule_enabled",

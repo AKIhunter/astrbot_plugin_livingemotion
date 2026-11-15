@@ -50,7 +50,8 @@ const optionLabels = resource({
   context: t("按真实会话独立"), per_scene: t("按真实会话独立"),
 });
 const groups = resource({ quick: t("快速开始"), persona: t("人格与状态模式"), emotion: t("情绪"), relationships: t("关系"),
-  behavior: t("主动行为"), promise: t("承诺代办"), night: t("长夜"), experience: t("日记与梦境"), memory: t("记忆") });
+  behavior: t("主动行为"), promise: t("承诺代办"), night: t("长夜"), experience: t("日记与梦境"), memory: t("记忆"),
+  coupling: t("功能耦合") });
 const quickKeys = new Set(["enabled", "mode", "persona_id", "timezone", "night_timezone", "model_provider_id",
   "residence_city", "home_city", "memory_mode", "use_livingmemory", "night_enabled", "sleep_enabled"]);
 const advancedPattern = /budget|limit|threshold|concurrency|timeout|cooldown|retention|ttl|maximum|max_records|read|export|write|lead|backoff/;
@@ -282,6 +283,27 @@ export function schedulePreview(values) {
   const clock = value => `${value >= 1440 ? t("次日 ") : t("当日 ")}${String(Math.floor(value / 60) % 24).padStart(2, "0")}:${String(Math.floor(value) % 60).padStart(2, "0")}${value % 1 ? ":30" : ""}`;
   return t("本地 {0}：夜间 {1} → 恍惚转困 {2} → 沉睡 {3} → 基础起床 {4}。实际起床另加本周期持久赖床值，不在页面重抽。", [text(values.timezone, t("时区未配置")), clock(start), clock((start + deepAt) / 2), clock(deepAt), clock(wakeAt)]);
 }
+// 「功能耦合」分组的状态表：谁在场、谁已启用。承诺代办不再单独列行，
+// 它的行为完全由「是否与 LivingHello 耦合」决定。
+// 数据来自后端 coupling DTO，纯展示，不在这里写任何行为。
+function renderCouplingStatus(section, state) {
+  const data = object(state.data && state.data.coupling);
+  const items = list(data.items);
+  const box = node("div", undefined, "coupling-status");
+  box.append(node("p", t("这里显示真实的接入状态。与 LivingHello 已耦合时，承诺到点不会单独发消息，而是在下一轮回复里一并交付。"), "hint"));
+  for (const item of items) {
+    const row = node("div", undefined, "coupling-row");
+    row.append(node("span", text(item.name, item.kind), "coupling-name"));
+    const label = !item.connected ? t("未检测到")
+      : item.effective ? t("已连接 · 已启用")
+        : item.enabled ? t("已连接 · 未就绪") : t("已连接 · 未启用");
+    row.append(node("span", label, "coupling-state"));
+    if (item.reason) row.append(node("span", text(item.reason), "hint"));
+    box.append(row);
+  }
+  section.append(box);
+}
+
 export function renderSettings(root, state, options, updateControls, descriptionLoader, styleApi) {
   const experienceOnly = state.section === "experience";
   // 配置里 persona_id 为空表示跟随宿主当前会话人格，风格摘要仍需按该人格读写。
@@ -347,6 +369,7 @@ export function renderSettings(root, state, options, updateControls, description
     section.inert = section.hidden;
     section.setAttribute("aria-hidden", String(section.hidden));
     const heading = node("h2", title); heading.tabIndex = -1; section.append(heading);
+    if (group === "coupling") renderCouplingStatus(section, state);
     // 「长夜」原来 27 个字段平铺，作息/唤醒/精力/补课/晚安混在一起看不清边界。
     // 后端给了每个字段的 subsection，这里按它拆成小卡片；其它分组保持原样。
     const subsectionOrder = list(object(state.data.config.subsections)[group]);

@@ -93,6 +93,7 @@ SETTINGS_GROUPS = (
     ("quick_start", "快速开始"), ("persona", "人格与状态模式"), ("emotion", "情绪"),
     ("relationship", "关系"), ("behavior", "主动行为"), ("promise", "承诺代办"),
     ("night", "长夜"), ("experience", "日记与梦境"), ("memory", "记忆"),
+    ("coupling", "功能耦合"),
 )
 
 # 「长夜」原来把作息、唤醒、精力、醒后补课、睡前晚安混在同一张表里，27 项一眼看不出
@@ -130,6 +131,7 @@ FIELD_LABELS = {
     "emotion_model_enabled": "模型辅助情绪分析", "dream_enabled": "生成梦境",
     "dream_theme_pool": "梦境主题池", "dream_owner_notify": "梦中惊醒给主人发消息",
     "dream_owner_qq": "主人QQ",
+    "coupling_promise_actions": "承诺到点如何交付",
     "diary_enabled": "生成日记", "night_enabled": "启用作息记录",
     "night_block_chat": "旧版睡眠阻断聊天", "persona_mode": "人格选择方式",
     "persona_id": "原生人格", "timezone": "本地时区", "provider_id": "默认生成模型",
@@ -211,6 +213,7 @@ def field_section(name):
             (("diary", "dream", "experience", "home_city"), "experience"),
             (("autonomy", "group", "behavior", "dnd", "active", "muted"), "behavior"),
             (("promise",), "promise"),
+            (("coupling",), "coupling"),
             (("relationship",), "relationship")):
         if name.startswith(prefixes):
             return group
@@ -454,12 +457,14 @@ class Console:
         enums = {"mode": ["active", "observe_only"], "memory_mode": ["none", "local_lite", "external"],
                  "persona_mode": ["follow", "explicit", "none"], "wake_mode": ["chat", "never", "both"],
                  "behavior_style": ["gentle", "balanced", "lively"],
-                 "emotion_intensity": ["gentle", "normal", "intense"]}
+                 "emotion_intensity": ["gentle", "normal", "intense"],
+                 "coupling_promise_actions": ["auto", "on", "off"]}
         enum_labels = {"active": "正常运行", "observe_only": "仅观察", "none": "不使用",
                        "local_lite": "旧版本地记录", "external": "外部记忆",
                        "follow": "跟随会话人格", "explicit": "指定人格",
                        "chat": "仅私聊", "never": "不允许聊天唤醒", "both": "私聊或群原生@Bot",
-                       "gentle": "轻柔", "balanced": "自然", "lively": "活泼"}
+                       "gentle": "轻柔", "balanced": "自然", "lively": "活泼",
+                       "auto": "自动（跟随检测）", "on": "始终执行动作", "off": "始终只发文字"}
         values = to_dict(self.config)
         values = {key: value for key, value in values.items() if key not in LEGACY_FIELDS}
         options = options or {}
@@ -649,6 +654,7 @@ class Console:
                 behavior_transport_health(self, context),
             ],
             "memory": await self._memory_dto(context),
+            "coupling": self._coupling_dto(),
             "experience": {"diary_enabled": self.config.diary_enabled,
                            "dream_enabled": self.config.dream_enabled,
                            # 任务状态：全局视图下动作本来就落在「最近会话」，
@@ -1006,6 +1012,72 @@ class Console:
             service = MemorySyncService(self.store, self.bridge.discover, self.config)
             self._memory_sync_service = service
         return service
+
+    def _coupling_dto(self):
+        """功能耦合：谁在场、谁已启用、承诺代办当前走哪条路。
+
+        契约复用 LivingHello 自己的 `livinghello.function-coupling.v1`；
+        对方不在场时只报「未检测到」，不改任何行为。
+        """
+        from ..livinghello_coupling import policy as hello_policy
+
+        host = getattr(self.bridge, "host", None)
+        hello = hello_policy(host)
+        hello_rows = (hello or {}).get("integrations") or {}
+        hello_row = hello_rows.get("livingemotion") or {}
+        try:
+            memory = self.bridge.discover("astrbot_plugin_livingmemory")
+        except Exception:
+            memory = None
+        memory_enabled = bool(getattr(self.config, "livingmemory_enabled", False))
+        items = [
+            {
+                "kind": "livinghello",
+                "name": "LivingHello",
+                "connected": hello is not None,
+                "enabled": bool(hello_row.get("enabled")),
+                "effective": bool(hello_row.get("effective")),
+                "reason": "" if hello is not None else "未检测到 LivingHello 插件",
+            },
+            {
+                "kind": "livingmemory",
+                "name": "LivingMemory",
+                "connected": memory is not None,
+                "enabled": memory_enabled,
+                "effective": memory is not None and memory_enabled,
+                "reason": "" if memory is not None else "未检测到 LivingMemory 插件",
+            },
+        ]
+        mode = str(getattr(self.config, "coupling_promise_actions", "auto") or "auto")
+        if mode == "on":
+            active = True
+        elif mode == "off":
+            active = False
+        else:
+            # auto：只有对方确实在场且两侧都启用时才走动作，避免单边开启。
+            active = hello is not None and bool(hello_row.get("effective"))
+        payload = {
+            "mode": mode,
+            "items": items,
+            "promise_actions": {
+                "mode": mode,
+                "active": active,
+                "available": hello is not None,
+                "reason": "" if active else (
+                    "已手动关闭，到点仍单独发送" if mode == "off"
+                    else "未检测到可协作的 LivingHello" if hello is None
+                    else "LivingHello 尚未与 LivingEmotion 耦合，到点单独发送"),
+            },
+        }
+        # 首次装配打一条，确认契约真的读到了，而不是静默降级。
+        if not getattr(self, "_coupling_probe_logged", False):
+            self._coupling_probe_logged = True
+            import logging
+            logging.getLogger("astrbot_plugin_livingemotion.promise").warning(
+                "[LE-coupling] 探测 %s", [(row["kind"], row["connected"], row["effective"])
+                                          for row in items] +
+                [("promise_actions", payload["promise_actions"]["active"], mode)])
+        return payload
 
     async def _memory_dto(self, context):
         """记忆后端真实能力；不再把内部枚举 mode=none 当成「本地向量 · 待配置」。"""

@@ -136,6 +136,10 @@ class PageAPI:
             self._validate_result(operation, result, parameters)
             return json_response({"status": "ok", "data": result}, headers=RESPONSE_HEADERS)
         except Exception as exc:
+            # 兜底错误会把真实原因吞成 unavailable，排障时必须留原始栈。
+            import logging
+            logging.getLogger("astrbot_plugin_livingemotion.console").warning(
+                "[LE-api] %s 失败: %r", operation, exc, exc_info=True)
             error = public_error(exc)
             return json_response(
                 {

@@ -59,6 +59,7 @@ from .persona_style import PersonaStyle
 SUFFIX = "<!--livingemotion:state:v1-->"
 CATCHUP_SUFFIX = "<!--livingemotion:crawled_history:v2-->"
 MEMORY_SUFFIX = "<!--livingemotion:memory:v2-->"
+PENDING_SUFFIX = "<!--livingemotion:pending_promise:v1-->"
 
 # 睡前晚安的去重闸门：本条回复已经在道晚安时，插件再追加一句就是重复。
 # 词面刻意收窄到明确的道别说法，避免把「我不困」这类句子误拦。
@@ -487,12 +488,19 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             rows = []
         lines = [
             "【记账规则 必须遵守】",
-            "你说了「稍后」「一会儿」「等一下」「明天」这类还没做到的事时，"
-            "必须在回复的最后一行单独写一条记账指令，系统会把它删掉，用户看不到：",
+            "只要有一件「你应下了、但这一轮不做」的事，就必须在回复最后一行",
+            "单独写一条记账指令，系统会把它删掉，用户看不到：",
             "<!--promise:档位:这件事做什么-->",
             "档位只能填这六个之一：马上 一会儿 待会 今晚 明天 过几天",
+            "怎么选：几分钟内=马上；半小时左右=一会儿；一小时内=待会；",
+            "今晚八到十一点=今晚；跨天=明天；更远=过几天。",
+            "用户给了具体时间（「六点过」「八点」「明天上午」）就按那个时间取最近的档位，",
+            "不许因为时间说不准就不记账。",
+            "要照片、自拍、图、语音，但这会儿还不到时候的：也只记账。",
+            "现在绝对不要调用生图或发图工具——先把承诺记下来，到点再给。",
+            "这条只约束「还没到时候」的这一轮；到点的那一轮会另行通知你直接生成。",
             "示例（整行照抄格式）：<!--promise:一会儿:把昨晚那首歌找出来发他-->",
-            "只有真的答应了一件还没做的事才写。闲聊、反问、已经做完的事都别写。"
+            "只有真的应下一件还没做的事才写。闲聊、反问、已经做完的事都别写。",
             "一条回复最多写一条。指令必须是回复的最后一行。",
         ]
         if rows:
@@ -524,6 +532,29 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                 logger.warning("[LE-promise] tick 已发出=%d", sent)
         except Exception as exc:
             logger.warning("[LE-promise] tick 失败 %r", exc)
+
+    def promise_actions_active(self):
+        """承诺代办是否走动作模式（耦合已生效且未被手动关闭）。"""
+        try:
+            return bool(self._coupling_dto()["promise_actions"]["active"])
+        except Exception:
+            return False
+
+    async def compose_promise_action_line(self, context, description):
+        """动作模式的承接语。
+
+        与 `compose_promise` 的区别是**不复述、不承诺、不解释流程**：
+        动作已经执行完，这里只说「东西给你了」，避免和被动回复撞车。
+        """
+        system = ("你刚把先前答应的事办妥了。用一句口语告诉对方东西已经给他，"
+                  "不超过二十个字；不要复述对方的原话，不要解释流程、模型或后台，"
+                  "也不要再答应一遍。只输出要发的那句话。")
+        data = prompt_json({"persona": await self.persona_style(context.persona_id, ""),
+                            "promised": description})
+        return await self.purpose_model(
+            context, "closing", system, data,
+            stable_key("promise-action-line", context.scope_key, description),
+            max_output_tokens=80)
 
     async def compose_promise(self, context, description, note):
         """兑现内容要像真的在说话，这一句才值得走模型。"""
@@ -559,17 +590,17 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             return raw
         event.set_extra("livingemotion:promise_created", created)
         event.set_extra("livingemotion:promise_cancels", cancels)
-        # 指令被抠掉后正文可能变短，逐段回填，保持原有气泡结构。
-        remaining = cleaned
+        # 指令被抠掉后正文可能变短。模型可能把一句话拆成多个组件
+        # （分段插件随后会把它们并成完整正文再重切），所以这里只能
+        # **就地清掉标记**，绝不把清洗后的全文塞回某个组件 ——
+        # 那会让同一段话既留在原组件里、又被整段复制进另一个组件，
+        # 最终同一句话发两遍（2026-11-15 22:00 实测）。
         for part in getattr(result, "chain", ()) or ():
             if not hasattr(part, "text"):
                 continue
             original = str(getattr(part, "text", ""))
-            if not original.strip():
-                continue
             if "<!--" in original:
-                part.text = remaining if remaining else ""
-                remaining = ""
+                part.text = MARK.sub("", original).strip()
         return cleaned
 
     async def flush_promises(self, context, event):
@@ -886,11 +917,44 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         except Exception:
             pass
 
+    async def _inject_pending_promises(self, request, context):
+        """把已经到点的承诺并入本轮回复，而不是另发一条。
+
+        耦合生效时承诺到点会被标成 awaiting（见 PromiseService._deliver）。
+        这里把它们交给当前这轮请求：该给的东西顺带给出（有图就发图），
+        用一句口语交代已给到。交付内容就是这一轮回复本身，
+        因此既不会多一条重复气泡，也不需要额外调一次模型。
+        """
+        if not self.promise_actions_active():
+            return
+        rows = await self._promises().take_awaiting(context)
+        if not rows:
+            return
+        # 只把 id 记下来，**不在这里标已交付**：此刻回复还没生成，
+        # 模型完全可能只字未提、甚至反口说「还没弄」，那样任务会被记成
+        # 已兑现而实际什么都没给（2026-11-15 实测）。真正的确认放在
+        # on_reply_submitted 提交成功之后，见 _confirm_awaiting_delivery。
+        self.__dict__.setdefault("_awaiting_inflight", {})[context.scope_key] = [
+            str(row["promise_id"]) for row in rows]
+        lines = ["- " + str(row.get("description") or "") for row in rows]
+        request.extra_user_content_parts.append(self.bridge.text_part(
+            PENDING_SUFFIX + "\n以下这些事已经到点，这一轮必须给出结果。\n"
+            "需要图片、照片、自拍的，现在就调用生图工具生成并发出去——"
+            "此前「只记账、先别生成」的限制，此刻已经解除。\n"
+            "不许说「还没做」「还没拍」「还没到」「回头再说」：到点了，就是你该给的时候。\n"
+            "给完用一句口语交代已经给到；不要另起一条消息，不要解释流程或后台。\n"
+            "这些事已经在待办里，这一轮不要再为它们写记账指令。\n"
+            + "\n".join(lines)[:1200]))
+        logger.warning("[LE-promise] 待交付并入本轮回复 scope=%s 条数=%d 内容=%s",
+                       str(context.scope_key)[:12], len(rows),
+                       [str(r.get("description") or "")[:16] for r in rows])
+
     async def on_llm_request(self, event, request):
         # Always remove stale blocks, including when disabled or after a reload.
         request.extra_user_content_parts[:] = [
             part for part in request.extra_user_content_parts
-            if not getattr(part, "text", "").startswith((SUFFIX, CATCHUP_SUFFIX, MEMORY_SUFFIX))
+            if not getattr(part, "text", "").startswith(
+                (SUFFIX, CATCHUP_SUFFIX, MEMORY_SUFFIX, PENDING_SUFFIX))
         ]
         from ..livinghello_coupling import allowed as coupling_allowed
         _ok = coupling_allowed(getattr(self.bridge, "host", None), "livingemotion")
@@ -964,6 +1028,10 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                 await self._inject_promise_contract(request, context)
             except Exception as exc:
                 logger.warning("[LE-promise] 注入失败 %r", exc)
+            try:
+                await self._inject_pending_promises(request, context)
+            except Exception as exc:
+                logger.warning("[LE-promise] 待交付注入失败 %r", exc)
             from ..livinghello_coupling import policy as coupling_policy
             if coupling_policy(getattr(self.bridge, "host", None)) is None:
                 await self._inject_recalled_memory(event, request, context)
@@ -1143,6 +1211,26 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         ))
         event.set_extra("livingemotion:memory_lease", (query, result.materials))
 
+    async def _confirm_awaiting_delivery(self, context):
+        """回复提交成功后才把待交付的承诺落 sent。
+
+        注入阶段只登记候选，不写状态：模型可能一句话都没提，
+        也可能反口说「还没到、还没弄」。那时候落 sent 就是假交付——
+        面板显示已兑现，实际什么都没给。
+        """
+        pending = self.__dict__.get("_awaiting_inflight") or {}
+        ids = pending.pop(context.scope_key, None)
+        if not ids:
+            return
+        try:
+            done = await self._promises().mark_delivered_many(ids)
+        except Exception as exc:
+            logger.warning("[LE-promise] 交付确认失败 %r", exc)
+            return
+        logger.warning("[LE-promise] 待交付已随本轮回复交付 scope=%s 条数=%d ids=%s",
+                       str(context.scope_key)[:12], len(done),
+                       [str(p)[:8] for p in done])
+
     async def on_reply_submitted(self, event):
         result = event.get_result() if callable(getattr(event, "get_result", None)) else None
         content_type = getattr(getattr(result, "result_content_type", None), "name", None)
@@ -1179,6 +1267,10 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         if not chain:
             return None
         text = "".join(str(getattr(part, "text", "")) for part in chain)
+        # 临时诊断：列出最终提交链的组件构成，定位「同一段正文发两遍」
+        # 到底发生在提交前（这里能看到重复）还是提交后（宿主/表情包再发）。
+        logger.warning("[LE-debug] 提交链组件=%s text=%r",
+                       [type(part).__name__ for part in chain], text[:60])
         # 承诺指令先抠出来：标记绝不能出现在用户看到的正文里。
         text = self._strip_promise_marks(event, result, text)
         # 走到这里说明宿主已确认接单，承诺可以落库了。
@@ -1186,6 +1278,8 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         if not await self.record_host_submission(context, lease["attempt_id"], text):
             self._discard(event, "duplicate")
             return False
+        # 回复已经真正交给宿主，这才算待交付的承诺完成了交付。
+        await self._confirm_awaiting_delivery(context)
         await self.catchup_archive.mark_consumed(
             context, lease["generation"], str(event.message_obj.message_id),
         )

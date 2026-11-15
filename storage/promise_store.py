@@ -44,8 +44,11 @@ MIGRATIONS = (
 
 # 允许的状态转换；越界的写入一律拒绝，避免状态机被绕过。
 TRANSITIONS = {
-    "scheduled": {"running", "cancelled", "failed"},
+    # awaiting：已经到点，但处在耦合状态——不单独发消息，
+    # 等对话里下一轮回复一并交付（见 application._inject_pending_promises）。
+    "scheduled": {"running", "awaiting", "cancelled", "failed"},
     "running": {"sent", "failed", "unknown"},
+    "awaiting": {"sent", "cancelled", "failed"},
     "sent": set(),
     "failed": set(),
     "cancelled": set(),
@@ -53,6 +56,12 @@ TRANSITIONS = {
 }
 
 ACTIVE = ("scheduled", "running")
+
+# 「刚发过就别再建」的判定窗口（秒）。
+# 这条规则只用来挡住**同一条回复被重复提交**造成的双份任务，
+# 不能当「今天说过就永不再记」：提醒类措辞（「十分钟后提醒我出门」）
+# 一天里本来就会反复出现，24 小时窗口会把第二次请求静默吞掉。
+ALREADY_SENT_WINDOW = 600
 
 
 def normalize(description: str) -> str:
@@ -110,9 +119,13 @@ class PromiseStore:
                 # 同内容已在队列里就不新建，只把时间提前（更早的到期更急）。
                 row = db.execute(
                     """SELECT promise_id, due_at, status FROM promises
-                       WHERE scope_key=? AND fingerprint=? AND status IN ('scheduled','running')""",
+                       WHERE scope_key=? AND fingerprint=?
+                         AND status IN ('scheduled','running','awaiting')""",
                     (scope, fp)).fetchone()
                 if row:
+                    if row["status"] == "awaiting":
+                        # 已经到点、正等着并进下一轮回复。再记一遍只会多一条幽灵待办。
+                        return {"status": "duplicate", "promise_id": row["promise_id"]}
                     if due_at < row["due_at"]:
                         db.execute(
                             "UPDATE promises SET due_at=?, bucket=?, updated_at=? "
@@ -120,14 +133,15 @@ class PromiseStore:
                             (due_at, bucket, now, row["promise_id"]))
                         return {"status": "advanced", "promise_id": row["promise_id"]}
                     return {"status": "duplicate", "promise_id": row["promise_id"]}
-                # 二十四小时内已经发过同样的事，不再重复骚扰。
+                # 刚发过同样的事就不再建，窗口见 ALREADY_SENT_WINDOW 的说明。
                 recent = db.execute(
-                    """SELECT promise_id FROM promises
+                    """SELECT promise_id, sent_at FROM promises
                        WHERE scope_key=? AND fingerprint=? AND status='sent'
                          AND sent_at IS NOT NULL AND sent_at>?""",
-                    (scope, fp, now - 86400)).fetchone()
+                    (scope, fp, now - ALREADY_SENT_WINDOW)).fetchone()
                 if recent:
-                    return {"status": "already_sent", "promise_id": recent["promise_id"]}
+                    return {"status": "already_sent", "promise_id": recent["promise_id"],
+                            "age": int(now - float(recent["sent_at"] or now))}
                 active = db.execute(
                     "SELECT COUNT(*) FROM promises WHERE scope_key=? AND status IN ('scheduled','running')",
                     (scope,)).fetchone()[0]
@@ -196,6 +210,48 @@ class PromiseStore:
             return [dict(row) for row in db.execute(sql, args)]
 
         return await self.store._run(read)
+
+    async def take_awaiting(self, *, scope_key: str,
+                            limit: int = 3) -> list[dict[str, Any]]:
+        """到点待并入回复的承诺。
+
+        耦合生效时刻意不发独立消息：多一条气泡就会和被动回复撞车。
+        这里只取出来交给本轮请求，由回复本身完成交付。
+        """
+        await self.ensure()
+        if not scope_key:
+            return []
+
+        def read(db):
+            rows = db.execute(
+                """SELECT promise_id,description,status,bucket,due_at FROM promises
+                   WHERE scope_key=? AND status='awaiting'
+                   ORDER BY due_at ASC LIMIT ?""",
+                (scope_key, max(1, min(20, int(limit))))).fetchall()
+            return [dict(row) for row in rows]
+
+        return await self.store._run(read)
+
+    async def release_awaiting(self, now: float) -> int:
+        """把等待并入回复的承诺放回队列。
+
+        用户中途把「承诺代办」切回 off 时，之前攒下的 awaiting 不会有任何
+        人再来取，会永远卡在那里。off 的语义就是「照旧单独发一条」，
+        所以这里把它们重新排到当前时刻。
+        """
+        await self.ensure()
+
+        def write(db):
+            def mutate():
+                cur = db.execute(
+                    """UPDATE promises SET status='scheduled', due_at=?, updated_at=?
+                       WHERE status='awaiting'""", (now, now))
+                return {"status": "ok", "released": cur.rowcount}
+
+            return self.store._transaction(db, mutate)
+
+        result = await self.store._run(write)
+        return int(result.get("released") or 0)
 
     async def move(self, promise_id: str, *, status: str, expect=ACTIVE,
                    error: str = "") -> dict[str, Any]:

@@ -323,6 +323,16 @@
     },
     "description": "扫描到期承诺的间隔秒数。例：默认 60，最小 15。"
   },
+  "coupling_promise_actions": {
+    "type": "string",
+    "default": "auto",
+    "options": [
+      "auto",
+      "on",
+      "off"
+    ],
+    "description": "承诺兑现时是否与可耦合插件协作。auto：检测到 LivingHello 等插件就执行动作（直接发出图片并附一句承接语），否则照旧发文字；on：始终执行动作；off：始终只发文字。动作模式不会复述对方刚说过的话。"
+  },
   "catchup_provider_id": {
     "type": "string",
     "default": "",

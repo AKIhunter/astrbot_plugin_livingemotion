@@ -27,8 +27,12 @@
 避免“用户没看见那句话，任务却排上了”的幽灵待办。
 
 同一 `(scope_key, 描述归一化)` 只保留一条。措辞相同但时间更早的，会把已有那条提前
-（`advanced`）；时间更晚的按重复处理（`duplicate`）；24 小时内已经发过同样的事，
-按 `already_sent` 直接丢弃。
+（`advanced`）；时间更晚的按重复处理（`duplicate`）；已经到点、正等下一轮回复的
+（`awaiting`）同样算在队列里，不会再建第二条。
+
+`already_sent` 的窗口是 **10 分钟**，不是一天。这条规则只用来挡住同一条回复被重复
+提交造成的双份任务；提醒类措辞（「十分钟后提醒我出门」）一天里本来就会反复出现，
+24 小时窗口会把第二次请求静默吞掉，用户以为根本没记上。
 
 ## 时间档
 
@@ -49,6 +53,7 @@ scheduled ──move──> running ──> sent
     │                  │
     │                  ├──> failed      （重试耗尽或终态失败）
     │                  └──> unknown     （结果不可判定，随后自愈回 scheduled）
+    ├──> awaiting ──> sent             （耦合生效：到点不发送，随下一轮回复交付后落 sent）
     ├──> cancelled                    （用户取消 / 会话消失）
     └──> failed                       （配额、内容、夜间等重试耗尽）
 ```
@@ -62,7 +67,11 @@ scheduled ──move──> running ──> sent
 ```mermaid
 flowchart TD
     A["tick 每 60 秒"] --> B["due(): status=scheduled 且 due_at<=now"]
-    B --> C["_live_context: 找带 route 的上下文"]
+    B --> Q{"承诺代办已耦合?"}
+    Q -->|"是"| R["move(awaiting)：不发送、不调模型、不加气泡"]
+    R --> S["下一轮回复注入待交付"]
+    S --> T["该轮回复提交成功 → status=sent"]
+    Q -->|"否"| C["_live_context: 找带 route 的上下文"]
     C -->|"bridge.sources 命中"| D["直接用实时上下文"]
     C -->|"内存没有"| E["从 source_contexts 重建 route"]
     E -->|"会话表也没登记"| F["cancel 判死"]
@@ -77,8 +86,26 @@ flowchart TD
     M -->|"True"| N["result=sent → status=sent"]
     M -->|"False"| O["result=rejected → defer 300s"]
     M -->|"异常/未知"| P["result=unknown → defer 300s"]
-    N --> Q["auto_memory.ingest 写入记忆"]
+    N --> U["auto_memory.ingest 写入记忆"]
 ```
+
+### 为什么耦合时改成并轨
+
+耦合生效时，兑现不再单独发一条。原因很实在：同一轮对话里 LivingHello 已经回过一次，
+LivingEmotion 再发一条「之前说好的……」必然是第二份话，内容还高度重合。
+
+所以到点只做两件事：`move(awaiting)`，等下一轮回复把结果带出去。三个关键点：
+
+1. **不调模型。** 为一句承接语再调一次模型纯属浪费，而且会和被动回复的语气打架。
+2. **不在注入时落 sent。** 注入只登记候选 id；模型完全可能一个字都没提、
+   甚至反口说「还没到、还没弄」，那时候落 sent 就是假交付——面板显示已兑现，
+   实际什么都没给。确认点放在回复提交成功之后（`_confirm_awaiting_delivery`）。
+3. **注入是硬指令。** 到点那轮明确解除「先别生成」的限制，并禁止「还没做」
+   「还没拍」「还没到」这类推脱话术；否则模型会把待交付项当成闲聊话题，
+   顺口编一句「我还没拍呢」——用户看到的就是自相矛盾。
+
+把「承诺代办」切回 `off` 时，攒着的 `awaiting` 会被 `release_awaiting` 放回队列，
+按老路单独发一条，不会永远卡住。
 
 ### 为什么兑现要脱离实时事件
 

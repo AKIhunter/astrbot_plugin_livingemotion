@@ -136,6 +136,9 @@ class Config:
     promise_max_depth: int = 3
     promise_advance_limit: int = 3
     promise_tick_seconds: int = 60
+    # 承诺代办与可耦合插件的协作方式：auto 跟随检测，on 强制动作，off 强制纯文本。
+    # 动作模式只执行具体事件（发图等）并附一句承接语，不生成“被动回复式”正文。
+    coupling_promise_actions: str = "auto"
     closing_enabled: bool = False
     closing_random: bool = False
     closing_lead_minutes: int = 5
@@ -234,6 +237,8 @@ class Config:
             raise ValueError("invalid mode")
         if self.memory_mode not in ("none", "local_lite", "external"):
             raise ValueError("invalid memory mode")
+        if self.coupling_promise_actions not in ("auto", "on", "off"):
+            raise ValueError("invalid coupling promise actions mode")
         if self.persona_mode not in ("follow", "explicit", "none"):
             raise ValueError("invalid persona mode")
         if self.persona_mode == "explicit" and not self.persona_id:

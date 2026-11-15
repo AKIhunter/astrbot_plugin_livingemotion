@@ -208,6 +208,11 @@ class PromiseService:
         """到点就跑。返回成功发出的条数。"""
         await self.heal()
         moment = self.store.clock() if now is None else float(now)
+        if not self.app.promise_actions_active():
+            # 并轨被关掉：先前挂起等回复的承诺不会有人来取，放回队列单独发。
+            released = await self.promises.release_awaiting(moment)
+            if released:
+                logger.warning("[LE-promise] 并轨已关闭 放回队列 %d 条", released)
         rows = await self.promises.due(now=moment, limit=limit)
         sent = 0
         for row in rows:
@@ -217,8 +222,57 @@ class PromiseService:
             await self.promises.purge(keep=200)
         return sent
 
+    async def take_awaiting(self, context: Context) -> list[dict]:
+        """本轮需要顺带交付的承诺（耦合生效时才会有）。"""
+        if not self.app.promise_actions_active():
+            return []
+        return await self.promises.take_awaiting(scope_key=context.scope_key)
+
+    async def mark_delivered(self, promise_id: str) -> None:
+        """并入回复后落 sent：这条不再由调度器处理。"""
+        await self.promises.move(promise_id, status="sent", expect=("awaiting",))
+
+    async def mark_delivered_many(self, promise_ids) -> list:
+        """批量落 sent，返回真正写成功的 id。
+
+        逐条处理而不是一条 SQL 全改：单条被取消/已是终态时不该连累其它条目。
+        """
+        done = []
+        for promise_id in promise_ids or ():
+            try:
+                outcome = await self.promises.move(
+                    str(promise_id), status="sent", expect=("awaiting",))
+            except Exception as exc:
+                logger.warning("[LE-promise] 交付落库失败 %s: %r",
+                               str(promise_id)[:8], exc)
+                continue
+            if str(outcome.get("status")) == "ok":
+                done.append(str(promise_id))
+            else:
+                logger.warning("[LE-promise] 交付落库被拒 %s -> %s",
+                               str(promise_id)[:8], outcome)
+        return done
+
     async def _deliver(self, row: dict) -> bool:
         promise_id = row["promise_id"]
+        # 耦合生效时改走「并轨」：不单独发消息、不为兑现文案调模型。
+        # 单独发一条必然和对方的被动回复撞车（用户实测两条内容一模一样），
+        # 而为一句话再调一次模型纯属浪费。这里只把承诺标成 awaiting，
+        # 等下一轮回复进来时由 _inject_pending_promises 一并交付。
+        if self.app.promise_actions_active():
+            if not await self._scope_known(row.get("scope_key")):
+                await self.promises.cancel(promise_id)
+                logger.warning("[LE-promise] 会话已不存在 放弃承诺 %s", promise_id[:8])
+                return False
+            handed = await self.promises.move(
+                promise_id, status="awaiting", expect=("scheduled",))
+            if handed.get("status") == "ok":
+                logger.warning("[LE-promise] 耦合生效 转待交付(不单独发送) %s | %s",
+                               promise_id[:8], str(row.get("description") or "")[:24])
+                return False
+            logger.warning("[LE-promise] 转待交付失败 %s -> %s",
+                           promise_id[:8], handed)
+            return False
         context = await self._live_context(row)
         if context is None:
             # 分两种“找不到”：会话只是暂时不在内存（重启后还没收到消息、
@@ -357,6 +411,8 @@ class PromiseService:
         from .promise_notice import strip_stops
 
         description = row["description"]
+        # 注意：耦合生效时根本走不到这里（_deliver 已提前转 awaiting）。
+        # 这一条路只在纯文字模式（未耦合 / 手动关闭）下使用。
         try:
             reply = await self.app.compose_promise(context, description, row["note"])
         except Exception:
