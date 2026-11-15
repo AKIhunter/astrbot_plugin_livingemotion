@@ -9,7 +9,36 @@ from ..storage.proactivity import claim_opportunity, finish_opportunity, last_ac
 
 
 class Proactivity:
+    async def host_proactive_state(self) -> dict:
+        """宿主是否已经有一条主动聊天任务；结果缓存五分钟。
+
+        只读探测，不改宿主任何数据。检测不到宿主目录也按"没有"处理，
+        不影响独立部署的场景。
+        """
+        if not bool(getattr(self.config, "proactive_native_yield", True)):
+            return {"present": False, "count": 0, "jobs": [], "reason": "yield_disabled"}
+        from .proactive_arbiter import cached, refresh
+
+        state = cached(getattr(self, "data_dir", ""))
+        if state.get("reason") == "not_probed_yet":
+            # 首次调用才真读一次；之后五分钟内都用缓存。
+            state = await asyncio.to_thread(refresh, getattr(self, "data_dir", ""))
+        return state
+
     async def maybe_proact(self, context):
+        # 宿主自己已经有一条主动聊天 cron 时不抢话：同一时段两套各说一次，
+        # 用户看到的就是"今天怎么连着来两条"。关掉宿主那条后探测为空，
+        # 这里自动恢复，不需要改任何开关。
+        host = await self.host_proactive_state()
+        if host.get("present"):
+            if not getattr(self, "_native_yield_logged", False):
+                self._native_yield_logged = True
+                import logging
+
+                logging.getLogger("astrbot_plugin_livingemotion.promise").warning(
+                    "[LE-behavior] 检测到宿主主动聊天 %s，随机主动行为让行",
+                    [job.get("name") for job in host.get("jobs") or []])
+            return
         policy = self.behavior_policy()
         now = self.store.clock()
         if (self.behavior._policy_reasons(context, policy, now)

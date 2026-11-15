@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import time
@@ -65,8 +66,13 @@ class PromiseService:
     def extract(text: str):
         return strip_marks(text)
 
-    async def remember(self, context: Context, items) -> list[dict]:
-        """把回复里的承诺指令落库。只在消息确认发出后调用。"""
+    async def remember(self, context: Context, items, *, event=None,
+                       summary: str = "", query: str = "") -> list[dict]:
+        """把回复里的承诺指令落库。只在消息确认发出后调用。
+
+        `summary` 是承诺建立时的上下文概要，`query` 是给向量检索用的锚点。
+        两者都在有真实 event 的这一刻产生；等到期再想补，event 早没了。
+        """
         results = []
         timezone = getattr(self.app.config, "timezone", "") or "Asia/Shanghai"
         for bucket, description in items:
@@ -75,8 +81,25 @@ class PromiseService:
             due_at = parse_bucket(bucket, self.store.clock(), timezone)
             note = description[:400]
             result = await self.promises.create(
-                context, description=description, note=note, bucket=bucket, due_at=due_at)
+                context, description=description, note=note, bucket=bucket,
+                due_at=due_at, context_summary=summary)
             results.append(result)
+            if result.get("status") in ("created", "advanced"):
+                # 召回前置：此刻还有真实事件可用，外部记忆后端只认这个。
+                # 失败不该影响承诺本身，所以由应用层吞掉异常只留痕。
+                hook = getattr(self.app, "prefetch_promise_memory", None)
+                if callable(hook):
+                    try:
+                        # 这是"消息已发出"之后的收尾，不能因为记忆后端慢
+                        # 把提交钩子拖住；拿不到就退化成只有概要。
+                        await asyncio.wait_for(
+                            hook(context, event, description=description,
+                                 summary=summary, query=query,
+                                 promise_id=result["promise_id"]),
+                            timeout=5.0)
+                    except Exception as exc:
+                        logger.warning("[LE-promise] 召回前置失败 %s: %r",
+                                       str(result.get("promise_id"))[:8], exc)
         return results
 
     # ---------- 查询 ----------
@@ -228,6 +251,11 @@ class PromiseService:
                 sent += 1
         if sent:
             await self.promises.purge(keep=200)
+        # 片段缓存到期即释放：追问回到正常向量检索，不长期占着语境。
+        try:
+            await self.promises.purge_traces(moment)
+        except Exception:
+            pass
         return sent
 
     async def take_awaiting(self, context: Context) -> list[dict]:
@@ -289,11 +317,12 @@ class PromiseService:
         if moved.get("status") != "ok":
             return False
         try:
-            text = await self._compose(context, row)
+            composed = await self._compose(context, row)
         except Exception as exc:
             await self.promises.defer(promise_id, retry_at=self.store.clock() + RETRY_BACKOFF,
                                       error=f"compose:{type(exc).__name__}", max_retry=MAX_RETRY)
             return False
+        text = str((composed or {}).get("text") or "").strip()
         if not text:
             await self.promises.defer(promise_id, retry_at=self.store.clock() + RETRY_BACKOFF,
                                       error="empty", max_retry=MAX_RETRY)
@@ -306,10 +335,21 @@ class PromiseService:
         # 于是永远 unknown。一条有失败前科的承诺就再也发不出去。
         attempt = int(row.get("retry_count") or 0)
         result = await self.app.send_promise_notice(
-            context, text, "promise:" + promise_id + ("#%d" % attempt if attempt else ""))
+            context, text, "promise:" + promise_id + ("#%d" % attempt if attempt else ""),
+            keep_stops=True)
         if result in ("confirmed", "sent"):
             await self.promises.move(promise_id, status="sent", expect=("running",))
-            logger.warning("[LE-promise] 承诺已发出 %s", promise_id[:8])
+            # 兑现文本与当时召回到的材料一起留一天：用户接下来追问「你刚发的那张」
+            # 「前几天说的那个」时直接命中，不必再跑一次向量检索。
+            await self.promises.set_delivery(promise_id, text)
+            await self.promises.put_trace(
+                scope_key=str(row.get("scope_key") or ""), promise_id=promise_id,
+                kind="delivery",
+                summary=str((composed or {}).get("summary") or row.get("context_summary") or ""),
+                materials=(composed or {}).get("materials") or (),
+                reply_text=text, ttl_seconds=self._trace_ttl())
+            logger.warning("[LE-promise] 承诺已发出 %s 气泡=%d",
+                           promise_id[:8], len([p for p in text.split("\n") if p.strip()]))
             return True
         if result in ("rejected", "unknown"):
             # 这两类是“现在发不出去但还有救”：可能撞冷却、可能上下文变了。
@@ -397,27 +437,44 @@ class PromiseService:
     def _rebuild_route(context) -> str:
         return rebuild_route(context)
 
-    async def _compose(self, context: Context, row: dict) -> str:
-        """兑现内容要真说话，这里才走模型。"""
-        from .promise_notice import strip_stops
+    async def _compose(self, context: Context, row: dict) -> dict:
+        """兑现内容要真说话，这里才走模型。
+
+        返回值带 `materials`：到点生成时用到的召回材料，兑现后原样写进
+        片段缓存，追问时就不必重新检索。
+        """
+        from .promise_notice import clean_delivery, strip_stops
 
         description = row["description"]
+        summary = str(row.get("context_summary") or "")
+        materials: list = []
         try:
-            reply = await self.app.compose_promise(context, description, row["note"])
+            reply, materials = await self.app.compose_promise(context, row)
         except Exception as exc:
             logger.warning("[LE-promise] 兑现文案模型失败 %s: %r",
                            str(row.get("promise_id") or "")[:8], exc)
             reply = ""
         if reply:
-            return strip_stops(reply).strip()
+            body = clean_delivery(reply)
+            if body:
+                return {"text": body, "materials": materials, "summary": summary}
         # 模型不可用时不留空。提醒类不能套「现在给你」——那是交付东西的说法，
         # 用在「提醒给花浇水」上就成了病句。
         import re as _re
         body = _re.sub(r"^\s*\d+\s*(?:分钟|分|小时|秒)\s*(?:后|之后|以后)?\s*[，,]?\s*",
                        "", str(description or "")).strip() or str(description or "").strip()
         if body.startswith(("提醒", "记得", "别忘了")):
-            return strip_stops(f"到点了 {body}").strip()
-        return strip_stops(f"之前说好的 {body} 现在给你").strip()
+            text = strip_stops(f"到点了 {body}").strip()
+        else:
+            text = strip_stops(f"之前说好的 {body} 现在给你").strip()
+        return {"text": text, "materials": [], "summary": summary}
+
+    def _trace_ttl(self) -> float:
+        hours = getattr(self.app.config, "promise_trace_ttl_hours", 24)
+        try:
+            return max(1.0, float(hours)) * 3600.0
+        except (TypeError, ValueError):
+            return 86400.0
 
 
 def register(store, application) -> PromiseService:

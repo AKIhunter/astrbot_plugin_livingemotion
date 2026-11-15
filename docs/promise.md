@@ -154,6 +154,15 @@ f"{adapter_id}:{FriendMessage|GroupMessage}:{scene_id}"
 写入路径上还有两道必须放宽的判定：归属账号（无实时事件时从 `audience`
 里取 bot 自己的账号）、原生归档作用域（拿不到真实 event 时退回按 route 归档）。
 
+### 兑现时的上下文与气泡
+
+到点生成不只拿一句描述。承诺建立时会把最近几轮对话压成概要写进
+`context_summary`，并趁真实事件还在做一次记忆召回快照（`promise_traces`）；
+到点时读快照、必要时补召回，再让模型说一到三句、自己断句。
+正文走 `clean_delivery` 保留标点与换行，发送层按换行拆成多个气泡。
+兑现后片段留一天，用户追问直接命中，不再跑向量检索。
+细节见 [承诺兑现的上下文与片段缓存](promise-memory.md)。
+
 ## 夜间与配额
 
 - **夜间不拦承诺。** `_preparation_guard` 在 delivery 模式下直接放行 `block_chat`，
@@ -195,7 +204,9 @@ f"{adapter_id}:{FriendMessage|GroupMessage}:{scene_id}"
 | `promise_max_active` | `3` | 单会话同时挂起的上限 |
 | `promise_max_depth` | `3` | 嵌套深度上限 |
 | `promise_advance_limit` | `3` | 单日提前次数上限 |
-| `promise_tick_seconds` | `60` | 到期扫描间隔 |
+| `promise_tick_seconds` | `15` | 到期扫描间隔 |
+| `promise_recall_limit` | `4` | 落库时预取几条记忆材料 |
+| `promise_trace_ttl_hours` | `24` | 兑现片段缓存保留小时数，到期释放 |
 
 ## 排错
 

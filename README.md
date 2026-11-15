@@ -194,6 +194,7 @@ flowchart LR
 - [五维情绪：计算、展示与强度档位](docs/emotion-five-dimension.md)
 - [承诺任务：识别、兑现与取消](docs/promise.md)
 - [未来事件任务：用户发起 vs Bot 承诺](docs/future-tasks.md)
+- [承诺兑现的上下文、多气泡与片段缓存](docs/promise-memory.md)
 - [随机主动聊天、选题与节奏配置](docs/proactive-life.md)
 - [安装与原生配置](docs/installation.md)
 - [架构与状态计算](docs/architecture.md)

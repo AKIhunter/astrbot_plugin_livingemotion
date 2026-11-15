@@ -53,6 +53,11 @@
     "default": false,
     "description": "允许随机等待后主动找话题，需正常模式、时区与号码授权。例：等待90–240分钟再评估。"
   },
+  "proactive_native_yield": {
+    "type": "bool",
+    "default": true,
+    "description": "宿主也有『主动找主人聊话题』的定时任务。开启后检测到它就暂停自己的随机主动行为，避免同一时段各说一次；关掉宿主那条后自动接管。"
+  },
   "autonomy_qq_ids": {
     "type": "string",
     "default": "",
@@ -322,6 +327,26 @@
       "step": 5
     },
     "description": "扫描到期承诺的间隔秒数。例：默认 60，最小 15。"
+  },
+  "promise_recall_limit": {
+    "type": "int",
+    "default": 4,
+    "slider": {
+      "min": 1,
+      "max": 8,
+      "step": 1
+    },
+    "description": "承诺落库时预取几条记忆材料。外部 LivingMemory 只接受真实事件授权，必须在消息刚提交时取；默认 4 条。"
+  },
+  "promise_trace_ttl_hours": {
+    "type": "float",
+    "default": 24.0,
+    "slider": {
+      "min": 1,
+      "max": 168,
+      "step": 1
+    },
+    "description": "兑现后片段缓存保留多久（小时）。期间追问直接读缓存不再检索；到期释放。默认 24 小时。"
   },
   "coupling_promise_actions": {
     "type": "string",

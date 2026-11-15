@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 
 # 中文停顿标点：这些一律不出现在文案里，统一换成一个或两个空格。
@@ -242,6 +243,36 @@ def strip_stops(text: str) -> str:
     return "\n".join(collapsed).strip()
 
 
+_MARKUP = re.compile(r"(\*\*|__|`{1,3}|~~)")
+_LIST_HEAD = re.compile(r"^\s*(?:[-*•]|\d+[.、)])\s*")
+_PREFIX = re.compile(r"^\s*(?:回复|回答|你可以说|可以说|消息|台词)[：:]\s*")
+_QUOTES = "\"'“”‘’「」『』"
+
+
+def clean_delivery(text: str, *, max_lines: int = 4, max_line: int = 96) -> str:
+    """兑现正文的清洗：保留断句与换行，只清排版痕迹。
+
+    承诺兑现走的是 `send_promise_notice`，早先统一套了 `strip_stops`——
+    那是给「取消成功」这类固定文案用的，会把逗号句号全换成空格。
+    兑现正文由模型自己断句，标点必须留下，否则读起来像机器人念电报。
+    换行则原样保留：发送层按换行拆成多个气泡。
+    """
+    body = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    body = re.sub(r"```.*?```", "", body, flags=re.S)
+    body = _MARKUP.sub("", body)
+    lines: list[str] = []
+    for index, raw in enumerate(body.split("\n")):
+        line = " ".join(raw.split())
+        line = _LIST_HEAD.sub("", line).strip()
+        line = line.strip(_QUOTES).strip()
+        if not line:
+            continue
+        if len(line) > max_line:
+            line = line[:max_line].rstrip()
+        lines.append(_PREFIX.sub("", line) if index == 0 else line)
+    return "\n".join(lines[:max(1, int(max_lines))]).strip()
+
+
 def ask_items(rows) -> tuple[Candidate, ...]:
     """把查询结果转成展示行，只保留编号 描述 时间。"""
     items = []
@@ -256,6 +287,7 @@ __all__ = [
     "Candidate",
     "Notice",
     "ask_items",
+    "clean_delivery",
     "pick",
     "relative_eta",
     "strip_stops",

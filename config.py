@@ -44,6 +44,10 @@ class Config:
     memory_export: bool = False
     autonomy_enabled: bool = False
     group_autonomy_enabled: bool = False
+    # 宿主自己也有一条「主动找主人聊话题」的 cron。两套同时跑，
+    # 同一时段就会各说一次。默认让行：检测到宿主任务在跑时不发自己的
+    # 随机主动行为；关掉宿主那条之后，这边自动接管，不需要再改配置。
+    proactive_native_yield: bool = True
     emotion_model_enabled: bool = False
     dream_enabled: bool = False
     dream_theme_pool: str = json.dumps(DEFAULT_THEMES, ensure_ascii=False)
@@ -136,6 +140,11 @@ class Config:
     promise_max_depth: int = 3
     promise_advance_limit: int = 3
     promise_tick_seconds: int = 15
+    # 承诺兑现的片段缓存：兑现后一段时间内，用户追问直接读这份快照，
+    # 不再走向量检索。默认一天；到期即释放，回到正常检索。
+    promise_trace_ttl_hours: float = 24.0
+    # 承诺落库时预取几条记忆材料。外部后端只认真实事件，必须在这时取。
+    promise_recall_limit: int = 4
     # 承诺代办与可耦合插件的协作方式：auto 跟随检测，on 强制动作，off 强制纯文本。
     # 动作模式只执行具体事件（发图等）并附一句承接语，不生成“被动回复式”正文。
     coupling_promise_actions: str = "auto"
@@ -239,6 +248,13 @@ class Config:
             raise ValueError("invalid memory mode")
         if self.coupling_promise_actions not in ("auto", "on", "off"):
             raise ValueError("invalid coupling promise actions mode")
+        if (not isinstance(self.promise_trace_ttl_hours, (int, float))
+                or isinstance(self.promise_trace_ttl_hours, bool)
+                or not 1 <= float(self.promise_trace_ttl_hours) <= 168):
+            raise ValueError("promise_trace_ttl_hours: expected 1-168 hours")
+        if (type(self.promise_recall_limit) is not int
+                or not 1 <= self.promise_recall_limit <= 8):
+            raise ValueError("promise_recall_limit: expected 1-8")
         if self.persona_mode not in ("follow", "explicit", "none"):
             raise ValueError("invalid persona mode")
         if self.persona_mode == "explicit" and not self.persona_id:

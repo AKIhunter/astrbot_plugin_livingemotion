@@ -1056,9 +1056,35 @@ class Console:
         else:
             # auto：只有对方确实在场且两侧都启用时才走动作，避免单边开启。
             active = hello is not None and bool(hello_row.get("effective"))
+        # 主动聊天的单一入口：宿主 cron 与随机主动行为只能留一个。
+        # 这里只报检测结果与"谁在让行"，不替用户改宿主任务。
+        from .proactive_arbiter import cached as cached_native_chat
+
+        native = cached_native_chat(getattr(self, "data_dir", ""))
+        yield_enabled = bool(getattr(self.config, "proactive_native_yield", True))
+        native_present = bool(native.get("present"))
+        items.append({
+            "kind": "native_chat",
+            "name": "宿主主动聊天",
+            "connected": native_present,
+            "enabled": native_present,
+            "effective": native_present and yield_enabled,
+            "reason": ("" if not native_present else (
+                "检测到 %d 条宿主主动聊天任务，随机主动行为已让行；"
+                "关掉宿主那条后自动接管" % int(native.get("count") or 0))
+                if yield_enabled else
+                "检测到 %d 条宿主主动聊天任务，让行已手动关闭" % int(native.get("count") or 0)),
+        })
         payload = {
             "mode": mode,
             "items": items,
+            "native_proactive": {
+                "present": native_present,
+                "count": int(native.get("count") or 0),
+                "jobs": native.get("jobs") or [],
+                "yield": yield_enabled,
+                "reason": native.get("reason") or "",
+            },
             "promise_actions": {
                 "mode": mode,
                 "active": active,

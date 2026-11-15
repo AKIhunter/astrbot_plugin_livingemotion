@@ -36,11 +36,31 @@ SCHEMA = (
     "CREATE INDEX IF NOT EXISTS promises_scope ON promises(scope_key, status)",
     "CREATE INDEX IF NOT EXISTS promises_due ON promises(status, due_at)",
     "CREATE INDEX IF NOT EXISTS promises_fp ON promises(scope_key, fingerprint, status)",
+    # 兑现那一刻的短时记忆片段。有真实 event 的时刻只有「承诺刚落库」和
+    # 「本轮回复刚提交」两处，而承诺到期往往隔了几十分钟、甚至跨重启——
+    # 那时既没有 event，也没有当时的上下文。所以召回要前置或就近快照：
+    # 落库时存一份 prefetch，兑现时存一份 delivery，追问时直接命中这里，
+    # 不必再走一次向量检索（TTL 默认一天，过期即释放）。
+    """CREATE TABLE IF NOT EXISTS promise_traces (
+        trace_id TEXT PRIMARY KEY,
+        scope_key TEXT NOT NULL,
+        promise_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        summary TEXT NOT NULL DEFAULT '',
+        materials_json TEXT NOT NULL DEFAULT '[]',
+        reply_text TEXT NOT NULL DEFAULT '',
+        created_at REAL NOT NULL,
+        expires_at REAL NOT NULL)""",
+    "CREATE INDEX IF NOT EXISTS promise_traces_scope ON promise_traces(scope_key, expires_at)",
 )
 
 # 老库升级：字段不存在时补上，已存在就跳过。
 MIGRATIONS = (
     "ALTER TABLE promises ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0",
+    # 承诺建立时的上下文概要：给到期生成做检索锚点，也给模型交代「当时在聊什么」。
+    "ALTER TABLE promises ADD COLUMN context_summary TEXT NOT NULL DEFAULT ''",
+    # 兑现时真正发出去的文本（多气泡以换行连接），供追问命中与排错。
+    "ALTER TABLE promises ADD COLUMN delivered_text TEXT NOT NULL DEFAULT ''",
 )
 
 # 允许的状态转换；越界的写入一律拒绝，避免状态机被绕过。
@@ -104,7 +124,7 @@ class PromiseStore:
 
     async def create(self, context: Context, *, description: str, note: str,
                      bucket: str, due_at: float, depth: int = 0,
-                     ttl_days: int = 7) -> dict[str, Any]:
+                     ttl_days: int = 7, context_summary: str = "") -> dict[str, Any]:
         await self.ensure()
         scope = context.scope_key
         fp = fingerprint(scope, description)
@@ -150,11 +170,13 @@ class PromiseStore:
                 db.execute(
                     """INSERT INTO promises(promise_id,scope_key,generation,status,bucket,
                        fingerprint,description,note,due_at,original_due_at,original_bucket,
-                       advance_count,depth,created_at,updated_at,sent_at,last_error)
-                       VALUES(?,?,?,'scheduled',?,?,?,?,?,?,?,0,?,?,?,NULL,'')""",
+                       advance_count,depth,created_at,updated_at,sent_at,last_error,
+                       context_summary)
+                       VALUES(?,?,?,'scheduled',?,?,?,?,?,?,?,0,?,?,?,NULL,'',?)""",
                     (promise_id, scope, generation,
                      bucket, fp, normalize(description)[:500], str(note or "")[:2000],
-                     due_at, due_at, bucket, max(0, int(depth)), now, now))
+                     due_at, due_at, bucket, max(0, int(depth)), now, now,
+                     str(context_summary or "")[:1200]))
                 return {"status": "created", "promise_id": promise_id, "active": active + 1}
 
             return self.store._transaction(db, mutate)
@@ -372,6 +394,120 @@ class PromiseStore:
 
     async def cancel(self, promise_id: str) -> dict[str, Any]:
         return await self.move(promise_id, status="cancelled", expect=("scheduled",))
+
+    async def recent_exchanges(self, scope_key: str, *,
+                               limit: int = 8) -> list[dict[str, Any]]:
+        """最近几轮对话（双方），给承诺概要提供素材。
+
+        `body_window` 里存的就是双方已确认的正文，按 seq 倒序取再翻正，
+        保证摘要是「先说后说」的自然顺序。跨重启也在库里，不依赖内存。
+        """
+        await self.ensure()
+        key = str(scope_key or "")
+        if not key:
+            return []
+
+        def read(db):
+            rows = db.execute(
+                """SELECT e.actor_role,e.event_type,w.body,w.occurred_at
+                   FROM body_window w JOIN events e ON e.seq=w.seq
+                   WHERE w.scope_key=? ORDER BY w.seq DESC LIMIT ?""",
+                (key, max(1, min(20, int(limit))))).fetchall()
+            return [dict(row) for row in reversed(rows)]
+
+        try:
+            return await self.store._run(read)
+        except Exception:
+            # 摘要是增强项，读不到就退化成只用本轮两句话。
+            return []
+
+    async def set_delivery(self, promise_id: str, text: str) -> None:
+        """记下真正发出去的文本；失败不影响发送结果。"""
+        await self.ensure()
+        now = self.store.clock()
+
+        def write(db):
+            db.execute(
+                "UPDATE promises SET delivered_text=?, updated_at=? WHERE promise_id=?",
+                (str(text or "")[:4000], now, promise_id))
+
+        try:
+            await self.store._run(write)
+        except Exception:
+            pass
+
+    async def put_trace(self, *, scope_key: str, promise_id: str, kind: str,
+                        summary: str = "", materials=(), reply_text: str = "",
+                        ttl_seconds: float = 86400.0) -> None:
+        """写一条短时记忆片段；同 (承诺, 类型) 覆盖，不堆积。"""
+        await self.ensure()
+        now = self.store.clock()
+        trace_id = f"{promise_id}:{kind}"
+        payload = json.dumps(list(materials or ()), ensure_ascii=False)[:16000]
+
+        def write(db):
+            db.execute(
+                """INSERT INTO promise_traces(trace_id,scope_key,promise_id,kind,summary,
+                   materials_json,reply_text,created_at,expires_at)
+                   VALUES(?,?,?,?,?,?,?,?,?)
+                   ON CONFLICT(trace_id) DO UPDATE SET
+                     summary=excluded.summary, materials_json=excluded.materials_json,
+                     reply_text=excluded.reply_text, created_at=excluded.created_at,
+                     expires_at=excluded.expires_at""",
+                (trace_id, scope_key, promise_id, kind, str(summary or "")[:1200],
+                 payload, str(reply_text or "")[:4000], now,
+                 now + max(60.0, float(ttl_seconds))))
+
+        try:
+            await self.store._run(write)
+        except Exception:
+            pass
+
+    async def latest_trace(self, scope_key: str, now: float, *,
+                           promise_id: str = "") -> dict[str, Any] | None:
+        """取当前仍有效、最近的一条片段；过期的当不存在。"""
+        await self.ensure()
+        key = str(scope_key or "")
+        if not key:
+            return None
+
+        def read(db):
+            sql = ("SELECT trace_id,scope_key,promise_id,kind,summary,materials_json,"
+                   "reply_text,created_at,expires_at FROM promise_traces "
+                   "WHERE scope_key=? AND expires_at>?")
+            args: list[Any] = [key, float(now)]
+            if promise_id:
+                sql += " AND promise_id=?"
+                args.append(str(promise_id))
+            sql += " ORDER BY created_at DESC LIMIT 1"
+            row = db.execute(sql, args).fetchone()
+            if not row:
+                return None
+            value = dict(row)
+            try:
+                value["materials"] = json.loads(value.pop("materials_json") or "[]")
+            except Exception:
+                value["materials"] = []
+                value.pop("materials_json", None)
+            return value
+
+        try:
+            return await self.store._run(read)
+        except Exception:
+            return None
+
+    async def purge_traces(self, now: float) -> int:
+        """释放过期片段；TTL 到期后追问回到正常向量检索。"""
+        await self.ensure()
+
+        def write(db):
+            return db.execute(
+                "DELETE FROM promise_traces WHERE expires_at<=?", (float(now),)).rowcount
+
+        try:
+            return int(await self.store._run(write))
+        except Exception:
+            return 0
 
     async def purge(self, *, keep: int = 200) -> int:
         """只留最近的若干条，其余直接删掉；不保留历史也不分页。"""
