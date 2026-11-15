@@ -152,6 +152,9 @@ class SendRequest:
     context: Context
     text: str
     authorize: Callable[[], Awaitable[bool]]
+    # 承诺这类“必须送达”的消息不走原生句柄：反向 WS 适配器上
+    # send_private_msg 会回 ok 但消息实际没到，宿主通道才是可靠的。
+    host_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -970,7 +973,8 @@ class BehaviorService:
 
             dispatched = True
             receipt = await asyncio.wait_for(
-                self.sender(SendRequest(key, context, text, submit_guard)),
+                self.sender(SendRequest(key, context, text, submit_guard,
+                                        host_only=(purpose == "promise_control"))),
                 timeout=self.policy().send_timeout_seconds,
             )
             confirmed = (isinstance(receipt, SendReceipt)

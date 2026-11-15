@@ -201,9 +201,16 @@ class LivingMemoryAdapter:
             native = self._profile(provider) == "native"
             if native:
                 event = self.event_resolver(context) if self.event_resolver else None
-                scope, access = await self._native_access(provider, event, context)
-                storage_scope = access.scope
-                write_metadata["livingemotion_source_context"] = to_dict(context)
+                if not is_real_event(event, context):
+                    # 没有实时事件（重启后补登记的承诺、梦境唤醒等）：
+                    # 退回按 route 归档。LivingMemory 的 session_id 本来就是
+                    # route，归档位置一致，只是少了原生 scope 的额外校验。
+                    native = False
+                    storage_scope = route
+                else:
+                    scope, access = await self._native_access(provider, event, context)
+                    storage_scope = access.scope
+                    write_metadata["livingemotion_source_context"] = to_dict(context)
             else:
                 storage_scope = route
             owner_account = write_metadata.get("owner_account")

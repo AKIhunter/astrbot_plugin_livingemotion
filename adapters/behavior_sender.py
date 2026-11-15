@@ -78,7 +78,7 @@ class AstrBotBehaviorSender:
                            route, request.context.route)
             return SendReceipt(request.intent_id, request.context.route or "", "rejected")
         native = None
-        if self.current_source:
+        if self.current_source and not getattr(request, "host_only", False):
             source = await self.current_source(request.context)
             if source is not None:
                 try:

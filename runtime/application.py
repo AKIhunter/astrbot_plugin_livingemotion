@@ -190,7 +190,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                 (LENIENT_SAVE.get() and self.validate_manual(c))
                 or self.validate_context(c)))
         self.auto_memory = AutoMemoryIngestor(
-            backend, self.runtime, config=lambda: self.config, guard=self.validate_context,
+            backend, self.runtime, config=lambda: self.config, guard=self._memory_guard,
             owner_account_resolver=self._memory_owner_account,
         )
         self.behavior = BehaviorService(
@@ -216,20 +216,33 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
     def _memory_owner_account(self, context):
         source = self.bridge.source(context)
         if source is None:
-            return ""
+            # 重启后没有实时事件。audience 里那个“不是对方”的账号就是 bot 自己
+            # （如 qq:3820409847），承诺兑现这类事后补登记的消息靠它才能写进记忆。
+            return self._audience_owner(context)
         owner = source.identity.owner_account
         if owner:
             return owner
         event = source.event()
         if event is None:
-            return ""
+            return self._audience_owner(context)
         try:
             self_id = event.get_self_id()
         except Exception:
-            return ""
+            return self._audience_owner(context)
         if not isinstance(self_id, (str, int)) or not str(self_id).strip():
-            return ""
+            return self._audience_owner(context)
         return context.platform + ":" + str(self_id)
+
+    @staticmethod
+    def _audience_owner(context):
+        """audience 里除对话对方之外的那个账号，就是 bot 自己。"""
+        mine = str(getattr(context, "account_id", "") or "")
+        prefix = str(getattr(context, "platform", "") or "") + ":"
+        for member in getattr(context, "audience", ()) or ():
+            value = str(member)
+            if value.startswith(prefix) and value[len(prefix):] != mine:
+                return value
+        return ""
 
     async def _preparation_guard(self, context, generation, revision, *, delivery=False):
         if revision != self.revision:
@@ -414,6 +427,13 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             result = await self.api.ingest_event(event)
             status = result.get("status")
             if status in ("accepted", "duplicate"):
+                if status == "accepted":
+                    # 正常回复会走这一步，承诺兑现也不能漏：不写记忆的话，
+                    # 用户追问“你刚才说了什么”时它完全接不上。
+                    written = await self.auto_memory.ingest(event, generation=generation)
+                    if written.get("status") not in ("accepted", "queued"):
+                        logger.warning("[LE-promise] 记忆写入未成 key=%s %r",
+                                       str(notify_key)[:20], written.get("reason_code"))
                 # 承诺兑现进了对话流，顺手刷新参与度，别让画像以为它没说过话。
                 self._participation[target.scope_key] = self.store.clock()
                 self._participation.move_to_end(target.scope_key)
@@ -495,7 +515,10 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         try:
             service = self._promises()
             rows = await service.promises.due(now=self.store.clock(), limit=3)
-            logger.warning("[LE-promise] tick 到期=%d", len(rows))
+            # 每分钟都会 tick 一次，到期为 0 是常态；只在真有到期项时记录，
+            # 否则一天就是 1440 条无信息量的 WARNING。
+            if rows:
+                logger.warning("[LE-promise] tick 到期=%d", len(rows))
             sent = await service.run_due(limit=3)
             if sent:
                 logger.warning("[LE-promise] tick 已发出=%d", sent)
@@ -654,6 +677,17 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                         or await self.store.get_generation(context) == generation))
         except Exception:
             return False
+
+    async def _memory_guard(self, context, generation=None):
+        """记忆写入的来源校验。
+
+        人类消息必须来自实时事件；bot 自己发出、事后补登记的消息
+        （承诺兑现、梦境唤醒等）允许来源由会话表重建 —— 否则重启后
+        这些话进了事件流却进不了记忆，用户追问时它一无所知。
+        """
+        if await self.validate_context(context, generation):
+            return True
+        return await self.validate_delivery(context, generation)
 
     async def validate_delivery(self, context, generation=None):
         """非回复型直发的来源校验：允许来源由会话表重建。

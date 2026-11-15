@@ -1020,7 +1020,7 @@ class Console:
             "external_provider_unavailable": "未找到可用的 LivingMemory 插件，请确认它已安装并启用。",
             "external_read_disabled": "尚未开启「允许记忆检索」。",
             "external_write_disabled": "尚未开启「允许记忆写入」。",
-            "external_background_authorization_unsupported": "外部后端不支持后台代为授权，后台自动流程会跳过记忆写入。",
+            "external_background_authorization_unsupported": "外部后端的“体验导出”需要手动触发，对话记忆的自动写入不受影响。",
             "external_idempotent_export_unsupported": "外部后端不支持幂等导出，因此不提供导出按钮。",
             "external_memory_closed": "记忆后端已关闭。",
             "embedding_provider_missing": "未配置原生向量模型，本地向量检索不可用。",
@@ -1045,7 +1045,12 @@ class Console:
             "mode": mode, "backend": backend,
             "provider": "astrbot_plugin_livingmemory" if external else "",
             "provider_ready": bool(status.get("available")),
-            "can_read": caps.recall, "can_write": caps.append_experience,
+            "can_read": caps.recall,
+            # external 模式下真正的写入能力是「后端就绪 + 配置允许写入」；
+            # caps.append_experience 指的是“能不能导出体验”，不是对话写入，
+            # 直接拿它当 can_write 会永远显示关闭，误导人以为自己没开。
+            "can_write": (bool(caps.recall and getattr(self.config, "memory_write", False))
+                          if external else caps.append_experience),
             "capabilities": capabilities, "reasons": reasons,
             "reason": "；".join(reasons),
             "persona_id": persona_id, "mirror": mirror,
@@ -1077,6 +1082,42 @@ class Console:
         from zoneinfo import ZoneInfo
         return (datetime.fromtimestamp(self.store.clock(), ZoneInfo(self.config.timezone))
                 .date().isoformat() if self.config.timezone else "")
+
+    async def _promise_panel(self, context_id: str) -> dict:
+        """「主动行为」页顶部的承诺挂载区：开关状态 + 待兑现清单。"""
+        enabled = bool(getattr(self.config, "promise_enabled", False))
+        items: list[dict] = []
+        if enabled:
+            scope_key = ""
+            if context_id:
+                try:
+                    scope_key = self._context(context_id).scope_key
+                except Exception:
+                    scope_key = ""
+            try:
+                limit = int(getattr(self.config, "promise_max_active", 3) or 3)
+                rows = await self._promises().promises.active(
+                    scope_key=scope_key, limit=limit)
+            except Exception as exc:
+                import logging
+                logging.getLogger("astrbot_plugin_livingemotion.promise").warning(
+                    "[LE-promise] 面板查询失败 %r", exc)
+                rows = []
+            now = self.store.clock()
+            for row in rows:
+                items.append({
+                    "promise_id": row["promise_id"],
+                    "description": row["description"],
+                    "status": row["status"],
+                    "bucket_label": row.get("bucket") or "",
+                    "eta_seconds": max(0, int(row["due_at"] - now)),
+                    "advance_count": int(row.get("advance_count") or 0),
+                })
+        import logging
+        # 页面每 8 秒轮询一次 records，这条只能是 debug，否则日志会被刷屏。
+        logging.getLogger("astrbot_plugin_livingemotion.promise").debug(
+            "[LE-promise] 面板挂载 enabled=%s items=%d", enabled, len(items))
+        return {"enabled": enabled, "items": items}
 
     async def console_records(self, context_id="", kind="", page=1, page_size=10, query="",
                               persona_id="", view_scope="", platform=""):
@@ -1172,6 +1213,8 @@ class Console:
             result["send_statistics"] = await self.store.send_statistics(
                 self._contexts.get(context_id), period)
             result["send_daily_limit"] = self.config.behavior_daily_limit
+            # 承诺挂载区跟着同一次响应回来，日志为空时也能渲染。
+            result["promises"] = await self._promise_panel(context_id)
         return {"api_version": 1, **result, "items": items}
 
     async def console_scopes(self, persona_id="", view_scope="global", context_id="", platform=""):
