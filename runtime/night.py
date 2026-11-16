@@ -224,11 +224,21 @@ class NightRuntime:
             state, changes = self._advance_life(state, now, runtime)
             policy = life_policy(self.config)
             deadline = state.wake_window_deadline
+            # 正常睡醒会清掉唤醒会话；同周期内已获准的在途回复仍可完成。
+            # 提前清理、换会话或换周期不能借此放行。
+            settled_wake = (
+                bool(attempt["wake_session"]) and state.wake_session is None
+                and state.display_state in (SleepState.AWAKE, SleepState.GROGGY)
+                and state.wake_at is not None
+                and attempt["started_at"] < state.wake_at <= now
+                and attempt["cycle_id"] == state.cycle_id
+            )
             # 深睡优先：已经睡着就不再放行任何提交，精力满也一样。
             valid = (
                 state.display_state != SleepState.DEEP_SLEEP
                 and (deadline is None or now < deadline)
-                and (not attempt["wake_session"] or attempt["wake_session"] == state.wake_session)
+                and (not attempt["wake_session"]
+                     or attempt["wake_session"] == state.wake_session or settled_wake)
                 and attempt["cycle_id"] == state.cycle_id
             )
             if not valid:

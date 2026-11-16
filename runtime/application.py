@@ -1244,18 +1244,23 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
 
     async def record_host_submission(self, context, submission_id, text):
         """Record a single host submission, never a fabricated delivery receipt."""
+        # 保持主动行为回调的 bool 接口；宿主钩子另取具体拒绝原因。
+        result = await self._record_host_submission_result(context, submission_id, text)
+        return result.get("allowed") is True
+
+    async def _record_host_submission_result(self, context, submission_id, text):
         if not await self.validate_context(context):
-            return False
+            return {"allowed": False, "reason_code": "context_changed"}
         submitted_key = stable_key(context, submission_id, self.revision)
         if submitted_key in self._host_submissions:
-            return True
+            return {"allowed": True, "reason_code": "host_submission_recorded"}
         if submission_id not in self._reply_tickets:
-            return False
+            return {"allowed": False, "reason_code": "reply_ticket_required"}
         result = await self.reply_submitted(
             context, submission_id, ticket=self._reply_tickets[submission_id],
         )
         if result.get("allowed") is not True:
-            return False
+            return result
         generation = await self.store.get_generation(context)
         event = Event(
             submission_id, "livingemotion.host", "bot_reply_submitted", context,
@@ -1264,7 +1269,8 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         )
         result = await self.api.ingest_event(event)
         if result["status"] not in ("accepted", "duplicate"):
-            return False
+            return {"allowed": False,
+                    "reason_code": result.get("reason_code") or "submission_event_rejected"}
         if result["status"] == "accepted":
             await self.auto_memory.ingest(event, generation=generation)
             self._participation[context.scope_key] = self.store.clock()
@@ -1276,7 +1282,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         self._reply_contexts.pop(submission_id, None)
         while len(self._host_submissions) > 512:
             self._host_submissions.popitem(last=False)
-        return True
+        return {"allowed": True, "reason_code": "host_submission_recorded"}
 
     @staticmethod
     def _discard(event, reason):
@@ -1537,8 +1543,9 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         text = self._strip_promise_marks(event, result, text)
         # 走到这里说明宿主已确认接单，承诺可以落库了。
         await self.flush_promises(context, event, reply_text=text)
-        if not await self.record_host_submission(context, lease["attempt_id"], text):
-            self._discard(event, "duplicate")
+        submission = await self._record_host_submission_result(context, lease["attempt_id"], text)
+        if submission.get("allowed") is not True:
+            self._discard(event, submission.get("reason_code") or "reply_submission_rejected")
             return False
         # 回复已经真正交给宿主，这才算待交付的承诺完成了交付。
         await self._confirm_awaiting_delivery(context)
