@@ -1,12 +1,27 @@
 """每次发现当前 LivingHello；支持历史运行时名字，不保存跨重载实例。"""
 
+NAMES = ("astrbot_plugin_at_guard", "astrbot_plugin_LivingHello",
+         "astrbot_plugin_livinghello", "livinghello")
+
+
+def discover(lookup):
+    """所有协作入口使用同一名字表；lookup 负责排除已停用实例。"""
+    for name in NAMES:
+        try:
+            peer = lookup(name)
+        except Exception:
+            continue
+        if peer is not None:
+            return peer
+    return None
+
 
 def policy(context):
     getter = getattr(context, "get_registered_star", None)
     if not callable(getter):
         return None
     # 线上历史名称含大写，注册表查询区分大小写。
-    for name in ("astrbot_plugin_at_guard", "astrbot_plugin_LivingHello", "astrbot_plugin_livinghello", "livinghello"):
+    for name in NAMES:
         method = None
         try:
             meta = getter(name)

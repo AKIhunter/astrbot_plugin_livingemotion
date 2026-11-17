@@ -50,9 +50,9 @@ class SemanticTests(unittest.TestCase):
         source = result["affect"].evidence[0]
         self.assertEqual((source.holder_id, source.subject_id), ("human", "human"))
 
-    def test_frozen_rule_sample_version_one(self):
+    def test_version_three_care_sample_with_joy_cap(self):
         result = apply_emotion(BotAffect(), event(signals=("care",)), now=1000)
-        self.assertEqual(values(result["affect"]), (0.12, 0.27999999999999997, 0.0, 0.24))
+        self.assertEqual(values(result["affect"]), (0.05, 0.27999999999999997, 0.0, 0.24))
         self.assertEqual(result["affect"].rule_version, RULE_VERSION)
         self.assertEqual(result["trace"]["rule_version"], RULE_VERSION)
 
@@ -208,7 +208,7 @@ class TimeAndGuardTests(unittest.TestCase):
             state, runtime = result["affect"], result["runtime"]
             applied += result["applied"]
         self.assertEqual(applied, 3)
-        self.assertAlmostEqual(state.pleasure, 0.3)
+        self.assertAlmostEqual(state.pleasure, 0.05)
         self.assertEqual(result["reason_codes"], ("similar_stimulus_limited",))
 
     def test_cosmetic_variants_use_same_stimulus_family(self):
@@ -350,7 +350,7 @@ class ValidationAndModeTests(unittest.TestCase):
         model = {"rule_version": RULE_VERSION, "delta": {"pleasure": 0.15}}
         result = apply_emotion(BotAffect(), event(signals=("care",)), now=1000,
                                model_suggestion="```json\n" + json.dumps(model) + "\n```")
-        self.assertEqual(result["affect"].pleasure, 0.15)
+        self.assertEqual(result["affect"].pleasure, 0.05)
         self.assertIn("model_refined", result["reason_codes"])
 
     def test_model_cannot_copy_human_sadness_into_bot_pleasure(self):

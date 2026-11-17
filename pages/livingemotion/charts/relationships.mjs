@@ -71,7 +71,8 @@ const INTENSITY_LABEL = { gentle: "保守", normal: "平常", intense: "激进" 
 const RULE_NOTES = [
   ["insult", "侮辱", "本地关键词", -0.14, 0.12, 0.14, 0.04],
   ["praise", "称赞", "本地关键词", 0.12, 0.05, -0.04, -0.02],
-  ["constructive_criticism", "建设性批评", "本地关键词", 0.04, 0.03, -0.02, -0.01],
+  ["constructive_criticism", "合理纠错", "本地关键词", 0, 0.03, -0.02, -0.01],
+  ["disappointment", "轻微失望", "本地关键词", -0.03, 0.02, 0.02, 0],
   ["teaching", "教导", "本地关键词", 0.06, 0.04, -0.03, -0.01],
   ["care", "关心", "本地关键词", 0.12, -0.02, -0.06, -0.06],
   ["gratitude", "感谢", "本地关键词", 0.10, 0.02, -0.04, -0.05],
@@ -85,13 +86,14 @@ const RULE_NOTES = [
   ["anxiety", "对方焦虑", "关键词或模型", 0, 0.04, 0.03, 0.04],
   ["joy", "对方开心", "关键词或模型", 0.08, 0.04, -0.02, -0.03],
   ["surprise", "意外消息", "关键词或模型", 0.02, 0.12, 0.02, 0.01],
-  ["interaction", "普通互动", "兜底默认", 0.01, 0.01, 0, -0.01],
-  ["reply_succeeded", "回复发出成功", "TA 的动作", 0.01, 0, 0, -0.02],
+  ["interaction", "普通互动", "兜底默认", 0, 0.01, 0, -0.01],
+  ["reply_succeeded", "回复发出成功", "TA 的动作", 0, 0, 0, -0.02],
 ];
 const RULE_HELP = {
   insult: "被骂或被贬低：心情明显变差、压力上升，也更想有人陪。",
   praise: "被夸或被认可：心情变好，压力下降。",
-  constructive_criticism: "对方认真指出问题但态度友善：会有一点不舒服，整体仍算良性互动。",
+  constructive_criticism: "有依据、不羞辱的纠错：开心保持不变，压力略降；好感度仍按良性互动计算。",
+  disappointment: "明确说 TA 被降智或能力被削弱：开心轻微下降；不作为辱骂或好感度减分。",
   teaching: "被耐心讲解或指导：会感到被重视，压力略降。",
   care: "被问候、被照顾：心情变好，压力明显下降。",
   gratitude: "被感谢：心情和陪伴需求都会上升。",
@@ -105,8 +107,8 @@ const RULE_HELP = {
   anxiety: "对方焦虑：会跟着紧张，也更想靠近。",
   joy: "对方分享开心的事：会一起开心。",
   surprise: "听到意外消息：会短暂惊讶、警觉。",
-  interaction: "普通聊天：一点点正面影响，不会大幅波动。",
-  reply_succeeded: "TA 成功发出回复：陪伴需求略降，压力也降一点。",
+  interaction: "普通聊天不增减开心；主体不明确时也不会把对他人的评价算给 TA。",
+  reply_succeeded: "TA 成功发出回复：陪伴需求略降，开心保持不变。",
 };
 // 基准权重按当前强度档位折算成页面显示的生效值。
 const signed = (value, gain) => {
@@ -168,12 +170,13 @@ export function emotionExplainer(intensity = "normal") {
     }))));
   body.append(node("p", t("当前档位「{0}」：单次变化最多 {1}，同一类刺激 5 分钟内累计最多 {2}；换档位等比放大，衰减速度不变。",
     [name, (0.15 * gain).toFixed(2), (0.30 * gain).toFixed(2)]), "hint"));
+  body.append(node("p", t("开心另设近 5 分钟滑动限幅：累计上升最多 5 点、下降最多 10 点，正负独立且不随档位放大；自然回落不占额度。普通聊天、合理纠错与主体不明不增减开心。"), "hint"));
   body.append(explainerTable([t("信号"), t("识别方式"), t("愉悦"), t("唤醒"), t("压力"), t("社交需求"), t("说明")],
     RULE_NOTES.map(([key, label, source, ...weights]) => ({
       cells: [label, source, ...weights.map(value => signed(value, gain))],
       label, help: RULE_HELP[key], key: `signal:${key}`,
     }))));
-  body.append(node("p", t("表中是「{0}」档的生效增量；没有新的互动时，这些数值会随着时间慢慢回落到平常水平。", [name]), "hint"));
+  body.append(node("p", t("表中是「{0}」档的四维候选增量，实际结果还受对象、开心方向和窗口限幅约束；没有新的互动时按时间回落到平常水平。", [name]), "hint"));
   wrapper.append(body);
   return wrapper;
 }
@@ -398,7 +401,9 @@ export function mountRelationships(root, {
       const validVersion = () => Number.isSafeInteger(version) && version >= 0;
       save.disabled = !canWrite() || !validVersion() || uncertain.has(writeKey(item));
       edit.append(labelled(t("好感 · 0–100，步进 0.1"), score), labelled(t("冻结自动好感变化"), frozen),
-        labelled(t("备注 · 留空清除"), note), error, node("p",
+        labelled(t("备注 · 留空清除"), note), error,
+        node("p", t("自动好感：每条有效消息增减 0.5–1 分；主体不明或普通交流不加分，冻结后保持不变。"), "hint"),
+        node("p",
           t("只修改当前人格的这个平台账号。操作者由宿主认证注入，不修改其他平台的同号账号。"), "hint"));
       const row = node("div", undefined, "button-row"); row.append(save, refresh); edit.append(row); editorCard.append(edit);
       edit.addEventListener("submit", async event => {

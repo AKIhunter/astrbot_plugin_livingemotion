@@ -74,8 +74,8 @@ class PersistenceContractTests(unittest.IsolatedAsyncioTestCase):
         await self.store.open()
         record = await self.store.get_state(self.context, "relationship", "human")
         state, runtime, version = decode(record, Relationship)
-        self.assertEqual(state.score, 3)
-        self.assertEqual(runtime["days"]["1970-01-01"], 3)
+        self.assertEqual(state.score, 10)
+        self.assertEqual(runtime["days"]["1970-01-01"], 10)
         self.assertEqual(version, 1)
         replay = apply_relationship(state, event, now=self.now, runtime=runtime)
         self.assertEqual(replay["reason_codes"], ("duplicate_event",))
@@ -96,8 +96,8 @@ class PersistenceContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue((await self.store.commit_event(second, 0, current_writes, current_rows)).accepted)
         record = await self.store.get_state(self.context, "relationship", "human")
         state, runtime, version = decode(record, Relationship)
-        self.assertEqual(state.score, 5)
-        self.assertEqual(runtime["days"]["1970-01-01"], 5)
+        self.assertEqual(state.score, 15)
+        self.assertEqual(runtime["days"]["1970-01-01"], 15)
         self.assertEqual(version, 2)
 
     async def test_clear_generation_blocks_already_computed_domain_result(self):

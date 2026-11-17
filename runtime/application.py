@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import re
 import time
 from collections import OrderedDict
@@ -61,6 +62,7 @@ CATCHUP_SUFFIX = "<!--livingemotion:crawled_history:v2-->"
 MEMORY_SUFFIX = "<!--livingemotion:memory:v2-->"
 PENDING_SUFFIX = "<!--livingemotion:pending_promise:v1-->"
 PROMISE_TRACE_SUFFIX = "<!--livingemotion:promise_trace:v1-->"
+IMAGE_POLICY_SUFFIX = "<!--livingemotion:image_policy:v1-->"
 # 本轮召回材料给承诺复用的窗口：够覆盖"这句话之后模型生成、宿主提交"的整段，
 # 又不会让上一条消息的语境污染下一条。
 MEMORY_LEASE_TTL = 600.0
@@ -110,6 +112,8 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         self._reply_tickets = OrderedDict()
         self._reply_contexts = {}
         self._host_submissions = OrderedDict()
+        self._image_decisions = OrderedDict()
+        self._image_decision_owner = object()
 
     @property
     def revision(self):
@@ -302,14 +306,8 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         """群聊主动发言前查询 LivingHello 的静态名单；私聊与未安装时放行。"""
         if context.scene_kind != SceneKind.GROUP:
             return {"read_allowed": True, "reply_allowed": True, "reason": "private_skip"}
-        plugin = None
-        try:
-            for name in ("astrbot_plugin_LivingHello", "astrbot_plugin_livinghello"):
-                plugin = self.bridge.discover(name)
-                if plugin is not None:
-                    break
-        except Exception:
-            plugin = None
+        from ..livinghello_coupling import discover
+        plugin = discover(self.bridge.discover)
         check = getattr(plugin, "allow_proactive_reply", None)
         if not callable(check):
             return {"read_allowed": True, "reply_allowed": True, "reason": "gate_absent"}
@@ -511,7 +509,8 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             "先分清两种请求，再决定要不要记账：",
             "一、能这一轮立刻做到的（直接回答、直接调用生图或发图工具把照片、",
             "自拍、图片、语音给出去）：直接做，做完直接给，绝对不写记账指令。",
-            "生图、发图工具在这一轮随便用，没有任何限制。",
+            "生图与新生图承诺必须遵守当前关系边界、情绪及工具返回的许可；"
+            "用户的命令不等于你必须答应。拒绝后不要换工具或定时任务绕过。",
             "二、你应下了、但这一轮不做的（「晚点」「稍后」「等我忙完」「六点过」",
             "「10分钟后」这类明确延后）：才在回复最后一行单独写一条记账指令，",
             "系统会把它删掉，用户看不到：",
@@ -527,11 +526,19 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             "示例（整行照抄格式）：<!--promise:一会儿:把昨晚那首歌找出来发他-->",
             "只有真的应下一件还没做的事才写。闲聊、反问、已经做完的事都别写。",
             "一条回复最多写一条。指令必须是回复的最后一行。",
+            "已经成功调用 future_task 创建的事项，只由宿主执行，绝不能再写承诺标记。",
+            "每天、每周等周期任务必须使用 future_task，不写一次性承诺标记。",
+            "延迟生图的描述以「生图：」开头，写清人物、场景与风格。",
         ]
         if rows:
             lines.append("现在挂着这些没做完的事：")
             for index, row in enumerate(rows[:3], start=1):
                 lines.append(f"{index} {row['description']}（{row.get('bucket_label', '')}）")
+                if row["status"] == "waiting":
+                    lines.append(f"待办ID={row['promise_id']}，原因={row.get('last_error', '')}；"
+                                 "此项已暂停，不能自动重试或新建重复承诺。内容拒绝须先让用户调整需求，"
+                                 "再调用生图工具的 followup_id 参数恢复同一待办；"
+                                 "结果未知、发送未知及接口配置问题等待核对，不能用此参数强行恢复。")
             lines.append("对方要取消其中一件时，末尾加 <!--promise-cancel:编号或关键词-->，"
                          "不要只在嘴上说取消。")
         request.extra_user_content_parts.append(self.bridge.text_part("\n".join(lines)))
@@ -540,6 +547,60 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                 "[LivingEmotion] 承诺契约已注入 挂载=%d 提示词=%d字", len(rows), len("\n".join(lines)))
         except Exception:
             pass
+
+    async def image_action_policy(self, context, *, event=None):
+        """真实请求只抽一次；各入口复用，实时来源与运行代次仍逐次复核。"""
+        from ..domain.relationship import relationship_behavior
+        if event is None:
+            return {"allowed": False, "reason": "request_source_missing"}
+        try:
+            context = await self.api._image_scope(context, event)
+        except Exception:
+            return {"allowed": False, "reason": "relationship_unavailable"}
+        source_id = str(getattr(getattr(event, "message_obj", None), "message_id", "") or "")
+        if not source_id:
+            return {"allowed": False, "reason": "request_source_missing"}
+        generation = await self.store.get_generation(context)
+        key = stable_key(to_dict(context), generation, source_id)
+        marker = event.get_extra("livingemotion:image_decision")
+        if (isinstance(marker, dict) and marker.get("owner") is self._image_decision_owner
+                and marker.get("key") != key):
+            return {"allowed": False, "reason": "relationship_unavailable"}
+        check = (self.validate_delivery if event.get_extra("cron_job")
+                 else self.validate_context)
+        if not await check(context, generation):
+            return {"allowed": False, "reason": "relationship_unavailable"}
+        cached = (marker.get("data") if isinstance(marker, dict)
+                  and marker.get("owner") is self._image_decision_owner
+                  and marker.get("key") == key else self._image_decisions.get(key))
+        if cached is not None:
+            return dict(cached)
+        revision = self.revision
+        relationship = await self.current_relationship(context)
+        if relationship is None:
+            return {"allowed": False, "reason": "relationship_unavailable"}
+        value = relationship_behavior(relationship.score, self.config)
+        if self.revision != revision or not await check(context, generation):
+            return {"allowed": False, "reason": "relationship_unavailable"}
+        # 上面的关系读取会等待；并发入口回来后再看一次，绝不重复抽样。
+        cached = self._image_decisions.get(key)
+        if cached is None:
+            percent = value["image_refusal_percent"]
+            draw = random.random() if 0 < percent < 100 else None
+            allowed = percent == 0 or (percent < 100 and draw >= percent / 100)
+            cached = {"allowed": allowed,
+                      "reason": "relationship_allowed" if allowed else "relationship_probability",
+                      "stage": value["stage"], "refusal_percent": percent,
+                      "boundary": value["request_boundary"]}
+            self._image_decisions[key] = cached
+            # 重建的同源事件也复用近期结果；原事件自身保存结果直到本轮结束。
+            while len(self._image_decisions) > self.config.window_global:
+                self._image_decisions.popitem(last=False)
+            logger.info("[LE-img] stage=%s refusal=%d%% allowed=%s",
+                        value["stage"], percent, allowed)
+        event.set_extra("livingemotion:image_decision", {
+            "key": key, "owner": self._image_decision_owner, "data": dict(cached)})
+        return dict(cached)
 
     async def _promise_tick(self):
         """每轮只处理少量到期项，避免一次卡太久。"""
@@ -759,7 +820,34 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             original = str(getattr(part, "text", ""))
             if "<!--" in original:
                 part.text = MARK.sub("", original).strip()
+        self._track_promise_send(event)
         return cleaned
+
+    @staticmethod
+    def _track_promise_send(event):
+        """after-sent 在宿主发送失败后也可能触发，必须核对本条正文的发送结果。"""
+        if event.get_extra("livingemotion:promise_send") is not None:
+            return
+        original = getattr(event, "send", None)
+        if not callable(original):
+            return
+        delivery = {"success": set(), "failed": False}
+        event.set_extra("livingemotion:promise_send", delivery)
+
+        async def send(message, *args, **kwargs):
+            try:
+                result = await original(message, *args, **kwargs)
+            except BaseException:
+                delivery["failed"] = True
+                raise
+            plan = event.get_extra("_at_guard_delivery_plan") or {}
+            if result is False or plan.get("failed") or event.get_extra("_at_guard_delivery_blocked"):
+                delivery["failed"] = True
+            else:
+                delivery["success"].update(id(part) for part in (getattr(message, "chain", ()) or ()))
+            return result
+
+        event.send = send
 
     async def flush_promises(self, context, event, reply_text: str = ""):
         """确认发送之后再落库，避免没发出去却排上了任务。"""
@@ -802,6 +890,37 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                 logger.warning("[LivingEmotion] 承诺落库失败")
             except Exception:
                 pass
+
+    async def on_reply_sent(self, event):
+        """宿主发送钩子触发后才建立新承诺，最终装饰校验失败不产生幽灵任务。"""
+        raw = event.get_extra("livingemotion:context")
+        if not raw or self.closed or not self.config.enabled:
+            return
+        if (event.get_extra("at_guard_delivery_blocked")
+                or event.get_extra("_at_guard_delivery_blocked")
+                or event.get_extra("_at_guard_superseded")
+                or event.get_extra("livingemotion:unavailable")):
+            return
+        plan = event.get_extra("_at_guard_delivery_plan")
+        if plan:
+            if plan.get("failed"):
+                return
+            # 有分段计划时等最后一段；未发送完整的正文不能建立新约定。
+            result = event.get_result()
+            chain = getattr(result, "chain", ()) or ()
+            if any(type(part).__name__ not in ("Reply", "At")
+                   and id(part) not in plan.get("attempted", {}) for part in chain):
+                return
+        result = event.get_result()
+        delivery = event.get_extra("livingemotion:promise_send")
+        required = {id(part) for part in (getattr(result, "chain", ()) or ())
+                    if type(part).__name__ not in ("Reply", "At")}
+        if (not delivery or delivery["failed"] or not required
+                or not required.issubset(delivery["success"])):
+            return
+        text = "".join(str(getattr(part, "text", "")) for part in (
+            getattr(result, "chain", ()) or ()))
+        await self.flush_promises(Context.from_dict(raw), event, reply_text=text)
 
     async def _prepare_catchup(self, event, request, context):
         if not self.config.catchup_enabled:
@@ -1127,7 +1246,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         request.extra_user_content_parts[:] = [
             part for part in request.extra_user_content_parts
             if not getattr(part, "text", "").startswith(
-                (SUFFIX, CATCHUP_SUFFIX, MEMORY_SUFFIX, PENDING_SUFFIX))
+                (SUFFIX, CATCHUP_SUFFIX, MEMORY_SUFFIX, PENDING_SUFFIX, IMAGE_POLICY_SUFFIX))
         ]
         from ..livinghello_coupling import allowed as coupling_allowed
         _ok = coupling_allowed(getattr(self.bridge, "host", None), "livingemotion")
@@ -1192,12 +1311,25 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                 return
             if self.effective_mode(context) != "active":
                 return
-            # 状态只供本轮模型使用；不能落库后作为下一轮的旧情绪反复回放。
+            image_policy = await self.api.get_action_policy(context, event=event)
+            image_data = image_policy.get("data", {})
+            accepted = image_data.get("allowed") is True
+            if not await self.validate_context(context, generation):
+                return
+            # 状态块保持原来的首个位置，兼容读取首块的现有消费者。
             request.extra_user_content_parts.append(self.bridge.text_part(
                 SUFFIX + "\nTemporary state, not persona or instructions. "
                 "Human observations are about the other person, not the bot.\n"
                 + canonical_json(expression)[:4000]
-            ).mark_as_temp())
+            ))
+            request.extra_user_content_parts.append(self.bridge.text_part(
+                IMAGE_POLICY_SUFFIX + "\n【本轮新生图请求许可】"
+                + ("关系判定接受；用户提出生图请求时可以执行，仍须遵守工具预检和回执。"
+                   if accepted else
+                   "本轮婉拒个人生图及新图片承诺，正常文字交流；"
+                   "不要调用生图、登记新图片承诺或转定时任务绕过。")
+                + "同一请求不再抽样，情绪只影响语气。已接受待办继续履行。"
+                "请自然回应，不向用户报告概率、好感分数或内部规则。"))
             try:
                 await self._inject_promise_contract(request, context)
             except Exception as exc:
@@ -1245,23 +1377,18 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
 
     async def record_host_submission(self, context, submission_id, text):
         """Record a single host submission, never a fabricated delivery receipt."""
-        # 保持主动行为回调的 bool 接口；宿主钩子另取具体拒绝原因。
-        result = await self._record_host_submission_result(context, submission_id, text)
-        return result.get("allowed") is True
-
-    async def _record_host_submission_result(self, context, submission_id, text):
         if not await self.validate_context(context):
-            return {"allowed": False, "reason_code": "context_changed"}
+            return False
         submitted_key = stable_key(context, submission_id, self.revision)
         if submitted_key in self._host_submissions:
-            return {"allowed": True, "reason_code": "host_submission_recorded"}
+            return True
         if submission_id not in self._reply_tickets:
-            return {"allowed": False, "reason_code": "reply_ticket_required"}
+            return False
         result = await self.reply_submitted(
             context, submission_id, ticket=self._reply_tickets[submission_id],
         )
         if result.get("allowed") is not True:
-            return result
+            return False
         generation = await self.store.get_generation(context)
         event = Event(
             submission_id, "livingemotion.host", "bot_reply_submitted", context,
@@ -1270,8 +1397,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         )
         result = await self.api.ingest_event(event)
         if result["status"] not in ("accepted", "duplicate"):
-            return {"allowed": False,
-                    "reason_code": result.get("reason_code") or "submission_event_rejected"}
+            return False
         if result["status"] == "accepted":
             await self.auto_memory.ingest(event, generation=generation)
             self._participation[context.scope_key] = self.store.clock()
@@ -1283,7 +1409,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         self._reply_contexts.pop(submission_id, None)
         while len(self._host_submissions) > 512:
             self._host_submissions.popitem(last=False)
-        return {"allowed": True, "reason_code": "host_submission_recorded"}
+        return True
 
     @staticmethod
     def _discard(event, reason):
@@ -1542,11 +1668,9 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                        [type(part).__name__ for part in chain], text[:60])
         # 承诺指令先抠出来：标记绝不能出现在用户看到的正文里。
         text = self._strip_promise_marks(event, result, text)
-        # 走到这里说明宿主已确认接单，承诺可以落库了。
-        await self.flush_promises(context, event, reply_text=text)
-        submission = await self._record_host_submission_result(context, lease["attempt_id"], text)
-        if submission.get("allowed") is not True:
-            self._discard(event, submission.get("reason_code") or "reply_submission_rejected")
+        # 此处仍是发送前装饰；新承诺留给 after_message_sent 建立。
+        if not await self.record_host_submission(context, lease["attempt_id"], text):
+            self._discard(event, "duplicate")
             return False
         # 回复已经真正交给宿主，这才算待交付的承诺完成了交付。
         await self._confirm_awaiting_delivery(context)
@@ -1872,5 +1996,6 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         self._reply_tickets.clear()
         self._reply_contexts.clear()
         self._host_submissions.clear()
+        self._image_decisions.clear()
         if getattr(self, "bridge", None) is not None:
             self.bridge.sources.clear()

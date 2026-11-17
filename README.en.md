@@ -3,7 +3,7 @@
 ![livingEmotion banner](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-%E2%89%A54.29.1-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.3.0-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.0-3a8060)](CHANGELOG.md)
 
 [简体中文](README.md) · **English**
 
@@ -23,14 +23,32 @@ inside the plugin; it reuses the persona you already configured in AstrBot.
 | 🧬 Keep your persona | Follows the native persona of the session; no built-in character |
 | 🧠 Mood that moves | Pleasure / arousal / stress / social need, clamped, decaying over time; five-axis radar adds a model-written "poise" |
 | 👂 Understand the user | "I'm sad" is an observation about them, not an override of the bot's mood |
-| 🤝 Explainable relationships | 2D force graph, account search, 0–100 favor with 0.1 steps |
+| 🤝 Explainable relationships | V2 scores only current actions clearly directed at the bot; automatic changes of 0.5–1 points, manual 0.1-point editing |
 | 🌙 Sleep and energy | Awake / dozing / groggy / sleepy / deep sleep; reply budget, wake countdown, 24h curve |
 | 💬 Proactive chatting | Random waits, memory callbacks, relationship-driven topics; off by default |
 | 💭 Promises kept | "I'll send it later" becomes a real task that fires on time, even after a restart |
 | 📓 Diary and dreams | First-person diary with weather; dreams reviewed separately |
 | 🎛️ Own console | Nine sections, scope filtering, two themes, no external CDN |
 
-## 💭 Promises (0.3.0)
+## 🆕 What's new in 0.4.0
+
+- Rolling 300-second joy budget: event-driven rises are limited to 5 percentage
+  points and falls to 10, with independent budgets. Neutral or unclear interactions
+  do not raise joy; time decay and weather adjustments are separate.
+- Relationship scoring V2 keeps ordinary chat, quotations and unclear targets at
+  zero; clear praise/corrections add 0.5 points, substantial care/help adds 1.
+  Existing scores, freezes and administrator-only 100-point relationships remain.
+- Five configurable personal-image refusal rates: 90/60/30/10/5% by relationship
+  stage. Existing promised tasks remain eligible for delivery.
+- Flat sleep/energy settings control daytime recovery and recovery-sleep deadlines.
+  Existing explicit configuration values stay effective after upgrade.
+- Deferred images persist generation/delivery checkpoints and use LivingHello's
+  delivery contract. Promise tasks and host `future_task` jobs coordinate ownership;
+  uncertain paid requests or delivery outcomes are not automatically repeated.
+
+See the [changelog](CHANGELOG.md) for compatibility and validation boundaries.
+
+## 💭 Promises
 
 The bot appends an invisible marker (`<!--promise:slot:description-->`) to a reply.
 The plugin strips it before sending, stores the task, and delivers on schedule.
@@ -40,28 +58,25 @@ flowchart TD
     A["💬 Reply carries a promise marker"] --> B{"📌 Parsable slot + description"}
     B -->|"no"| Z["Plain reply, nothing stored"]
     B -->|"yes"| C["🗂️ Persist as scheduled"]
-    C --> D["⏰ Scan every 60s"]
+    C --> D["⏰ Scan on background ticks (default 15s)"]
     D --> E{"📡 Context resolvable"}
     E -->|"route rebuilt from session table"| F["✍️ Compose the follow-up"]
     E -->|"session gone"| G["🚫 Cancel, stop spinning"]
     F --> H{"🌙 Night / quota / auth"}
-    H -->|"deep sleep"| I["😴 Defer to wake-up, no retry cost"]
+    H -->|"authorization blocked"| I["Wait for authorization"]
     H -->|"quota"| J["⏭️ Push to next day"]
     H -->|"ok"| K["📤 Send through the host channel"]
     K -->|"accepted"| L["🧠 Write to memory"]
     L --> M["✅ sent"]
-    K -->|"rejected / unknown"| N["🔁 Retry after 300s, max 3"]
+    K -->|"explicit rejection"| N["Bounded retry; reuse generated image"]
+    K -->|"uncertain image outcome"| O["unknown; no automatic repeat"]
 ```
 
-Three deliberate decisions:
-
-- **Host channel, not the native handle.** Reverse-WS adapters return `ok` plus a
-  `message_id` for messages that never arrive. The host `send_message` at least
-  tells the truth (`unknown`), and we record that as accepted.
-- **Works after a restart.** Stored contexts have no `route`; the bridge rebuilds it
-  from `adapter_id` / `scene_kind` / `scene_id` and requires an exact match.
-- **The follow-up is written to memory.** Otherwise asking "what did you just say"
-  gets a blank stare.
+Stored contexts rebuild the exact host route after restart. Delivery still needs
+current authorization and quota; `sent` means host acceptance, not final platform
+delivery. Deferred images use LivingHello's public contract and persistent receipts.
+Immediate requests are handled in the current turn; only explicitly delayed
+commitments become tasks. Delivered follow-ups can be recalled from memory.
 
 Slots: 马上 (2–5 min), 一会儿 (15–30 min), 待会 (40–70 min), 今晚 (20:00–22:59),
 明天 / 过几天. Up to 3 active per session; identical wording merges.
@@ -82,6 +97,9 @@ with several it asks which one. Full details in [docs/promise.md](docs/promise.m
 - [Plugin manual](docs/plugin-manual.md)
 - [Promise tasks](docs/promise.md)
 - [Five-dimension emotion](docs/emotion-five-dimension.md)
+- [Joy window](docs/joy-window.md) · [Relationship scoring V2](docs/relationship-scoring-v2.md)
+- [Image refusal rates](docs/relationship-image-refusal.md) · [Sleep and energy](docs/sleep-energy-rules.md)
+- [Deferred image tasks](docs/promise-actions-20261116.md) · [Cooperation contract](docs/cooperation-contract-20261116.md)
 - [Architecture](docs/architecture.md) · [API](docs/api.md)
 - [Compatibility](docs/compatibility.md) · [Memory](docs/memory.md)
 - [Changelog](CHANGELOG.md)
@@ -103,8 +121,9 @@ else as unknown. Unknown is never auto-resent.
 
 ## 📦 Changelog
 
-Current version **0.3.0** — promise tasks ship: what it said it would do, it does,
-including across restarts; the follow-up lands in memory. See [CHANGELOG.md](CHANGELOG.md).
+Current version **0.4.0** — bounded joy, relationship scoring V2, per-stage image
+refusal, sleep/energy switches and coordinated deferred tasks.
+See [CHANGELOG.md](CHANGELOG.md).
 
 MIT for original content. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 

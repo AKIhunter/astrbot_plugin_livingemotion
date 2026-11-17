@@ -526,7 +526,7 @@ function methodDetails() {
   details.append(node("summary", t("分析方法与局限")));
   const body = node("div", undefined, "details-content");
   body.append(
-    node("p", t("方法：四维情绪状态机（pleasure / arousal / stress / social_need）＋事件增量＋半衰期回落，规则版本 emotion-1。"), "hint"),
+    node("p", t("方法：四维情绪状态机＋逐消息判断＋开心近 5 分钟滑动限幅＋半衰期回落，规则版本 emotion-3。"), "hint"),
     node("p", t("输入：带来源的真实事件（信号、置信度、时间）、本地规则表，可选模型给出的有界增量修正。"), "hint"),
     node("p", t("步骤：取权重 → 查增量 → 单次裁剪到 ±0.15 → 窗口预算限制 → 迟到衰减 → 写回四维状态 → 无事件时按半衰期回落到基准。"), "hint"),
     node("p", t("输出：6 个情绪倾向与 6 个分析维度（0–100%）；置信度是输入事件自带的，不被本地规则改写。"), "hint"),
@@ -743,11 +743,12 @@ function renderPromisePanel(data) {
     head.append(node("span", controlled(String(item.bucket_label || t("待办"))), "promise-bucket"));
     // 用绝对截止时刻驱动本地倒计时，轮询只负责校准。
     const eta = Math.max(0, Number(item.eta_seconds) || 0);
-    card.dataset.deadline = String(Date.now() + eta * 1000);
-    head.append(node("span", formatCountdown(eta), "promise-eta"));
+    if (item.status !== "waiting") card.dataset.deadline = String(Date.now() + eta * 1000);
+    head.append(node("span", item.status === "waiting" ? controlled(String(item.bucket_label)) : formatCountdown(eta), "promise-eta"));
     card.append(head);
     card.append(node("p", controlled(String(item.description || "")), "promise-desc"));
-    const meta = node("p", t("状态 {0}", [item.status === "running" ? t("正在发送") : t("排队中")]), "hint");
+    const label = item.status === "waiting" ? String(item.bucket_label || "") : item.status === "running" ? t("正在发送") : t("排队中");
+    const meta = node("p", t("状态 {0}", [label]), "hint");
     if (Number(item.advance_count) > 0) {
       meta.textContent += t(" · 已提前 {0} 次", [item.advance_count]);
     }

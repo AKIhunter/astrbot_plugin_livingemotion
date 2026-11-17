@@ -89,7 +89,7 @@ TA 情绪分析|TA emotion analysis|TA の感情分析
 分析方法|Method|分析方法
 四维情绪状态机 · 本地规则计算|Four-dimension affect state machine · computed by local rules|四次元感情ステートマシン · ローカルルールで計算
 分析方法与局限|Analysis method and limits|分析方法と限界
-方法：四维情绪状态机（pleasure / arousal / stress / social_need）＋事件增量＋半衰期回落，规则版本 emotion-1。|Method: a four-dimension affect state machine (pleasure / arousal / stress / social_need) with per-event deltas and half-life decay, rule version emotion-1.|方法：四次元感情ステートマシン（pleasure / arousal / stress / social_need）にイベント増分と半減期減衰を組み合わせ、ルール版は emotion-1。
+方法：四维情绪状态机＋逐消息判断＋开心近 5 分钟滑动限幅＋半衰期回落，规则版本 emotion-3。|Method: four-dimension affect, per-message appraisal, a rolling five-minute joy limit and half-life decay, rule version emotion-3.|方法：四次元感情、メッセージごとの評価、喜びの5分移動上限、半減期減衰。ルール版はemotion-3。
 输入：带来源的真实事件（信号、置信度、时间）、本地规则表，可选模型给出的有界增量修正。|Input: real events with provenance (signals, confidence, timestamps), the local rule table, and optionally a bounded delta refinement from the model.|入力：出所のある実イベント（シグナル・信頼度・時刻）、ローカルルール表、任意でモデルによる有界の増分補正。
 步骤：取权重 → 查增量 → 单次裁剪到 ±0.15 → 窗口预算限制 → 迟到衰减 → 写回四维状态 → 无事件时按半衰期回落到基准。|Steps: weight → delta lookup → clamp to ±0.15 → window budget → late-event decay → write back the four dimensions → decay to baseline by half-life when idle.|手順：重み → 増分参照 → ±0.15 にクリップ → 窓内予算 → 遅延減衰 → 四次元へ書き戻し → 無イベント時は半減期で基準へ減衰。
 输出：6 个情绪倾向与 6 个分析维度（0–100%）；置信度是输入事件自带的，不被本地规则改写。|Output: six emotion tendencies and six analysis dimensions (0–100%); confidence comes from the input event and is never rewritten by the local rules.|出力：6 つの感情傾向と 6 つの分析次元（0〜100%）。信頼度は入力イベント由来で、ローカルルールは書き換えません。
@@ -285,7 +285,8 @@ TA 维度|TA dimension|TA の次元
 识别方式|Detected by|検出方法
 查看{0}的说明|View the explanation for {0}|{0} の説明を見る
 当前档位「{0}」：单次变化最多 {1}，同一类刺激 5 分钟内累计最多 {2}；换档位等比放大，衰减速度不变。|Current preset "{0}": up to {1} per event and {2} per stimulus type within 5 minutes. Other presets scale proportionally; decay speed is unchanged.|現在のプリセット「{0}」：1 回の変化は最大 {1}、同じ種類の刺激は 5 分間に最大 {2}。プリセットを変えると比例して拡大し、減衰速度は変わりません。
-表中是「{0}」档的生效增量；没有新的互动时，这些数值会随着时间慢慢回落到平常水平。|The table shows effective deltas for the "{0}" preset; without new interactions the values slowly return to their usual level.|表は「{0}」プリセットの実効増分です。新しい交流がないと、値は時間とともに平常水準へ戻ります。
+表中是「{0}」档的四维候选增量，实际结果还受对象、开心方向和窗口限幅约束；没有新的互动时按时间回落到平常水平。|The table shows candidate deltas for "{0}"; the recipient, joy direction and rolling budget constrain the result. Without new interactions, affect decays toward its baseline.|表は「{0}」の候補増分です。対象、喜びの方向、移動上限が結果を制限します。新たな交流がなければ基準へ戻ります。
+开心另设近 5 分钟滑动限幅：累计上升最多 5 点、下降最多 10 点，正负独立且不随档位放大；自然回落不占额度。普通聊天、合理纠错与主体不明不增减开心。|Joy has a rolling five-minute limit of 5 points up and 10 down, accounted independently across presets. Natural decay uses no budget; ordinary chat, reasonable corrections and unclear recipients do not change joy.|喜びは直近5分で上昇5点、下降10点まで、別々に計算しプリセットでは拡大しません。自然減衰は枠を消費せず、通常の会話、妥当な訂正、対象不明では喜びは変わりません。
 手动入睡|Put to sleep|手動で入眠
 变更作息状态。不会在此页面直接发送晚安。|Change sleep state. This page does not directly send goodnight messages.|睡眠状態を変更します。このページから直接おやすみの挨拶を送信しません。
 手动叫醒|Wake up|手動で起こす
@@ -400,6 +401,13 @@ TA 住所城市|TA home city|TA の居住都市
 每次回复消耗|Cost per reply|返信ごとの消費
 疲劳每分钟消耗|Fatigue cost per minute|1 分ごとの疲労消費
 每分钟恢复|Recovery per minute|1 分ごとの回復
+白天自动恢复精力|Automatic daytime recovery|日中の自動回復
+补觉按起床时间截止|Recovery follows wake time|補眠期限を起床時間に合わせる
+补觉最长时长|Maximum recovery duration|最大補眠時間
+精力与清醒|Energy and wakefulness|活力と覚醒
+作息时间|Schedule|作息時間
+聊天唤醒|Chat wake-up|会話で起こす
+醒后补课|Catch up after waking|起床後の読み返し
 精力上限（固定）|Energy cap (fixed)|活力上限（固定）
 睡前晚安|Bedtime goodnight|就寝前の挨拶
 道别语随机生成|Generate varied farewells|別れの挨拶をランダム生成
@@ -433,7 +441,7 @@ TA 住所城市|TA home city|TA の居住都市
 沉睡时间应位于夜间开始与基础起床之间，请核对跨午夜顺序。|Deep sleep must fall between night start and base wake time. Check midnight ordering.|深い眠りの時刻は夜間開始と基本起床の間にしてください。日付をまたぐ順序を確認してください。
 次日 |Next day |翌日 
 当日 |Same day |当日 
-本地 {0}：夜间 {1} → 恍惚转困 {2} → 沉睡 {3} → 基础起床 {4}。实际起床另加本周期持久赖床值，不在页面重抽。|Local {0}: night {1} → drowsy {2} → deep sleep {3} → base wake {4}. Actual wake adds the stored cycle lie-in; this page does not redraw it.|現地 {0}：夜間 {1} → 眠気 {2} → 深い眠り {3} → 基本起床 {4}。実際の起床には保存済みの二度寝時間を加え、ページでは再抽選しません。
+本地 {0}：疲劳开始 {1} → 固定沉睡 {2} → 基础起床 {3}。实际起床加本周期赖床；清醒、恍惚和困按精力判断。|Local {0}: fatigue starts {1} → fixed deep sleep {2} → base wake {3}. Actual wake adds this cycle's lie-in; awake, groggy and drowsy depend on energy.|現地 {0}：疲労開始 {1} → 固定の深い眠り {2} → 基本起床 {3}。実際の起床にはこの周期の二度寝時間を加え、覚醒・ぼんやり・眠気は体力で判定します。
 时区未配置|Timezone not configured|タイムゾーン未設定
 一份原生配置，一次保存。普通分区只阅读状态；以下更改统一提交到 AstrBot。|One native configuration, one save. Other sections show state; changes below are submitted together to AstrBot.|同じネイティブ設定を一度に保存します。各画面は状態を表示し、以下の変更をまとめて AstrBot に送信します。
 来源：{0} · 版本 {1}|Source: {0} · revision {1}|出典：{0} · バージョン {1}
@@ -469,7 +477,7 @@ LivingMemory 已启用：向量模型由 LivingMemory 管理，本地原生向�
 下拉追加已知QQ…|Append known QQ contact…|既知の QQ を追加…
 QQ群|QQ group|QQ グループ
 精力上限固定 100，不可修改。|The energy cap is fixed at 100.|活力の上限は 100 固定で変更できません。
-作息预览：{0} · 恍惚转困 {1} · 实际起床 {2}|Sleep preview: {0} · drowsy {1} · actual wake {2}|睡眠プレビュー：{0} · 眠気 {1} · 実際の起床 {2}
+作息预览：{0} · 固定沉睡 {1} · 实际起床 {2}|Sleep preview: {0} · fixed deep sleep {1} · actual wake {2}|睡眠プレビュー：{0} · 固定の深い眠り {1} · 実際の起床 {2}
 以上是配置顺序预览，不代表当前周期的持久实际起床时刻。最终作息以宿主状态与校验为准。|This previews configured ordering, not the stored wake time of the current cycle. Host state and validation are authoritative.|これは設定順序のプレビューで、現在の周期に保存された起床時刻ではありません。最終的な睡眠状態はホストに従います。
 宿主请求失败，请检查插件连接。|Host request failed; check plugin connection.|ホスト要求に失敗しました。接続を確認してください。
 宿主返回了无效响应。|Host returned an invalid response.|ホストが無効な応答を返しました。
@@ -514,6 +522,7 @@ TA 情绪雷达，实线为当前，虚线为领域基准；数值见下方|TA e
 读取最新关系并复核|Load latest relationship and review|最新の関係を取得して確認
 好感 · 0–100，步进 0.1|Affinity · 0–100, step 0.1|好感度 · 0–100、0.1 刻み
 冻结自动好感变化|Freeze automatic affinity changes|自動好感度変化を固定
+自动好感：每条有效消息增减 0.5–1 分；主体不明或普通交流不加分，冻结后保持不变。|Automatic affinity: each eligible message changes it by 0.5–1 point; unclear targets or neutral chat earn no points, and frozen scores stay fixed.|自動好感度：有効なメッセージごとに0.5–1点変化します。対象不明や通常の会話では加点せず、固定中は変化しません。
 修改原因（必填）|Change reason (required)|変更理由（必須）
 只修改当前人格的这个平台账号。操作者由宿主认证注入，不修改其他平台的同号账号。|Changes only this account for the current persona. The host authenticates the actor; same-number accounts on other platforms are unchanged.|現在の人格のこのアカウントのみ変更します。操作者はホストが認証し、他プラットフォームの同番号は変更しません。
 好感已保存，正在重新读取真实关系。|Affinity saved; reloading actual relationship.|好感度を保存し、実際の関係を再取得しています。

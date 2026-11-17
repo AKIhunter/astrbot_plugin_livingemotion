@@ -14,12 +14,13 @@
   计算；睡眠仍启用时拒绝新回复并提示配置时区。恢复有效时区后继续绝对时间推进。
   启用计划作息却清空时区属于非法配置，沿用原关闭式失败处理。
 - 版本 2 时间：`nap_enabled/nap_start/nap_end`，`fatigue_start/fatigue_end`，
-  `deep_sleep_at`，既有 `wake_at`（基础起床）。恍惚转困取疲劳开始至沉睡的绝对时间中点。
+  `deep_sleep_at`，既有 `wake_at`（基础起床）。非睡眠状态由精力决定，不再按时间中点转困。
 - `lie_in_min_minutes/lie_in_max_minutes` 默认 0/90，只抽一次持久化。
 - `wake_mode=chat|never|both`；both 的群唤醒必须由宿主认证原生 @Bot。
-  `wake_reply_limit=3`，`wake_window_minutes=10`。
-- `energy_reply_cost=4.0`、`energy_fatigue_per_minute=0.8`、
-  `energy_recovery_per_minute=1.5`，0.1 步进；精力上限 100 不可配置。
+  `wake_reply_limit=10`，`wake_window_minutes=10`。
+- 新默认 `energy_reply_cost=2.0`、`energy_fatigue_per_minute=0.5`、
+  `energy_recovery_per_minute=1.0`，0.1 步进；已有显式配置保留。仅睡眠自动恢复，
+  固定沉睡结束直接恢复100%，精力上限100不可配置。
 - 集成字段：`catchup_enabled/catchup_reply_enabled`、`closing_enabled/closing_random/
   closing_lead_minutes`、`diary_provider_id/dream_provider_id/catchup_provider_id/
   closing_provider_id`、`home_city`、`embedding_provider_id/livingmemory_enabled/memory_write`。
@@ -58,13 +59,15 @@ v2 仅驱动五档/精力，FullCatchupService 由 Application 独立接入。
 - `await reply_submitted(context, reply_id, ticket=原票据)`：最终回复第一次进入宿主输出
   流程前调用，先复核模式/来源/人格/路由/沉睡/绝对窗口；成功扣一次精力并从首次提交
   开启窗口。不是送达确认。重复提交不再扣；分段/TTS/图片复用同一逻辑回复 ID。
-- 最后一轮开始后不再开放下一轮，但原已开始票据可提交；到沉睡或窗口过期优先拒绝。
-- `await store.reply_failed(context, reply_id)` 标记失败，不退轮，不开启窗口或扣回复精力。
+- 最后一轮开始后不再开放下一轮，但所有原已开始票据可提交；全部完成后按精力结束
+  唤醒窗，不能提前截断并行在途回复。到沉睡或窗口过期优先拒绝。
+- `await store.reply_failed(context, reply_id)` 标记失败，不退轮，不开启窗口或扣回复精力；
+  额度用满且没有其他在途回复时结束唤醒窗。
 - `begin_reply(context, attempt_id)` 与 `submit_reply(context, submission_id, attempt_id=None)`
   是 bool 包装；后者恢复持久票据。默认 submission_id 必须等于原 attempt_id。
 - `await wake_attempt(context, normalized_event)`：真实人类消息，返回同形状 allowed。
   两骰仅首次低精力有效尝试抽取并保存和；之后 +1，>8 成功；重复消息不加一。
-  沉睡既不抽骰也不累计。成功后低精力为 groggy，不强行改精力。
+  沉睡既不抽骰也不累计。聊天仅叫醒小憩，成功统一为 groggy，不强行改精力。
 - bool 包装 `try_chat_wake(context,event_key,is_private,native_at_bot)` 先按原事件幂等键
   从自身归档复核来源；原生群 @ 标志只能由宿主可信入口传入。没有合格事件即拒绝。
 - 管理员用已认证控制台调用 `advance_scope(action="night.wake"|"night.sleep")`；
@@ -75,6 +78,9 @@ v2 仅驱动五档/精力，FullCatchupService 由 Application 独立接入。
 `bot_reply_submitted` Event ingest 只归档；v2 人类消息也不扣精力。回复扣费只在提交端口。
 `NightState.phase/energy` 保留 v1；新增 `display_state` 五档、cycle/lie-in/点数/轮数/窗口字段。
 整数 `energy_units` 为 0..1000，`energy_remainder/energy_direction` 结算亚 0.1 时间余量。
+`quiet_since` 持久保存安静计时；新鲜可靠人类消息与回复提交重置，跨20%进入恍惚
+时重新开始计时。缺少旧字段时从该状态最后结算时间开始，不新增数据库表迁移。
+固定沉睡、补觉截止、严格20%与100%退出规则见 [睡眠与精力规则](sleep-energy-rules.md)。
 
 ## 控制台与存储
 

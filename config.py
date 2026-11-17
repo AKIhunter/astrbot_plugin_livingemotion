@@ -11,7 +11,10 @@ from zoneinfo import ZoneInfo
 import unicodedata
 
 
-from .domain.relationship import RELATIONSHIP_DEFAULT_SCORE, RELATIONSHIP_STAGE_NAMES, stage_names as migrate_stage_names
+from .domain.relationship import (
+    IMAGE_REFUSAL_FIELDS, RELATIONSHIP_DEFAULT_SCORE, RELATIONSHIP_STAGE_NAMES,
+    stage_names as migrate_stage_names,
+)
 from .domain.dreaming import DEFAULT_THEMES, theme_pool
 
 RELATIONSHIP_STAGE_NAMES_DEFAULT = json.dumps(RELATIONSHIP_STAGE_NAMES, ensure_ascii=False, separators=(",", ":"))
@@ -125,14 +128,17 @@ class Config:
     lie_in_min_minutes: int = 0
     lie_in_max_minutes: int = 90
     wake_mode: str = "chat"
-    wake_reply_limit: int = 3
+    wake_reply_limit: int = 10
     wake_window_minutes: int = 10
-    energy_reply_cost: float = 4.0
-    energy_fatigue_per_minute: float = 0.8
-    energy_recovery_per_minute: float = 1.5
-    # 精力达到这条线即算清醒：正常自主参与，不进入唤醒配额、不受唤醒窗口限制。
-    # 低于这条线又被叫醒时，才开一个短唤醒窗口。深睡不受影响。
-    energy_comfort_percent: float = 80.0
+    energy_reply_cost: float = 2.0
+    energy_fatigue_per_minute: float = 0.5
+    energy_recovery_per_minute: float = 1.0
+    # 缺省保持已发布的白天不回血、补觉跟随下一次起床规则。
+    energy_daytime_recovery_enabled: bool = False
+    recovery_follow_wake_at: bool = True
+    recovery_max_minutes: int = 120
+    # Legacy energy_comfort_percent remains in saved config but is ignored;
+    # version-two sleep rules use the fixed strict >20% awake threshold.
     catchup_enabled: bool = True
     catchup_reply_enabled: bool = True
     promise_enabled: bool = True
@@ -174,6 +180,11 @@ class Config:
     relationship_stage_names: str = RELATIONSHIP_STAGE_NAMES_DEFAULT
     relationship_stage_descriptions: str = '["","","",""]'
     relationship_special_description: str = ""
+    relationship_image_refusal_averse: int = 90
+    relationship_image_refusal_unfamiliar: int = 60
+    relationship_image_refusal_friendly: int = 30
+    relationship_image_refusal_close: int = 10
+    relationship_image_refusal_unique: int = 5
     wake_autocatchup_enabled: bool = True
     wake_greeting_enabled: bool = True
     wake_greeting_texts: str = (
@@ -200,6 +211,9 @@ class Config:
         return cls(**data)
 
     def __post_init__(self) -> None:
+        for name in IMAGE_REFUSAL_FIELDS:
+            if type(getattr(self, name)) is not int or not 0 <= getattr(self, name) <= 100:
+                raise ValueError(f"{name}: expected integer percentage 0..100")
         if not isinstance(self.relationship_stage_descriptions, str) or len(self.relationship_stage_descriptions) > 8192:
             raise ValueError("relationship_stage_descriptions: expected a bounded JSON array")
         try:
@@ -318,7 +332,7 @@ class Config:
             minimum = 0 if name in (
                 "diary_retries", "lie_in_min_minutes", "lie_in_max_minutes",
                 "closing_lead_minutes", "emotion_quiet_start_hour", "emotion_quiet_end_hour",
-            ) else 1
+            ) or name in IMAGE_REFUSAL_FIELDS else 1
             if type(default) is int and (type(value) is not int or value < minimum):
                 raise ValueError(f"{name}: expected positive integer")
             if isinstance(default, str) and (not isinstance(value, str) or len(value) > 8192):
@@ -352,6 +366,7 @@ class Config:
             ("experience_body_chars", 2000),
             ("lie_in_max_minutes", 1440), ("wake_reply_limit", 100),
             ("wake_window_minutes", 1440), ("closing_lead_minutes", 60),
+            ("recovery_max_minutes", 1440),
             ("behavior_random_max_minutes", 10080), ("behavior_idle_minutes", 1440),
             ("emotion_quiet_start_hour", 23), ("emotion_quiet_end_hour", 23),
         ):

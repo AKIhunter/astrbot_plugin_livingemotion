@@ -54,7 +54,7 @@ test("实际 Console DTO、float单位、原生任务组单一来源", () => {
   assert.equal(state.config.fields.find(field => field.key === "energy_reply_cost").type, "float");
   assert.equal(state.config.fields.find(field => field.key === "energy_reply_cost").unit, "点/次");
   assert.equal(state.config.readonly[0].value, 100);
-  assert.match(schedulePreview(state.config.values), /恍惚转困 次日 01:00/);
+  assert.match(schedulePreview(state.config.values), /固定沉睡 次日 02:30/);
   assert.match(schedulePreview({ fatigue_start: "bad" }), /未完整配置/);
   assert.deepEqual(scopeParams({ persona_id: "p", view_scope: "private", scene_id: "bad", actor_id: "admin" }),
     { persona_id: "p", view_scope: "private" });

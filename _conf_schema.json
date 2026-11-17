@@ -1,4 +1,4 @@
-﻿{
+{
   "enabled": {
     "type": "bool",
     "default": true,
@@ -181,7 +181,7 @@
       "normal",
       "intense"
     ],
-    "description": "情绪强度预设，只放大单次变化与同类刺激上限，不改衰减速度。例：gentle保守×1.35、normal平常×1.6（推荐）、intense激进×2.0；数值越大回复时情绪起伏越明显。"
+    "description": "在本页选择情绪强度：gentle保守×1.35、normal平常×1.6（推荐）、intense激进×2.0；放大四维单次变化与同类刺激上限，不改衰减速度。三档均限制开心近5分钟累计上升5点、下降10点，正负独立；主体不明、普通互动和合理纠错不增减开心。"
   },
   "night_schedule_enabled": {
     "type": "bool",
@@ -211,7 +211,7 @@
   "fatigue_start": {
     "type": "string",
     "default": "23:30",
-    "description": "夜间疲劳与睡眠周期开始，和沉睡中点为转困时间。例：23:30。"
+    "description": "夜间疲劳消耗开始；清醒、恍惚、困由精力阈值决定。例：23:30。"
   },
   "fatigue_end": {
     "type": "string",
@@ -250,8 +250,8 @@
   },
   "wake_reply_limit": {
     "type": "int",
-    "default": 3,
-    "description": "聊天唤醒回复尝试1–100轮，失败计入。例：3轮。"
+    "default": 10,
+    "description": "聊天唤醒回复尝试1–100轮，失败计入；窗口结束按精力判定状态。例：10轮。"
   },
   "wake_window_minutes": {
     "type": "int",
@@ -260,18 +260,18 @@
   },
   "energy_reply_cost": {
     "type": "float",
-    "default": 4.0,
-    "description": "每次可见回复精力消耗0–100，步进0.1。例：4.0点。"
+    "default": 2.0,
+    "description": "每次宿主提交回复消耗0–100，步进0.1；同一回复只记一次。例：2.0点。"
   },
   "energy_fatigue_per_minute": {
     "type": "float",
-    "default": 0.8,
-    "description": "疲劳清醒阶段每分钟消耗0–100，步进0.1。例：0.8点/分钟。"
+    "default": 0.5,
+    "description": "夜间疲劳时段未睡眠时每分钟消耗0–100，步进0.1。例：0.5点/分钟。"
   },
   "energy_recovery_per_minute": {
     "type": "float",
-    "default": 1.5,
-    "description": "适用恢复阶段每分钟恢复0–100，步进0.1，上限100。例：1.5点/分钟。"
+    "default": 1.0,
+    "description": "小憩或沉睡时每分钟恢复0–100，步进0.1，上限100；开启下方“白天自动恢复精力”后也用于非疲劳时段未睡眠的恢复。例：1.0点/分钟。"
   },
   "catchup_enabled": {
     "type": "bool",
@@ -608,6 +608,41 @@
     "default": false,
     "description": "是否在关系页显示好感编辑。默认关闭只读；打开后才出现好感分数与冻结开关的编辑表单。例：需要人工校正某个账号的好感时才开启。"
   },
+  "relationship_image_refusal_averse": {
+    "type": "int",
+    "default": 90,
+    "min": 0,
+    "max": 100,
+    "description": "反感阶段（显示好感低于11）的个人生图及新图片承诺婉拒概率，0–100整数百分比。0不因关系随机拒绝，100必定婉拒。可在LivingEmotion控制台→设置→关系调整；同一请求只判定一次，已有待办继续履行，情绪只影响语气。"
+  },
+  "relationship_image_refusal_unfamiliar": {
+    "type": "int",
+    "default": 60,
+    "min": 0,
+    "max": 100,
+    "description": "陌生阶段（显示好感11至低于25）的个人生图及新图片承诺婉拒概率，0–100整数百分比。0不因关系随机拒绝，100必定婉拒。可在LivingEmotion控制台→设置→关系调整；同一请求只判定一次，已有待办继续履行，情绪只影响语气。"
+  },
+  "relationship_image_refusal_friendly": {
+    "type": "int",
+    "default": 30,
+    "min": 0,
+    "max": 100,
+    "description": "友好阶段（显示好感25至低于45）的个人生图及新图片承诺婉拒概率，0–100整数百分比。0不因关系随机拒绝，100必定婉拒。可在LivingEmotion控制台→设置→关系调整；同一请求只判定一次，已有待办继续履行，情绪只影响语气。"
+  },
+  "relationship_image_refusal_close": {
+    "type": "int",
+    "default": 10,
+    "min": 0,
+    "max": 100,
+    "description": "亲近阶段（显示好感45至低于100）的个人生图及新图片承诺婉拒概率，0–100整数百分比。0不因关系随机拒绝，100必定婉拒。可在LivingEmotion控制台→设置→关系调整；同一请求只判定一次，已有待办继续履行，情绪只影响语气。"
+  },
+  "relationship_image_refusal_unique": {
+    "type": "int",
+    "default": 5,
+    "min": 0,
+    "max": 100,
+    "description": "独特阶段（管理员设置的显示好感100）的个人生图及新图片承诺婉拒概率，0–100整数百分比。0不因关系随机拒绝，100必定婉拒。可在LivingEmotion控制台→设置→关系调整；同一请求只判定一次，已有待办继续履行，情绪只影响语气。"
+  },
   "window_days": {
     "type": "int",
     "default": 7,
@@ -682,5 +717,20 @@
     "type": "string",
     "default": "刚醒，我看看之前你们说了什么。|我醒了，先把这几小时翻一翻。|醒了…看看都说了什么。",
     "description": "刚醒招呼候选，用竖线分隔，每次随机取一条。例：改成你自己的口吻。"
+  },
+  "energy_daytime_recovery_enabled": {
+    "type": "bool",
+    "default": false,
+    "description": "白天自动恢复精力，默认关闭：非疲劳时段清醒、恍惚、困不回血。开启后这些状态也恢复，速度在本页“每分钟恢复”设置；小憩、沉睡恢复不受此开关影响。"
+  },
+  "recovery_follow_wake_at": {
+    "type": "bool",
+    "default": true,
+    "description": "补觉按起床时间截止，默认开启：截止取下一次基础起床加本周期赖床；在“设置→长夜→作息时间”调整起床与赖床。关闭后使用本区“补觉最长时长”；恢复100%可提前结束，固定夜间沉睡优先。修改仅影响新补觉周期。"
+  },
+  "recovery_max_minutes": {
+    "type": "int",
+    "default": 120,
+    "description": "补觉最长时长1–1440分钟，默认120；在本区关闭“补觉按起床时间截止”后生效。从补觉开始计算，恢复100%提前结束；到期按精力退出，不强制回满，重新计算30分钟静默。仅影响新周期。"
   }
 }

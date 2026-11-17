@@ -23,6 +23,8 @@ const labels = resource({
   energy_reply_cost: t("每次回复消耗"), energy_fatigue_per_minute: t("疲劳每分钟消耗"),
   energy_recovery_per_minute: t("每分钟恢复"), energy_max: t("精力上限（固定）"),
   energy_comfort_percent: t("清醒精力线"),
+  energy_daytime_recovery_enabled: t("白天自动恢复精力"),
+  recovery_follow_wake_at: t("补觉按起床时间截止"), recovery_max_minutes: t("补觉最长时长"),
   promise_enabled: t("记住答应过的事"), promise_max_active: t("同时追踪的承诺条数"),
   promise_max_depth: t("单条承诺最多拆几层"), promise_advance_limit: t("每轮最多推进几条"),
   promise_tick_seconds: t("承诺推进间隔"),
@@ -281,7 +283,7 @@ export function schedulePreview(values) {
   const wakeAt = wake <= start ? wake + 1440 : wake;
   if (deepAt >= wakeAt) return t("沉睡时间应位于夜间开始与基础起床之间，请核对跨午夜顺序。");
   const clock = value => `${value >= 1440 ? t("次日 ") : t("当日 ")}${String(Math.floor(value / 60) % 24).padStart(2, "0")}:${String(Math.floor(value) % 60).padStart(2, "0")}${value % 1 ? ":30" : ""}`;
-  return t("本地 {0}：夜间 {1} → 恍惚转困 {2} → 沉睡 {3} → 基础起床 {4}。实际起床另加本周期持久赖床值，不在页面重抽。", [text(values.timezone, t("时区未配置")), clock(start), clock((start + deepAt) / 2), clock(deepAt), clock(wakeAt)]);
+  return t("本地 {0}：疲劳开始 {1} → 固定沉睡 {2} → 基础起床 {3}。实际起床加本周期赖床；清醒、恍惚和困按精力判断。", [text(values.timezone, t("时区未配置")), clock(start), clock(deepAt), clock(wakeAt)]);
 }
 // 「功能耦合」分组的状态表：谁在场、谁已启用。承诺代办不再单独列行，
 // 它的行为完全由「是否与 LivingHello 耦合」决定。
@@ -382,6 +384,7 @@ export function renderSettings(root, state, options, updateControls, description
         if (!id) continue;
         const card = node("section", undefined, "settings-subsection");
         card.dataset.subsection = id;
+        card.setAttribute("aria-label", controlled(text(entry.label, id)));
         card.append(node("h3", text(entry.label, id), "settings-subhead"));
         const body = node("div", undefined, "settings-subsection-body");
         card.append(body);
@@ -617,11 +620,11 @@ export function renderSettings(root, state, options, updateControls, description
         node("p", t("「工作模式」只决定要不要参与表达和行动；它不改情绪是否共享。"), "hint"));
     }
     if (group === "night") {
-      section.append(node("p", t("精力上限固定 100，不可修改。精力达到「清醒精力线」即算睡够，正常自主参与；低于这条线又在夜里被叫醒，才进入下面的唤醒窗口。深睡不受影响。"), "hint"));
+      section.append(node("p", t("精力上限固定 100，不可修改。"), "hint"));
       section.append(previewText);
       const preview = object(state.data.night.schedule_preview ?? options.schedule_preview);
       if (Object.keys(preview).length) section.append(node("p",
-        t("作息预览：{0} · 恍惚转困 {1} · 实际起床 {2}", [text(preview.reason ?? preview.summary), text(preview.drowsy_at), text(preview.wake_at)]), "hint"));
+        t("作息预览：{0} · 固定沉睡 {1} · 实际起床 {2}", [text(preview.reason ?? preview.summary), text(preview.deep_sleep_at), text(preview.wake_at)]), "hint"));
       else section.append(node("p", t("以上是配置顺序预览，不代表当前周期的持久实际起床时刻。最终作息以宿主状态与校验为准。"), "hint"));
     }
     // 二级卡片里没有任何字段的，直接不显示，避免空标题占位。

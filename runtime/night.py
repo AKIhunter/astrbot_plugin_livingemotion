@@ -62,13 +62,13 @@ class NightRuntime:
             deep += timedelta(days=1)
         if wake <= deep:
             wake += timedelta(days=1)
-        # Timestamps, not wall-clock subtraction, establish actual DST order.
-        midpoint = (start.timestamp() + deep.timestamp()) / 2
         identifier = stable_key("night", start.timestamp(), config.timezone)
-        lie = state.lie_in_minutes if state and state.cycle_id == identifier else None
+        lie = state.lie_in_minutes if state and (
+            state.cycle_id == identifier or state.base_wake_at == wake.timestamp()
+        ) else None
         target = wake.timestamp() + (lie or 0) * 60
         return {
-            "cycle_id": identifier, "start": start.timestamp(), "drowsy": midpoint,
+            "cycle_id": identifier, "start": start.timestamp(), "drowsy": None,
             "deep": deep.timestamp(), "base_wake": wake.timestamp(), "wake": target,
             "lie_in_minutes": lie,
         }
@@ -79,11 +79,14 @@ class NightRuntime:
             return None
         timeline = self.night_timeline(now, state=state)
         if (state.wake_at is not None and state.wake_at > now and state.cycle_id
-                and not (state.cycle_kind == "nap" and timeline["start"] <= now
-                         < timeline["wake"])):
+                and not (state.cycle_kind in ("nap", "manual", "recovery")
+                         and (timeline["deep"] <= now < timeline["wake"]
+                              or state.updated_at < timeline["wake"] <= now))):
             return None
         # A persisted night target remains authoritative past fatigue_end.
-        if timeline["start"] <= now < timeline["wake"]:
+        if (timeline["start"] <= now < timeline["wake"]
+                or state.updated_at < timeline["wake"] <= now):
+            # 跨起床时刻的离线推进仍需结算最近一次固定沉睡，不能漏掉满精力恢复。
             lie = timeline["lie_in_minutes"]
             if lie is None:
                 lie = self._night_random(config.lie_in_min_minutes, config.lie_in_max_minutes)
@@ -107,6 +110,35 @@ class NightRuntime:
                                   "nap", start.timestamp(), end.timestamp())
         return None
 
+    def _recovery_cycle(self, state, now):
+        """Persist one deadline per recovery; existing cycles keep their saved target."""
+        config = self.config
+        if not config.recovery_follow_wake_at:
+            # 自定义时长不借用固定沉睡时间；夜间周期由 _life_cycle 优先接管。
+            minutes = max(1, min(1440, config.recovery_max_minutes))
+            return SleepCycle(stable_key("recovery", now, config.timezone),
+                              "recovery", now, now + minutes * 60)
+        tz = ZoneInfo(config.timezone)
+        current = datetime.fromtimestamp(now, tz)
+        base = datetime.combine(current.date(), time.fromisoformat(config.wake_at), tz)
+        if (state.base_wake_at is not None and state.wake_at is not None
+                and state.wake_at > now and state.lie_in_minutes is not None):
+            base = datetime.fromtimestamp(state.base_wake_at, tz)
+            lie = state.lie_in_minutes
+        else:
+            if base.timestamp() <= now:
+                base += timedelta(days=1)
+            lie = self._night_random(config.lie_in_min_minutes, config.lie_in_max_minutes)
+        deep = datetime.combine(base.date(), time.fromisoformat(config.deep_sleep_at), tz)
+        if deep >= base:
+            deep -= timedelta(days=1)
+        return SleepCycle(
+            stable_key("recovery", now, config.timezone), "recovery", now,
+            base.timestamp() + lie * 60,
+            deep.timestamp() if config.night_enabled and config.night_schedule_enabled else None,
+            base_wake=base.timestamp(), lie_in_minutes=lie,
+        )
+
     def _fatigue_windows(self, start, now):
         tz = ZoneInfo(self.config.timezone)
         day = datetime.fromtimestamp(start, tz).date() - timedelta(days=1)
@@ -127,12 +159,18 @@ class NightRuntime:
         return tuple(windows)
 
     def _advance_life(self, state, now, runtime=None):
+        manual_until = (runtime or {}).get("manual_wake_until", 0)
+        cycle = self._life_cycle(state, now) if manual_until <= now else None
+        if cycle is not None and cycle.wake <= manual_until:
+            # 管理员取消的固定沉睡不能在截止之后被离线结算重新奖励满精力。
+            cycle = None
         return advance_life(
-            state, now=now, cycle=None if (runtime or {}).get("manual_wake_until", 0) > now
-            else self._life_cycle(state, now),
+            state, now=now, cycle=cycle,
             fatigue_windows=self._fatigue_windows(state.updated_at, now),
             policy=life_policy(self.config),
             allow_sleep=bool(self.config.allow_sleep and self.config.night_enabled),
+            recovery_cycle_factory=(None if manual_until > now
+                                    else self._recovery_cycle),
         )
 
     async def initialize_state_scope(self, context):
@@ -161,6 +199,7 @@ class NightRuntime:
         if self._night_v2():
             current, _ = advance_life(
                 night, now=self.store.clock(), policy=life_policy(self.config),
+                fatigue_windows=self._fatigue_windows(night.updated_at, self.store.clock()),
                 allow_sleep=bool(self.config.allow_sleep and self.config.night_enabled))
             return current
         if night.policy_version == 2:
@@ -177,7 +216,7 @@ class NightRuntime:
         if self._night_v2() or state.policy_version == 2:
             allowed = (not self.config.allow_sleep or not self.config.night_enabled
                        or self._night_v2() and state.display_state in
-                       (SleepState.AWAKE, SleepState.GROGGY))
+                       (SleepState.AWAKE, SleepState.GROGGY, SleepState.DROWSY))
             # Exempt is not a chat-wake bypass for deep sleep; authenticated
             # manual wake changes the state via advance_scope(action=night.wake).
             reason = (f"night_{state.display_state.value}" if self._night_v2()
@@ -200,7 +239,6 @@ class NightRuntime:
 
         def transform(state, runtime, now, attempt):
             state, changes = self._advance_life(state, now, runtime)
-            # 传 now：结算可能因时钟回拨早退，过期会话要在这里兜住，不能再拒答。
             state, allowed = start_life_reply(state, now=now, policy=life_policy(self.config))
             return state, changes, {"allowed": allowed,
                                     "reason_code": "reply_started" if allowed else "sleep_blocks_reply"}
@@ -222,7 +260,6 @@ class NightRuntime:
 
         def transform(state, runtime, now, attempt):
             state, changes = self._advance_life(state, now, runtime)
-            policy = life_policy(self.config)
             deadline = state.wake_window_deadline
             # 正常睡醒会清掉唤醒会话；同周期内已获准的在途回复仍可完成。
             # 提前清理、换会话或换周期不能借此放行。
@@ -233,7 +270,6 @@ class NightRuntime:
                 and attempt["started_at"] < state.wake_at <= now
                 and attempt["cycle_id"] == state.cycle_id
             )
-            # 深睡优先：已经睡着就不再放行任何提交，精力满也一样。
             valid = (
                 state.display_state != SleepState.DEEP_SLEEP
                 and (deadline is None or now < deadline)
@@ -244,8 +280,9 @@ class NightRuntime:
             if not valid:
                 return state, changes, {"allowed": False, "reason_code": "reply_submission_expired"}
             state, charge = submit_life_reply(
-                state, now=now, policy=policy,
+                state, now=now, policy=life_policy(self.config),
                 allow_sleep=bool(self.config.allow_sleep and self.config.night_enabled),
+                pending_wake_replies=attempt.get("pending_wake_replies", 0),
             )
             return state, (*changes, *charge), {"allowed": True, "reason_code": "reply_submitted"}
         return await self.store.night_operation(
@@ -323,19 +360,22 @@ class NightRuntime:
                 before_units = state.energy_units
                 state, changes = self._advance_life(state, now, runtime)
                 if action == "night.wake":
+                    manual_wake_until = (state.wake_at if state.wake_at is not None
+                                         and state.wake_at > now
+                                         else self.night_timeline(now)["wake"])
                     state = replace(
                         state, display_state=SleepState.AWAKE, phase=NightPhase.AWAKE,
                         wake_at=now, cycle_id=None, sleep_started_at=None, sleep_stage=None,
                         deep_sleep_at=None, drowsy_at=None, wake_score=None, wake_failures=0,
                         wake_session=None, wake_replies_used=0, wake_reply_limit=0,
-                        first_reply_submitted_at=None, wake_window_deadline=None,
+                        first_reply_submitted_at=None, wake_window_deadline=None, quiet_since=now,
                         reason_codes=("manual_wake",),
                     )
                     # Suppress re-entering this planned cycle after admin wake.
-                    runtime["manual_wake_until"] = self.night_timeline(now)["base_wake"]
+                    runtime["manual_wake_until"] = manual_wake_until
                 elif action == "night.sleep":
                     runtime.pop("manual_wake_until", None)
-                    cycle = SleepCycle(stable_key("manual", now), "manual", now, now + 8 * 3600)
+                    cycle = self._recovery_cycle(state, now)
                     state = replace(state, wake_at=None)
                     # 手动入睡必须真正进入睡眠：allow_sleep 是「自动作息是否影响聊天」
                     # 的开关，不应阻断管理员的手动指令，否则按钮看起来完全没生效。

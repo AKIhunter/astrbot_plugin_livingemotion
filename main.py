@@ -25,7 +25,7 @@ def _private_route(event) -> str | None:
 
 
 @register("astrbot_plugin_livingemotion", "AKIhunter",
-          "Independent source-scoped bot state", "0.3.1")
+          "Independent source-scoped bot state", "0.4.0")
 class LivingEmotionPlugin(Star):
     api_version = 1
 
@@ -137,6 +137,17 @@ class LivingEmotionPlugin(Star):
         if event.get_extra("action_type") == "live":
             event.stop_event()
             event.set_extra("livingemotion:unavailable", "live_submission_unsupported")
+
+    @filter.on_llm_request(priority=-sys.maxsize - 2)
+    async def arbitrate_future_tasks(self, event: AstrMessageEvent, request: ProviderRequest):
+        if self.application.closed:
+            return
+        self.application._promises().ownership.wrap_tools(event, request)
+
+    @getattr(filter, "after_message_sent", lambda **kw: lambda fn: fn)(
+        priority=-sys.maxsize - 2)
+    async def remember_sent_promises(self, event: AstrMessageEvent):
+        await self.application.on_reply_sent(event)
 
     @filter.on_llm_response(priority=11000)
     async def confirm_consumption(self, event: AstrMessageEvent, response):

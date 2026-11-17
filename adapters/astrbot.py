@@ -103,11 +103,26 @@ class AstrBotBridge:
             timestamp = timestamp.timestamp()
         if not isinstance(timestamp, (int, float)) or timestamp <= 0:
             timestamp = now
+        # Only native components prove a group addressee; a bare “you” cannot.
+        targets = set()
+        target_kinds = set()
+        for part in getattr(message, "message", ()) or ():
+            kind = type(part).__name__
+            target = (getattr(part, "qq", "") if kind == "At" else
+                      getattr(part, "sender_id", "") if kind == "Reply" else "")
+            if target and str(target) != "0":
+                targets.add(str(target))
+                if str(target) == bot:
+                    target_kinds.add("native_bot_mention" if kind == "At" else "native_bot_reply")
+        # Multiple addressees remain ambiguous even if one happens to be the bot.
+        if targets - {bot}:
+            target_kinds = {"native_other_target"}
         normalized = Event(
             event_id=source_id, producer="astrbot", event_type="message",
             context=source.context, actor_role=ActorRole.HUMAN,
             occurred_at=min(float(timestamp), now), source_id=source_id, actor_id=account,
             body=str(event.message_str or "")[:config.body_max_chars],
+            signals=tuple(sorted(target_kinds)),
         )
         return source, normalized
 

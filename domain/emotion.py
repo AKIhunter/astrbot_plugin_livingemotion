@@ -20,7 +20,7 @@ from ..contracts import (
     NightState, Relationship, finite, stable_key, to_dict,
 )
 
-RULE_VERSION = "emotion-2"
+RULE_VERSION = "emotion-3"
 DIMENSIONS = ("pleasure", "arousal", "stress", "social_need")
 BASELINE = (0.0, 0.3, 0.0, 0.3)
 # 轮询结果写回基准的平滑系数：每次模型分析只把基准拉向当前值 30%，
@@ -38,6 +38,10 @@ CONTROL_HALF_LIFE = 3600.0
 INTENSITY_PRESETS = {"gentle": 1.35, "normal": 1.6, "intense": 2.0}
 DEFAULT_EVENT_CAP = 0.15
 DEFAULT_SIMILAR_BUDGET = 0.30
+# 显示开心的滑动预算，独立于四维强度档位；自然衰减不占额度。
+JOY_WINDOW_SECONDS = 300.0
+JOY_POSITIVE_BUDGET = 0.05
+JOY_NEGATIVE_BUDGET = 0.10
 
 
 def baseline_values(state: BotAffect,
@@ -111,7 +115,9 @@ def apply_control(state: BotAffect, value: Any, *, now: float) -> BotAffect:
 RULES = {
     "insult": (-0.14, 0.12, 0.14, 0.04),
     "praise": (0.12, 0.05, -0.04, -0.02),
-    "constructive_criticism": (0.04, 0.03, -0.02, -0.01),
+    "constructive_criticism": (0.0, 0.03, -0.02, -0.01),
+    # 能力被削弱的失望不是辱骂，不改变好感度。
+    "disappointment": (-0.03, 0.02, 0.02, 0.0),
     "teaching": (0.06, 0.04, -0.03, -0.01),
     "surprise": (0.02, 0.12, 0.02, 0.01),
     # 对方难过/焦虑时更想靠近陪伴：社交需求上升，而不是跟着退开。
@@ -126,8 +132,8 @@ RULES = {
     "boundary_violated": (-0.08, 0.08, 0.12, 0.02),
     "promise_kept": (0.07, 0.01, -0.03, -0.02),
     "promise_broken": (-0.08, 0.04, 0.08, 0.02),
-    "interaction": (0.01, 0.01, 0.0, -0.01),
-    "reply_succeeded": (0.01, 0.0, 0.0, -0.02),
+    "interaction": (0.0, 0.01, 0.0, -0.01),
+    "reply_succeeded": (0.0, 0.0, 0.0, -0.02),
 }
 OBSERVATION_LABELS = {"sadness": "sad", "anxiety": "anxious", "joy": "happy"}
 _SELF_REPORTS = {
@@ -241,7 +247,8 @@ def event_signals(event: Event) -> tuple[str, ...]:
         return ()
     signals = set(event.signals).intersection(RULES).difference({"reply_succeeded"})
     from .appraisal import local_appraisals
-    signals.update(local_appraisals(event.body))
+    # Relationship-only labels do not invent new four-dimensional emotion weights.
+    signals.update(set(local_appraisals(event.body)).intersection(RULES))
     text = event.body.casefold().strip().rstrip(".!\u3002\uff01")
     if text in _SELF_REPORTS:
         signals.add(_SELF_REPORTS[text])
@@ -362,6 +369,71 @@ def _record_guard(runtime: dict[str, Any], event: Event, amount: float) -> None:
                                "body_key": _body_key(event)})
 
 
+def _prepare_joy_window(runtime: Mapping[str, Any] | None, now: float) -> list[list[float]]:
+    """旧状态没有窗口时从空额度开始；只保留最多192条实际刺激变化。"""
+    rows = (runtime or {}).get("joy_window", [])
+    if not isinstance(rows, (list, tuple)) or len(rows) > 192:
+        raise ValueError("joy_window: invalid bounded rows")
+    retained = []
+    for row in rows:
+        if not isinstance(row, (list, tuple)) or len(row) != 2:
+            raise ValueError("joy_window: invalid row")
+        at = _number(row[0], "joy_window.at", 0)
+        delta = _number(row[1], "joy_window.delta",
+                        -JOY_NEGATIVE_BUDGET, JOY_POSITIVE_BUDGET)
+        if now - at < JOY_WINDOW_SECONDS:
+            retained.append([at, delta])
+    return retained
+
+
+def _targets_bot(event: Event) -> bool:
+    # 私聊默认指向bot；原生明确指向其他人优先。群里的“你”不足以证明对象。
+    return "native_other_target" not in event.signals and (
+        event.context.scene_kind == "private"
+        or bool(set(event.signals) & {"native_bot_mention", "native_bot_reply"}))
+
+
+def _joy(values) -> float:
+    return max(0.0, values[0]) * (1 - 0.35 * values[2])
+
+
+def _limit_joy(base: BotAffect, values: tuple[float, ...], event: Event,
+               signals: tuple[str, ...], rows: list[list[float]], *, late_decay: float):
+    """在最终显示值上限幅，防止降压力或模型细化绕过开心方向与预算。"""
+    before = _joy(tuple(getattr(base, name) for name in DIMENSIONS))
+    proposed = _joy(values)
+    direction = sum(RULES[signal][0] for signal in signals)
+    reasons = []
+    if event.actor_role == ActorRole.HUMAN and not _targets_bot(event):
+        target = before
+        reasons.append("joy_target_unknown")
+    elif direction == 0:
+        target = before
+        reasons.append("joy_neutral")
+    else:
+        target = max(before, proposed) if direction > 0 else min(before, proposed)
+    positive = max(0.0, JOY_POSITIVE_BUDGET - sum(max(0.0, row[1]) for row in rows))
+    negative = max(0.0, JOY_NEGATIVE_BUDGET - sum(max(0.0, -row[1]) for row in rows))
+    if len(rows) >= 192:
+        positive = negative = 0.0  # 不丢弃尚未过期的额度记录。
+    # 迟到事件的单次额度也先衰减，不能靠最终限幅把旧消息重新顶成满额。
+    rise = min(positive, JOY_POSITIVE_BUDGET * late_decay)
+    fall = min(negative, JOY_NEGATIVE_BUDGET * late_decay)
+    limited = max(0.0, min(1.0, max(before - fall, min(before + rise, target))))
+    if abs(limited - target) > 1e-12:
+        reasons.append("joy_window_limited")
+    pleasure, arousal, stress, need = values
+    if limited > 0:
+        # joy=positive_pleasure*(1-.35*stress)。饱和状态必要时收窄压力增量，
+        # 保证补偿愉悦不会超过1；其余维度仍保留规则的合理变化。
+        stress = min(stress, max(0.0, (1 - limited) / 0.35))
+        pleasure = min(1.0, limited / (1 - 0.35 * stress))
+    else:
+        pleasure = min(0.0, pleasure)
+    return (pleasure, arousal, stress, need), reasons, before, _joy(
+        (pleasure, arousal, stress, need)) - before, positive, negative
+
+
 def _source(event: Event, *, expires_at: float) -> EvidenceRef:
     return EvidenceRef(
         provider=event.producer, source_id=event.source_id, context=event.context,
@@ -475,7 +547,7 @@ def _model_delta(value: Any, cap: float) -> tuple[float, ...]:
     if not isinstance(value, Mapping) or set(value) - {
             "rule_version", "delta", "confidence", "control"}:
         raise ValueError("model_schema")
-    if value.get("rule_version") not in (RULE_VERSION, "emotion-1"):
+    if value.get("rule_version") not in (RULE_VERSION, "emotion-2", "emotion-1"):
         raise ValueError("model_version")
     delta = value.get("delta")
     if not isinstance(delta, Mapping) or not delta or set(delta) - set(DIMENSIONS):
@@ -533,6 +605,8 @@ def apply_emotion(
         updated_at=state.updated_at, ttl=policy.guard_ttl,
         window=policy.similar_window, max_events=policy.max_events,
     )
+    # _prepare_guard也供好感度使用；仅在情绪路径恢复本窗口，保留旧守卫契约。
+    guard["joy_window"] = _prepare_joy_window(runtime, now)
     result["runtime"] = guard
     if problem:
         result["reason_codes"] = (problem,)
@@ -562,6 +636,9 @@ def apply_emotion(
             reasons.append("model_refined")
         except (ValueError, TypeError, OverflowError, RecursionError):
             reasons.append("model_invalid_rule_fallback")
+    if (sum(RULES[s][0] for s in signals) == 0
+            or (event.actor_role == ActorRole.HUMAN and not _targets_bot(event))):
+        delta[0] = 0.0  # 无明确开心方向时，模型不能凭空增减愉悦。
     if night is not None and delta[1] > 0:
         delta[1] *= 0.5 + night.energy / 200.0
     delta = [max(-policy.event_cap, min(policy.event_cap, d)) for d in delta]
@@ -573,6 +650,21 @@ def apply_emotion(
     values = tuple(max(-1.0 if name == "pleasure" else 0.0,
                        min(1.0, getattr(base, name) + d))
                    for name, d in zip(DIMENSIONS, delta))
+    values, joy_reasons, joy_before, joy_delta, positive, negative = _limit_joy(
+        base, values, event, signals, guard["joy_window"],
+        late_decay=2 ** (-(now - event.occurred_at) / policy.half_lives[0]))
+    reasons.extend(joy_reasons)
+    if abs(joy_delta) > 1e-12:
+        # 按实际处理时刻记账：迟到消息也不能立即释放刚使用的额度。
+        # 显示值相减可产生0.050000000000000044；写入时夹取机器舍入尾差，
+        # 以免下一条消息被严格JSON数值校验拒收。
+        guard["joy_window"].append([now, max(-JOY_NEGATIVE_BUDGET,
+                                             min(JOY_POSITIVE_BUDGET, joy_delta))])
+    result["trace"]["joy"] = {
+        "before_stimulus": joy_before, "after_stimulus": _joy(values),
+        "stimulus_delta": joy_delta, "positive_remaining_before": positive,
+        "negative_remaining_before": negative, "window_seconds": JOY_WINDOW_SECONDS,
+    }
     amount = magnitude * scale
     _record_guard(guard, event, amount)
     concern = bool(set(signals) & {"sadness", "anxiety"}) and weight > 0

@@ -303,16 +303,19 @@ th { color: var(--muted); font-weight: 400; }
 .config-help-dialog .config-example { padding: 16px; background: var(--subtle); border-radius: 12px; }
 .settings-group { margin-top: 32px; } .settings-group h2 { padding-bottom: 12px; border-bottom: 1px solid var(--control); }
 /* 长夜的二级分组：作息 / 精力 / 唤醒 / 补课 / 晚安，各自一张小卡片。 */
-.settings-subsection-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+.settings-subsection-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
   gap: 16px; margin: 8px 0 20px; align-items: start; }
 .settings-subsection { padding: 4px 18px 8px; background: var(--subtle); border: 1px solid var(--line);
   border-radius: 14px; }
 .settings-subsection > h3 { margin: 12px 0 4px; font-size: 15px; }
 .settings-subsection-body .field { grid-template-columns: minmax(0, 1fr) minmax(120px, .55fr); gap: 16px; padding: 12px 0; }
 .settings-subsection-body .field:last-child { border-bottom: 0; }
+/* 精力开关平铺，短输入保留说明宽度；手机端继续单列。 */
+.settings-subsection[data-subsection="energy"] .field { grid-template-columns: minmax(0, 1fr) 88px; margin-left: 0; padding-left: 0; border-left: 0; }
 @media (max-width: 720px) {
   .settings-subsection-grid { grid-template-columns: minmax(0, 1fr); }
   .settings-subsection-body .field { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .settings-subsection[data-subsection="energy"] .field { grid-template-columns: minmax(0, 1fr); }
 }
 /* 保存入口固定在视口底边，独立于纸页滚动区；只在有草稿时占用空间。 */
 .editor { position: fixed; z-index: var(--z-editor); left: 20px; right: 20px;

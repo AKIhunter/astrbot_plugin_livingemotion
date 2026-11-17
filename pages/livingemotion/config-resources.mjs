@@ -9,6 +9,7 @@ timezone|Use an IANA timezone such as Asia/Shanghai or Asia/Tokyo for schedules 
 provider_id|Default background chat model. Empty follows the conversation model; dedicated task models may override it.|バックグラウンド生成の既定モデルです。空欄で会話モデルに従い、専用モデルがあれば優先します。
 fallback_provider_id|Fallback only before a request is sent. Unknown or timed-out requests are not automatically resent.|送信前のみ予備モデルに切り替えます。結果不明やタイムアウト時は自動再送しません。
 emotion_model_enabled|Optional model refinement. Local emotion rules remain active when off; interval and model budget apply.|モデルによる補助分析です。無効時もローカル規則は有効で、間隔と予算に従います。
+emotion_intensity|Select gentle ×1.35, normal ×1.6 or intense ×2.0 here. Four-dimensional deltas scale; decay does not. Every preset limits joy to 5 points up and 10 down over a rolling five minutes, independently. Ordinary chat, reasonable corrections and unclear recipients do not change joy.|ここで穏やか×1.35、平常×1.6、積極的×2.0を選びます。四次元の増分を拡大し、減衰は変えません。全プリセットで喜びは直近5分に上昇5点、下降10点を別々に制限します。通常の会話、妥当な訂正、対象不明では喜びは変わりません。
 emotion_interval_seconds|Minimum seconds between model emotion analyses. Quiet hours skip model calls and keep local rules only. Available events, model and budget are still required.|感情分析の最小間隔（秒）です。静默時間帯はモデルを呼ばず、ローカル規則のみです。イベント、モデル、予算も必要です。
 emotion_quiet_start_hour|Start hour of the quiet window, local 0–23. Equal start and end disables it. Only model analysis is skipped.|静かな時間帯の開始時刻（0～23 時）です。開始と終了が同じなら無効です。モデル分析のみを止めます。
 emotion_quiet_end_hour|End hour of the quiet window, local 0–23. Analysis resumes at this hour; start greater than end wraps overnight.|静かな時間帯の終了時刻（0～23 時）です。この時刻から分析を再開し、開始が終了より大きい場合は日付をまたぎます。
@@ -36,7 +37,7 @@ allow_sleep|Allow sleep to affect chat availability. When off, energy can still 
 nap_enabled|Enable the nap interval. Chat blocking still depends on permission to sleep.|昼寝時間帯を有効にします。返信停止には睡眠の許可も必要です。
 nap_start|Local nap start in HH:MM, such as 13:00. Must differ from nap end.|昼寝開始を現地 HH:MM で入力します。例 13:00。終了とは異なる時刻にします。
 nap_end|Local nap end in HH:MM, such as 14:30. Energy and sleep rules still apply.|昼寝終了を現地 HH:MM で入力します。例 14:30。活力と睡眠規則も適用します。
-fatigue_start|Start of the night cycle. Drowsiness begins halfway between this time and deep sleep.|夜間周期の開始です。開始と深い眠りの中間で眠気段階に移ります。
+fatigue_start|Start of night fatigue. Above 20% is awake, positive energy up to 20% is groggy, zero is drowsy.|夜間疲労の開始です。20%超は覚醒、0%超から20%以下はぼんやり、0%は眠気です。
 fatigue_end|End of night fatigue consumption; this does not itself end deep sleep.|夜間の疲労消費終了です。この時刻だけで深い眠りが終了するわけではありません。
 deep_sleep_at|Deep sleep time between night start and base wake. Local HH:MM supports overnight ordering.|夜間開始と基本起床の間に深い眠りの時刻を設定します。現地 HH:MM で日付越えに対応します。
 wake_at|Base wake time before stored lie-in. Lie-in is sampled once per cycle, never redrawn on refresh.|保存された二度寝時間を加える前の基本起床です。抽選は周期ごとに 1 回で、更新時に再抽選しません。
@@ -46,8 +47,11 @@ wake_mode|Allow private chat, no chat wake, or private chat plus native group me
 wake_reply_limit|Reply attempts per wake window, 1–100. Failed generation attempts count too.|起床ウィンドウ内の返信試行は 1～100 回です。生成失敗も数えます。
 wake_window_minutes|Wake reply window, 1–1440 minutes, fixed from first host submission.|起床後の返信期間は 1～1440 分で、最初のホスト送信時から固定計算します。
 energy_reply_cost|Energy per visible reply, 0–100 in steps of 0.1. Each actual reply is recorded once.|可視返信ごとの活力消費は 0～100、0.1 刻みです。各返信を 1 回だけ記録します。
-energy_fatigue_per_minute|Energy spent per applicable fatigue minute, 0–100 in steps of 0.1.|該当する疲労状態の 1 分ごとの消費です。0～100、0.1 刻みです。
-energy_recovery_per_minute|Energy recovered per applicable minute, 0–100 in steps of 0.1; total cap 100.|該当状態の 1 分ごとの回復です。0～100、0.1 刻みで、合計上限は 100 です。
+energy_fatigue_per_minute|Energy spent per awake night fatigue minute, 0–100 in steps of 0.1; default 0.5.|夜間未睡眠の 1 分ごとの消費です。0～100、0.1 刻み、既定は0.5です。
+energy_recovery_per_minute|Naps and deep sleep restore energy. Enabling daytime recovery also uses this rate outside fatigue hours; 0–100 in steps of 0.1.|仮眠・深い眠りで回復します。日中の自動回復を有効にすると、疲労時間外もこの速度を使います。0～100、0.1刻みです。
+energy_daytime_recovery_enabled|Off: no awake daytime recovery. On: awake, groggy and drowsy states recover outside fatigue hours, using Recovery per minute in this section. Sleeping recovery is unchanged.|無効時は日中未睡眠の自動回復なし。有効時は疲労時間外の覚醒・ぼんやり・眠気も回復します。この区画の「1分ごとの回復」で速度を設定し、睡眠回復は変わりません。
+recovery_follow_wake_at|On: recovery ends by the next base wake plus lie-in, configured under Settings > Night > Schedule. Off: use Maximum recovery duration here. Full energy ends recovery early; fixed night sleep takes priority. New cycles only.|有効時は次の基礎起床＋寝坊を期限にします。「設定→夜→作息時間」で調整します。無効時はこの区画の最大補眠時間を使います。活力100で早期終了し、定時の深睡眠を優先します。新しい周期のみ適用します。
+recovery_max_minutes|Maximum recovery duration, integer 1–1440 minutes, default 120. Used only when Follow wake time is off here. Full energy ends early; expiry exits at current energy and restarts 30 minutes of quiet. New cycles only.|最大補眠時間は1～1440分の整数、既定120分。この区画の起床期限スイッチが無効のときだけ使用します。活力100で早期終了し、期限時は現在の活力で終了して30分の静けさを再計算します。新周期のみ適用します。
 energy_max|Read-only energy cap, fixed at 100.|活力上限は読み取り専用で 100 固定です。
 catchup_enabled|Read stored unread messages on waking. Does not grant access to all platform history.|起床後に保存済み未読を読みます。プラットフォームの全履歴への権限ではありません。
 catchup_reply_enabled|Allow bounded replies after reading unread messages. Model, budget and identity gates apply.|未読閲覧後の制限付き返信を許可します。モデル、予算、身元の検証に従います。
@@ -124,18 +128,21 @@ allow_sleep|Disable if normal chat should remain available overnight.|夜間も�
 nap_enabled|Enable and set 13:00–14:30 for an afternoon nap.|有効にし、13:00～14:30 の昼寝時間を設定します。
 nap_start|13:00 starts the nap at one in the afternoon.|13:00 は午後 1 時に昼寝を開始します。
 nap_end|14:30 ends the nap at half past two.|14:30 は午後 2 時半に昼寝を終了します。
-fatigue_start|23:30 start and 02:30 deep sleep gives a 01:00 drowsy transition.|開始 23:30、深い眠り 02:30 なら眠気への移行は翌日 01:00 です。
+fatigue_start|00:00 to 02:30 at 0.5 points per minute uses 75 energy points without replies.|00:00から02:30まで0.5点/分なら返信なしで75点消費します。
 fatigue_end|07:00 ends fatigue consumption while a configured 08:00 wake still applies.|07:00 に疲労消費を止めても、設定した 08:00 の起床は有効です。
 deep_sleep_at|23:30 → 02:30 → 08:00 is ordered correctly across midnight.|23:30 → 02:30 → 08:00 は日付越えの正しい順序です。
 wake_at|08:00 plus 0–90 minutes of lie-in wakes between 08:00 and 09:30.|08:00 に二度寝 0～90 分を加えると起床は 08:00～09:30 です。
 lie_in_min_minutes|0–30 permits waking on time or up to half an hour later.|0～30 なら定刻から 30 分後までに起床します。
 lie_in_max_minutes|15–45 with a base wake of 08:00 gives 08:15–08:45.|15～45、基本起床 08:00 なら 08:15～08:45 です。
 wake_mode|Choose private-only if group mentions should not interrupt sleep.|群のメンションで睡眠を妨げたくないなら個別のみを選びます。
-wake_reply_limit|3 replies and a 10-minute window allow at most three attempts within ten minutes.|3 回・10 分なら、10 分以内に最大 3 回試行します。
+wake_reply_limit|10 rounds means at most ten attempts, also bounded by the time window.|10ラウンドは最大10回の試行で、時間制限も適用されます。
 wake_window_minutes|10 keeps the wake reply window open for at most ten minutes.|10 は起床後の返信期間を最大 10 分にします。
-energy_reply_cost|4.0 spends four energy points per actual visible reply.|4.0 は可視返信ごとに活力を 4 点消費します。
-energy_fatigue_per_minute|0.8 consumes about eight points over ten applicable minutes.|0.8 は該当する 10 分間で約 8 点消費します。
-energy_recovery_per_minute|1.5 restores about fifteen points in ten applicable minutes, capped at 100.|1.5 は該当する 10 分間で約 15 点回復し、上限は 100 です。
+energy_reply_cost|2.0 spends two energy points per final host submission.|2.0 は最終返信のホスト送信ごとに2点消費します。
+energy_fatigue_per_minute|0.5 spends five points over ten awake night minutes.|0.5 は夜間未睡眠10分で5点消費します。
+energy_recovery_per_minute|1.0 restores ten points over ten sleeping minutes, capped at 100.|1.0 は睡眠10分で10点回復し、上限は100です。
+energy_daytime_recovery_enabled|Default off. With this on and rate 1.0, ten awake daytime minutes restore ten points.|既定は無効。有効かつ速度1.0なら、日中未睡眠の10分で10点回復します。
+recovery_follow_wake_at|On: 15:00 recovery ends by tomorrow's 08:00 plus lie-in. Off with 120 minutes: ends by 17:00.|有効時は15:00の補眠を翌08:00＋寝坊で終了します。無効かつ120分なら17:00までです。
+recovery_max_minutes|120: starting at 15:00 ends by 17:00, even with zero recovery rate.|120なら15:00開始で17:00まで。回復速度0でも期限に終了します。
 energy_max|74 points means 74 out of the fixed maximum of 100.|74 点は固定上限 100 点のうち 74 点です。
 catchup_enabled|Enable reading and leave replies off to review unread messages silently.|読むだけなら閲覧を有効にし、補答は無効にします。
 catchup_reply_enabled|Enable both reading and replies to allow bounded catch-up responses.|閲覧と補答を有効にすると、上限付きで未読への補足返信を行えます。

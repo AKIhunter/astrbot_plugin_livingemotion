@@ -21,27 +21,44 @@ from ..contracts import (
 )
 from .emotion import (
     _event_problem, _integer, _number, _prepare_guard, _record_guard,
-    _stimulus_allowance, event_signals, resolve_mode,
+    _stimulus_allowance, resolve_mode,
 )
 
 RELATIONSHIP_STAGE_NAMES = (
     "反感", "陌生", "友好", "亲近", "独特",
 )
 RELATIONSHIP_STAGE_DESCRIPTIONS = (
-    "反感：保持距离，可以冷淡或表达不满，不羞辱、威胁或攻击对方；正经任务仍可靠。",
-    "陌生：礼貌、谨慎，先了解对方，避免擅自亲密。",
+    "反感：保持距离，可以冷淡或表达不满，不羞辱、威胁或攻击对方；"
+    "正常答疑，个人生图及新生图承诺遵守本轮阶段概率判定。",
+    "陌生：礼貌、谨慎，先了解对方，避免擅自亲密；"
+    "正常答疑，个人生图及新生图承诺遵守本轮阶段概率判定。",
     "友好：自然友善，肯定对方的善意、合理批评和教导。",
     "亲近：更主动关心、温柔陪伴，关怀程度加倍，尊重对方边界。",
 )
 RELATIONSHIP_DEFAULT_SCORE = 200.0
+IMAGE_REFUSAL_FIELDS = (
+    "relationship_image_refusal_averse",
+    "relationship_image_refusal_unfamiliar",
+    "relationship_image_refusal_friendly",
+    "relationship_image_refusal_close",
+    "relationship_image_refusal_unique",
+)
+IMAGE_REFUSAL_DEFAULTS = (90, 60, 30, 10, 5)
 
-RULE_VERSION = "relationship-2"
+
+def image_refusal_percent(index, config=None):
+    """固定阶段序号对应配置；运行时夹取，异常类型沿用该阶段默认值。"""
+    value = getattr(config, IMAGE_REFUSAL_FIELDS[index], IMAGE_REFUSAL_DEFAULTS[index])
+    return max(0, min(100, value)) if type(value) is int else IMAGE_REFUSAL_DEFAULTS[index]
+
+RULE_VERSION = "relationship-3"
+MIN_SCORE_DELTA = 5.0  # raw/10: final nonzero automatic motion must be 0.5–1.
 SCORE_RULES = {
-    "insult": -6.0, "praise": 2.0, "constructive_criticism": 3.0, "teaching": 3.0,
-    "interaction": 0.5, "sadness": 0.5, "anxiety": 0.5, "joy": 1.0,
-    "care": 3.0, "gratitude": 2.0, "conflict": -5.0, "apology": 2.0,
-    "boundary_respected": 3.0, "boundary_violated": -5.0,
-    "promise_kept": 4.0, "promise_broken": -6.0,
+    "insult": -10.0, "threat": -10.0, "praise": 5.0,
+    "constructive_criticism": 5.0, "teaching": 5.0,
+    "care": 10.0, "gratitude": 5.0, "conflict": -5.0, "apology": 5.0,
+    "boundary_respected": 5.0, "boundary_violated": -5.0,
+    "promise_kept": 10.0, "promise_broken": -10.0,
 }
 DIMENSION_RULES = {
     "promise_kept": ("trust", 0.02),
@@ -55,12 +72,12 @@ DIMENSION_RULES = {
 class RelationshipPolicy:
     """Rule-local configuration, not a replacement shared Relationship type."""
 
-    event_cap: float = 6.0
+    event_cap: float = 10.0
     daily_budget: float = 24.0
     event_ttl: float = 7200.0
     similar_window: float = 300.0
     similar_limit: int = 3
-    similar_budget: float = 9.0
+    similar_budget: float = 10.0
     max_events: int = 192
     timezone: str = "UTC"
 
@@ -128,9 +145,18 @@ def relationship_behavior(score, config=None, *, note=""):
         note or (getattr(config, "relationship_special_description", "") if config else "")
         or "独特：遵循管理员定义的特殊关系，自然关心并尊重边界。",
     )
+    refusal = image_refusal_percent(index, config)
     return {**stage, "score": round(score / 10, 2), "raw_score": score,
             "care_multiplier": 2 if index >= 3 else 1,
-            "description": descriptions[index], "ordinary_max": 99}
+            "description": descriptions[index], "ordinary_max": 99,
+            # 关系只控制个人请求的接受，不授予管理权限，也不撤销已接受的义务。
+            # 保留公开字段表示本阶段存在接受机会；具体本轮许可由运行时判定。
+            "may_accept_image_request": refusal < 100,
+            "image_refusal_percent": refusal,
+            "request_boundary": (
+                "个人生图和新生图承诺按本轮阶段概率判定，不按分数一律拒绝；"
+                "婉拒不登记待办，仍正常交流和答疑。已接受的任务继续跟进。"
+                "情绪影响措辞，不追加随机婉拒；用户命令不授予管理权限。")}
 
 
 def _budgets(runtime: Mapping[str, Any] | None, *, now: float,
@@ -166,6 +192,20 @@ def _contribution(event: Event, day: str, delta: float,
     )
 
 
+def relationship_evidence(event: Event) -> tuple[tuple[str, ...], str]:
+    """A source scope identifies the sender; native targeting identifies the recipient."""
+    from .appraisal import local_appraisals
+    if ("native_other_target" in event.signals
+            or (event.context.scene_kind != SceneKind.PRIVATE
+                and not set(event.signals) & {"native_bot_mention", "native_bot_reply"})):
+        return (), "relationship_subject_unknown"
+    if event.confidence < .65:
+        return (), "no_confident_evidence"
+    signals = tuple(sorted((set(event.signals) | set(local_appraisals(event.body)))
+                           .intersection(SCORE_RULES)))
+    return signals, "" if signals else "no_relationship_evidence"
+
+
 def apply_relationship(
     state: Relationship, event: Event, *, now: float,
     runtime: Mapping[str, Any] | None = None,
@@ -174,9 +214,9 @@ def apply_relationship(
 ) -> dict[str, Any]:
     """Apply one real human event using persisted absolute daily accounting.
 
-    Runtime belongs to context.account_key, not OneID. Proposed absolute motion
-    is charged even at score saturation or when opposite signals cancel. A
-    frozen relationship consumes the event guard but no score/dimension budget.
+    Runtime belongs to context.account_key, not OneID. Charge only final motion,
+    with strongest-tier aggregation and independent positive/negative budgets.
+    Frozen/unknown/neutral evidence consumes the guard but no scoring budget.
     """
     _number(now, "now", 0)
     control = resolve_mode(enabled=enabled, mode=mode, conflict=conflict)
@@ -186,7 +226,7 @@ def apply_relationship(
         "trace": {"event_key": event.idempotency_key, "event_id": event.event_id,
                   "occurred_at": event.occurred_at, "processed_at": now,
                   "rule_version": RULE_VERSION, "before": to_dict(state),
-                  "after": to_dict(state), "charged": 0.0},
+                  "after": to_dict(state), "charged": 0.0, "delta_display": 0.0},
     }
     if not control["enabled"]:
         result["reason_codes"] = ("disabled",)
@@ -222,35 +262,44 @@ def apply_relationship(
         result["reason_codes"] = ("administrator_special_relationship",)
         return result
     day = _day(event.occurred_at, policy)
-    signals = event_signals(event)
+    signals, evidence_problem = relationship_evidence(event)
+    result["trace"].update(day=day, signals=list(signals),
+                           subject="bot" if evidence_problem != "relationship_subject_unknown"
+                           else "unknown")
+    if evidence_problem:
+        _record_guard(guard, event, 0)
+        result["reason_codes"] = (evidence_problem,)
+        return result
+    # Explicit negative conduct wins; positive wording never offsets it.
     negative = any(SCORE_RULES.get(s, 0) < 0 for s in signals)
+    signals = tuple(s for s in signals if (SCORE_RULES[s] < 0) == negative)
     if negative or (runtime or {}).get("negative_days"):
         guard["negative_days"] = _budgets(
             {"days": (runtime or {}).get("negative_days", {})}, now=now, policy=policy)
     bucket = guard["negative_days"] if negative else guard["days"]
     available = max(0.0, policy.daily_budget - bucket.get(day, 0.0))
-    similar = _stimulus_allowance(guard, event, limit=policy.similar_limit,
+    # Neutral/unknown messages retain deduplication, but cannot use up a later
+    # real appraisal's occurrence limit (notably a threat with no emotion weight).
+    scoring_guard = {**guard, "stimuli": [r for r in guard["stimuli"] if r["amount"] > 0]}
+    similar = _stimulus_allowance(scoring_guard, event, limit=policy.similar_limit,
                                   budget=policy.similar_budget)
-    limit = min(policy.event_cap, available, similar)
-    if limit <= 0:
+    proposed = (min if negative else max)(SCORE_RULES[s] for s in signals)
+    room = state.score if negative else max(0.0, 990.0 - state.score)
+    limit = min(abs(proposed), policy.event_cap, available, similar, room)
+    if limit < MIN_SCORE_DELTA:
         _record_guard(guard, event, 0)
         result["reason_codes"] = (
-            "daily_budget_exhausted" if available <= 0
-            else "similar_stimulus_limited" if similar <= 0
-            else "event_budget_disabled",)
+            "daily_budget_exhausted" if available < MIN_SCORE_DELTA
+            else "similar_stimulus_limited" if similar < MIN_SCORE_DELTA
+            else "score_space_below_minimum" if room < MIN_SCORE_DELTA
+            else "event_budget_below_minimum",)
         return result
-    # 恶语优先：同一条消息里的夸奖/教导不能抵消辱骂；刷赞限额不能免掉恶语扣分。
-    if "insult" in signals:
-        signals = tuple(s for s in signals if SCORE_RULES.get(s, 0) < 0)
-    proposed = [SCORE_RULES[s] * event.confidence for s in signals if s in SCORE_RULES]
-    absolute = sum(abs(value) for value in proposed)
-    if absolute == 0:
-        _record_guard(guard, event, 0)
-        result["reason_codes"] = ("no_confident_evidence",)
-        return result
-    charged = min(limit, absolute)
-    scale = charged / absolute
-    score = max(0.0, min(990.0, state.score + sum(proposed) * scale))
+    # Confidence gates evidence; it never shrinks 0.5 into a sub-minimum reward.
+    charged = limit
+    scale = charged / abs(proposed)
+    score = state.score + (-charged if negative else charged)
+    # Legacy scores may contain fractions; tolerate only machine rounding noise.
+    assert MIN_SCORE_DELTA - 1e-9 <= abs(score - state.score) <= 10.0 + 1e-9
     changes = []
     reasons = tuple("rule_" + signal for signal in signals)
     if score != state.score:
@@ -286,7 +335,9 @@ def apply_relationship(
     )
     result.update(relationship=updated, contributions=tuple(changes),
                   applied=bool(changes), reason_codes=reasons)
-    result["trace"].update(after=to_dict(updated), charged=charged, day=day)
+    result["trace"].update(after=to_dict(updated), charged=charged, day=day,
+                           selected_signals=list(signals),
+                           delta_display=round((score - state.score) / 10, 6))
     return result
 
 

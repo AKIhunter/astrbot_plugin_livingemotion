@@ -60,12 +60,14 @@ def test_submit_life_reply_clears_ledger_when_cycle_ends():
 
     state, _ = submit_life_reply(state, now=NOW, policy=LifePolicy(), allow_sleep=True)
 
-    assert state.wake_at is None
+    # Retain the settled cycle identity so authorized in-flight replies can finish.
+    assert state.wake_at == NOW - 10
     assert state.cycle_id is None
     assert state.wake_session is None
     assert state.wake_replies_used == 0
     assert state.wake_reply_limit == 0
-    assert state.display_state is SleepState.DROWSY
+    # Nine percent after submission is groggy under the new fixed energy rules.
+    assert state.display_state is SleepState.GROGGY
 
 
 def test_active_cycle_still_enforces_round_limit():
@@ -74,7 +76,8 @@ def test_active_cycle_still_enforces_round_limit():
     state, allowed = start_life_reply(state, now=NOW)
 
     assert allowed is False
-    assert state.display_state is SleepState.DROWSY
+    # Starting the last round does not put its unfinished reply to sleep.
+    assert state.display_state is SleepState.AWAKE
     assert state.wake_session == SESSION
 
 
@@ -117,7 +120,8 @@ def test_active_cycle_consumes_round_then_blocks():
     state, first = start_life_reply(state)
     assert first is True
     assert state.wake_replies_used == 1
-    assert state.display_state is SleepState.DROWSY
+    # Starting the last round does not put its unfinished reply to sleep.
+    assert state.display_state is SleepState.AWAKE
 
     _, second = start_life_reply(state)
     assert second is False

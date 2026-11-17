@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import time
@@ -59,6 +60,9 @@ class PromiseService:
         self.store = store
         self.app = application
         self.promises = PromiseStore(store)
+        from .promise_ownership import PromiseOwnership
+        self.ownership = PromiseOwnership(self)
+        self._run_lock = asyncio.Lock()
 
     # ---------- 识别 ----------
 
@@ -75,14 +79,37 @@ class PromiseService:
         """
         results = []
         timezone = getattr(self.app.config, "timezone", "") or "Asia/Shanghai"
+        from .promise_ownership import RECURRING
+        source_id = str(getattr(getattr(event, "message_obj", None), "message_id", "") or "")
         for bucket, description in items:
             if not description:
                 continue
+            from .promise_actions import needs_image
+            policy = getattr(self.app, "image_action_policy", None)
+            if needs_image(description) and callable(policy):
+                permission = await policy(context, event=event)
+                if permission.get("allowed") is not True:
+                    results.append({"status": "relationship_refused"})
+                    continue
+            if RECURRING.search(str(bucket)) or RECURRING.search(description):
+                results.append({"status": "recurring_requires_future_task"})
+                continue
+            tool_tasks = (event.get_extra("livingemotion:future_tasks") or []) if event else []
+            if len(tool_tasks) > 1:
+                # 一轮已经建立多个宿主任务时，标记没有唯一归属；不能凭空双建。
+                results.append({"status": "host_owned_turn"})
+                continue
             due_at = parse_bucket(bucket, self.store.clock(), timezone)
             note = description[:400]
-            result = await self.promises.create(
-                context, description=description, note=note, bucket=bucket,
-                due_at=due_at, context_summary=summary)
+            async with self.ownership.lock:
+                job_id = await self.ownership.host_match(
+                    context, description, due_at, event=event)
+                result = await self.promises.create(
+                    context, description=description, note=note, bucket=bucket,
+                    due_at=due_at, context_summary=summary, source_event_id=source_id)
+                if job_id and result.get("status") in ("created", "advanced", "duplicate"):
+                    if await self.promises.delegate(result["promise_id"], job_id):
+                        result = {**result, "status": "delegated", "host_job_id": job_id}
             results.append(result)
             if result.get("status") in ("created", "advanced"):
                 # 召回前置：此刻还有真实事件可用，外部记忆后端只认这个。
@@ -110,6 +137,9 @@ class PromiseService:
         for row in rows:
             row["eta_seconds"] = max(0.0, float(row["due_at"]) - now)
             row["bucket_label"] = bucket_label(row["bucket"])
+            if row["status"] == "waiting":
+                row["eta_seconds"] = None
+                row["bucket_label"] = row["bucket"]
         return rows
 
     async def view(self, context: Context) -> dict:
@@ -129,6 +159,7 @@ class PromiseService:
                 "depth": row["depth"],
                 "advance_count": row["advance_count"],
                 "created_at": row["created_at"],
+                "reason": row.get("last_error", ""),
             } for row in rows],
         }
 
@@ -219,15 +250,25 @@ class PromiseService:
             pass
 
         def read(db):
-            return [row["promise_id"] for row in db.execute(
-                "SELECT promise_id FROM promises WHERE status IN ('running','unknown')")]
+            return [dict(row) for row in db.execute(
+                "SELECT promise_id, status, action_state FROM promises "
+                "WHERE status IN ('running','unknown')")]
 
         try:
             stuck = await self.store._run(read)
         except Exception:
             return 0
         healed = 0
-        for promise_id in stuck:
+        for row in stuck:
+            promise_id = row["promise_id"]
+            if row["action_state"] in ("generating", "sending", "unknown"):
+                if row["status"] == "running":
+                    await self.promises.move(
+                        promise_id, status="unknown", expect=("running",),
+                        error="action_interrupted")
+                    logger.warning("[LE-promise] 动作中断 需核对 %s phase=%s",
+                                   promise_id[:8], row["action_state"])
+                continue
             outcome = await self.promises.reclaim(promise_id)
             if outcome.get("status") == "ok":
                 healed += 1
@@ -237,6 +278,12 @@ class PromiseService:
 
     async def run_due(self, now: float | None = None, *, limit: int = 4) -> int:
         """到点就跑。返回成功发出的条数。"""
+        if self._run_lock.locked():
+            return 0
+        async with self._run_lock:
+            return await self._run_due(now, limit=limit)
+
+    async def _run_due(self, now: float | None, *, limit: int) -> int:
         await self.heal()
         moment = self.store.clock() if now is None else float(now)
         if not self.app.promise_actions_active():
@@ -313,8 +360,65 @@ class PromiseService:
             logger.warning("[LE-promise] 会话不在内存 推迟承诺 %s -> %s",
                            promise_id[:8], outcome.get("status"))
             return False
-        moved = await self.promises.move(promise_id, status="running", expect=("scheduled",))
+        # 和 future_task 写入共用锁；宿主先接管就不抢执行，LE 先运行就不再双建。
+        async with self.ownership.lock:
+            try:
+                job_id = await self.ownership.host_match(
+                    context, row["description"], float(row["original_due_at"]))
+            except Exception:
+                await self.promises.defer(
+                    promise_id, retry_at=self.store.clock() + CONTEXT_WAIT,
+                    error="host_task_lookup_failed", no_penalty=True)
+                return False
+            if job_id and not row.get("action_state"):
+                await self.promises.delegate(promise_id, job_id)
+                return False
+            moved = await self.promises.move(
+                promise_id, status="running", expect=("scheduled",))
         if moved.get("status") != "ok":
+            return False
+        from .promise_actions import DEADLINE_SECONDS, ImagePromiseAction, needs_image
+        if needs_image(row["description"]):
+            try:
+                outcome = await asyncio.wait_for(
+                    ImagePromiseAction(self).run(context, row), DEADLINE_SECONDS)
+            except Exception as exc:
+                current = await self.promises.get(promise_id) or {}
+                phase = current.get("action_state")
+                outcome = {"status": "unknown" if phase in (
+                    "generating", "sending", "unknown") else "unavailable"}
+                if phase == "sent":
+                    outcome = {"status": "sent", "text": current.get("delivered_text") or "图片已发送"}
+                logger.warning("[LE-promise] 图片执行异常 %s phase=%s type=%s",
+                               promise_id[:8], phase, type(exc).__name__)
+            status = outcome.get("status")
+            if status == "sent":
+                text = str(outcome.get("text") or "图片已发送")
+                await self.promises.move(promise_id, status="sent", expect=("running",))
+                await self.promises.set_delivery(promise_id, text)
+                await self.promises.put_trace(
+                    scope_key=context.scope_key, promise_id=promise_id, kind="delivery",
+                    summary=str(row.get("context_summary") or ""),
+                    reply_text=text, ttl_seconds=self._trace_ttl())
+                logger.warning("[LE-promise] 图片已提交 %s", promise_id[:8])
+                return True
+            if status == "unknown":
+                current = await self.promises.get(promise_id) or {}
+                try:
+                    artifact = json.loads(current.get("action_result_json") or "{}")
+                except (ValueError, TypeError):
+                    artifact = {}
+                await self.promises.checkpoint_action(promise_id, "unknown", artifact)
+                await self.promises.move(promise_id, status="unknown", expect=("running",),
+                                         error="image_action_unknown")
+                return False
+            if status == "waiting":
+                await self.promises.move(promise_id, status="waiting", expect=("running",),
+                                         error=str(outcome.get("reason") or "image_result_unknown"))
+                return False
+            await self.promises.defer(
+                promise_id, retry_at=self.store.clock() + RETRY_BACKOFF,
+                error="image_" + str(status), max_retry=MAX_RETRY)
             return False
         try:
             composed = await self._compose(context, row)
@@ -404,6 +508,7 @@ class PromiseService:
         这段时间里 source 还在（保留最近 128 个），这才是可用的那一个。
         """
         scope = str(row.get("scope_key") or "")
+        account = str(row.get("handoff_account_key") or "")
         if not scope:
             return None
         # 先看 bridge.sources：这里存的是真实事件解析出的 source，
@@ -411,11 +516,13 @@ class PromiseService:
         sources = getattr(getattr(self.app, "bridge", None), "sources", None) or {}
         for source in reversed(list(sources.values())):
             real = getattr(source, "context", None)
-            if real is not None and getattr(real, "scope_key", "") == scope and real.route:
+            if (real is not None and getattr(real, "scope_key", "") == scope and real.route
+                    and (not account or real.account_key == account)):
                 return real
         # 再看 _contexts：同一进程内收到过消息的话，这里也是带 route 的。
         for context in reversed(list((getattr(self.app, "_contexts", {}) or {}).values())):
-            if getattr(context, "scope_key", "") == scope and getattr(context, "route", None):
+            if (getattr(context, "scope_key", "") == scope and getattr(context, "route", None)
+                    and (not account or context.account_key == account)):
                 return context
         # 最后从会话表还原，并把 route 按宿主规则重建。
         # 重启后 sources 与 _contexts 都空，但 source_contexts 里
@@ -425,6 +532,8 @@ class PromiseService:
         try:
             for stored in await self.store.list_contexts():
                 if getattr(stored, "scope_key", "") != scope:
+                    continue
+                if account and stored.account_key != account:
                     continue
                 route = self._rebuild_route(stored)
                 if route:

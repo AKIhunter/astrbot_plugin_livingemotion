@@ -1,7 +1,8 @@
 # T5 长夜与醒后补课交接
 
 新版五档作息、固定精度精力、唤醒点数、首次提交起算的窗口与回复轮数，
-见 [生活控制台](life-console.md#长夜计算) 和 [状态接入契约](internal-state-contract.md)。
+见 [生活控制台](life-console.md#长夜计算)、[状态接入契约](internal-state-contract.md)
+及 [2026-11-16 睡眠与精力规则](sleep-energy-rules.md)。
 完整补课与晚安见 [回复契约](internal-reply-contract.md)。
 下文是0.1规则1的原始阶段记录；纯函数与成功回执规则仅适用于旧路径。
 新版补课由注入式异步协调器衔接自身归档和唯一发送执行者。

@@ -47,8 +47,10 @@ jobs:
         run: |
           python - <<'PY'
           import ast
+          import dataclasses
           import json
           import re
+          import sys
           import tomllib
           from pathlib import Path
           from urllib.parse import unquote, urlsplit
@@ -76,14 +78,19 @@ jobs:
           assert versions == [metadata["version"]]
           for view in metadata["views"]:
               assert (root / "pages" / view["name"] / "index.html").is_file()
-          config = ast.parse((root / "config.py").read_text())
-          defaults = {
-              item.target.id: ast.literal_eval(item.value)
-              for node in config.body if isinstance(node, ast.ClassDef) and node.name == "Config"
-              for item in node.body if isinstance(item, ast.AnnAssign) and item.value is not None
-          }
+          # Defaults may be computed (e.g. JSON theme lists); validate real dataclass values.
+          sys.path.insert(0, str(root.parent))
+          from astrbot_plugin_livingemotion.config import Config, LEGACY_FIELDS
+          defaults = dataclasses.asdict(Config())
           schema = json.loads((root / "_conf_schema.json").read_text())
-          assert defaults == {key: value["default"] for key, value in schema.items()}
+          # Compatibility-only keys are deliberately absent from the flat public schema.
+          assert set(defaults) - set(schema) == LEGACY_FIELDS
+          assert not set(schema) - set(defaults)
+          for key, field in schema.items():
+              actual, expected = defaults[key], field["default"]
+              if key == "dream_theme_pool":
+                  actual, expected = json.loads(actual), json.loads(expected)
+              assert actual == expected, key
           options = tomllib.loads((root / "pyproject.toml").read_text())["tool"]["pytest"]["ini_options"]
           assert "performance_f6.py" in options["python_files"]
           docs = [root / name for name in (

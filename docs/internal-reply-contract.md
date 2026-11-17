@@ -16,7 +16,7 @@ Application 保有票据与真实事件 lease，客户端不能制造票据。
 
 原生钩子 `on_decorating_result` 位于 LivingHello 最终修饰后；提交前重新检查
 配置 revision、来源 generation、新人消息水位、长期记忆授权和沉睡截止。
-末轮虽然显示困，只有已经持久准入的当前真实请求可以完成。
+末轮开始后仍显示恍惚，拒绝新的唤醒轮；所有已准入回复结束后按精力退出唤醒窗。
 原生提交记录为 `bot_reply_submitted`，不制造送达或 bot_action_succeeded。
 分段、图片、TTS附加与重复钩子不重新扣精力。
 `observe_message` 在原生 process 读取选项前禁流式，末级 request hook再次缓冲。

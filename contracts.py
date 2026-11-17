@@ -469,6 +469,8 @@ class NightState:
     wake_reply_limit: int = 0
     first_reply_submitted_at: float | None = None
     wake_window_deadline: float | None = None
+    # Shared-persona silence is persisted, so polling/restart cannot restart the timer.
+    quiet_since: float | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "phase", NightPhase(self.phase))
@@ -497,7 +499,7 @@ class NightState:
         finite(self.updated_at, "updated_at", 0)
         for name in ("sleep_started_at", "wake_at", "transition_deadline", "cycle_started_at",
                      "deep_sleep_at", "drowsy_at", "base_wake_at",
-                     "first_reply_submitted_at", "wake_window_deadline"):
+                     "first_reply_submitted_at", "wake_window_deadline", "quiet_since"):
             if getattr(self, name) is not None:
                 finite(getattr(self, name), name, 0)
 

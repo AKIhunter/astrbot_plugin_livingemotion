@@ -221,6 +221,14 @@ class Projector:
             # reply submission own time/reply energy, not archive ingestion.
             from ..domain.night import life_state
             night_result = {"night": life_state(night), "runtime": {}, "cost": 0}
+            if (event.actor_role.value == "human" and event.event_type == "message"
+                    and event.reliable_source and event.actor_id
+                    and now - 7200 <= event.occurred_at <= now and now >= night.updated_at):
+                # All valid human messages share the persona's silence timer;
+                # archiving a message still does not wake deep sleep or charge energy.
+                quiet = night_result["night"].quiet_since
+                night_result["night"] = replace(night_result["night"],
+                                                quiet_since=max(quiet or 0, now))
         else:
             interaction = night_runtime.get("interaction", {})
             if owner and owner.mode == "shared" and interaction:
@@ -287,7 +295,8 @@ class Projector:
             tuple(writes), tuple(relation["contributions"]) if relation else (),
             (_ProjectionPayload({"kind": "emotion", **emotion["trace"],
                                  "reason_codes": emotion["reason_codes"]}),)
-            + ((_ProjectionPayload({"kind": "relationship", **relation["trace"]}),)
+            + ((_ProjectionPayload({"kind": "relationship", **relation["trace"],
+                                   "reason_codes": relation["reason_codes"]}),)
                if relation else ()),
             {"state": bot, "observation": observation, "relationship": relationship,
              "night": night_result["night"], "runtime": runtime("bot"), "now": now,

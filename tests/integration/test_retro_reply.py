@@ -1,11 +1,12 @@
 """Native hook wiring with synthetic host results; no platform sends."""
 
+from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
 
-from astrbot_plugin_livingemotion.contracts import Context
+from astrbot_plugin_livingemotion.contracts import Context, StateWrite, to_dict
 from test_application import Message, application
 
 
@@ -39,6 +40,20 @@ async def at_time(tmp_path, hour, minute=0, config=None):
     clock = [now]
     app.store.clock = lambda: clock[0]
     return app, host, native, clock
+
+
+async def seed_nap(app, message):
+    """原生唤醒钩子从未满精力的小憩开始，不能把夜间疲劳当成睡眠。"""
+    source, _ = await app.bridge.normalize(message, app.store.clock())
+    context = source.context
+    await app.initialize_state_scope(context)
+    await app.night_snapshot(context)
+    record = await app.store.get_state(context, "night")
+    state = replace(app.store._night_value(record.value),
+                    energy=99, energy_units=990, cycle_kind="nap")
+    assert (await app.store.write_states(context, await app.store.get_generation(context), (
+        StateWrite("night", to_dict(state), record.version, owner=record.owner),
+    ))).accepted
 
 
 @pytest.mark.asyncio
@@ -81,6 +96,7 @@ async def test_last_admitted_round_finishes_and_submission_window_starts_once(tm
     app, host, _, clock = await at_time(tmp_path, 1, 30)
     try:
         message = FinalMessage(identifier="wake")
+        await seed_nap(app, message)
         await app.on_message(message)
         context = Context.from_dict(message.extra["livingemotion:context"])
         before = await app.night_snapshot(context)
@@ -88,15 +104,17 @@ async def test_last_admitted_round_finishes_and_submission_window_starts_once(tm
         request = SimpleNamespace(extra_user_content_parts=[])
         await app.on_llm_request(message, request)
         started = await app.night_snapshot(context)
-        assert started.wake_replies_used == 1 and started.display_state.value == "drowsy"
+        assert started.wake_replies_used == 1 and started.display_state.value == "groggy"
         assert started.first_reply_submitted_at is None
         # LivingHello's v1 availability check preserves only this real admitted event.
         assert not (await app.api.get_availability(context))["block_chat"]
         assert await app.on_reply_submitted(message) is True
         submitted = await app.night_snapshot(context)
-        assert submitted.first_reply_submitted_at == clock[0]
-        assert submitted.wake_window_deadline == clock[0] + 600
-        assert submitted.energy == pytest.approx(before.energy - 4)
+        assert submitted.wake_session is None
+        assert submitted.first_reply_submitted_at is None
+        assert submitted.wake_window_deadline is None
+        assert submitted.energy == pytest.approx(before.energy - app.config.energy_reply_cost)
+        assert submitted.display_state.value == "awake"
         assert await app.on_reply_submitted(message) is True
         assert (await app.night_snapshot(context)).energy == submitted.energy
         events = await app.store.energy_history(context, category="reply")
@@ -118,6 +136,7 @@ async def test_native_generation_error_keeps_round_without_reply_energy_or_windo
     app, _, _, _ = await at_time(tmp_path, 1, 30)
     try:
         message = FinalMessage(identifier="native-generation-failed")
+        await seed_nap(app, message)
         await app.on_message(message)
         context = Context.from_dict(message.extra["livingemotion:context"])
         await app.on_llm_request(message, SimpleNamespace(extra_user_content_parts=[]))
@@ -127,7 +146,9 @@ async def test_native_generation_error_keeps_round_without_reply_energy_or_windo
         assert await app.on_reply_submitted(message) is None
         after = await app.night_snapshot(context)
         assert after.energy == started.energy
-        assert after.wake_replies_used == 1
+        # 唯一一轮生成失败也结束唤醒窗，保留失败尝试记录而不阻断后续普通聊天。
+        assert after.wake_replies_used == 0 and after.wake_session is None
+        assert after.display_state.value == "awake"
         assert after.first_reply_submitted_at is None and after.wake_window_deadline is None
         assert (await app.store.energy_history(context, category="reply"))["total"] == 0
     finally:
@@ -187,16 +208,17 @@ async def test_native_at_required_for_group_chat_wake(tmp_path):
     app, host, _, _ = await at_time(tmp_path, 1, 30, config={"wake_mode": "both"})
     try:
         ordinary = FinalMessage(identifier="ordinary", group="group")
+        await seed_nap(app, ordinary)
         await app.on_message(ordinary)
         context = Context.from_dict(ordinary.extra["livingemotion:context"])
-        assert (await app.night_snapshot(context)).display_state.value == "drowsy"
+        assert (await app.night_snapshot(context)).display_state.value == "nap"
         explicit = FinalMessage(identifier="native-at", group="group")
         At = type("At", (), {})
         at = At()
         at.qq = explicit.get_self_id()
         explicit.message_obj.message = [at]
         await app.on_message(explicit)
-        assert (await app.night_snapshot(context)).display_state.value == "awake"
+        assert (await app.night_snapshot(context)).display_state.value == "groggy"
         assert host.sends == 0
     finally:
         await app.terminate()

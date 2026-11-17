@@ -119,14 +119,16 @@ async def test_producer_public_comment_isolation_and_neutral_state(le_store, le_
                   le_event.occurred_at, "comment:123", actor_id="author")
     assert (await api.ingest_event(event))["status"] == "accepted"
     affect = (await api.get_bot_state(context))["data"]
-    assert affect["reason_codes"] == ["rule_interaction"]
+    assert affect["reason_codes"] == ["rule_interaction", "joy_target_unknown"]
     assert 0 <= affect["pleasure"] < 0.01
-    assert (await api.get_relationship(context))["data"]["familiarity"] is not None
+    # 未明确指向 bot 的公开评论不提供关系证据，V2 不凭互动补熟悉度。
+    assert (await api.get_relationship(context))["data"]["familiarity"] is None
     private = await api.resolve_producer_context({
         **source, "scene_kind": "private", "scene_id": "author",
     })
     assert Context.from_dict(private["data"]).scope_key != context.scope_key
-    assert (await api.get_relationship(private["data"]))["data"]["score"] == 0
+    # 生产默认新关系为20展示点；未产生证据时保持该起点。
+    assert (await api.get_relationship(private["data"]))["data"]["score"] == 200
     availability = await api.get_availability(context)
     assert availability["available"] is False and availability["block_chat"] is False
     assert (await api.resolve_producer_context({**source, "instance_id": "forged"}))[

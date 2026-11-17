@@ -40,18 +40,9 @@ class Host:
         return True
 
 
-class TemporaryText:
-    def __init__(self, text):
-        self.text, self._no_save = text, False
-
-    def mark_as_temp(self):
-        self._no_save = True
-        return self
-
-
 class TestBridge(AstrBotBridge):
     __test__ = False
-    text_part = staticmethod(TemporaryText)
+    text_part = staticmethod(lambda text: SimpleNamespace(text=text))
     chain = staticmethod(lambda text: text)
 
 
@@ -231,13 +222,9 @@ async def test_default_chat_without_model_and_unique_suffix(tmp_path):
         request = SimpleNamespace(extra_user_content_parts=[SimpleNamespace(text="host block")])
         await app.on_llm_request(message, request)
         await app.on_llm_request(message, request)
-        # 承诺契约也会追加附加块；只按状态标记核对唯一性和临时属性。
-        states = [part for part in request.extra_user_content_parts
-                  if part.text.startswith(SUFFIX)]
-        assert len(states) == 1
-        assert states[0]._no_save
-        assert host.prompt not in states[0].text
-        assert request.extra_user_content_parts[0].text == "host block"
+        assert len(request.extra_user_content_parts) == 2
+        assert request.extra_user_content_parts[-1].text.startswith(SUFFIX)
+        assert host.prompt not in request.extra_user_content_parts[-1].text
         state = await app.console_state()
         assert state["observation"]["subject"] == "human"
         assert state["bot_state"]["dimensions"]["pleasure"] >= 0.5
@@ -702,7 +689,7 @@ async def test_emotion_refinement_is_async_and_does_not_double_count(tmp_path):
         async def generate(system, data, output_tokens, timeout):
             started.set()
             await release.wait()
-            return '{"rule_version":"emotion-1","delta":{"pleasure":0.04},"confidence":1}'
+            return '{"rule_version":"emotion-1","delta":{"pleasure":0.04,"arousal":0.04},"confidence":1}'
 
         binding.generate = generate
         newer = Message("refine-message", "a neutral synthetic message")
@@ -715,15 +702,18 @@ async def test_emotion_refinement_is_async_and_does_not_double_count(tmp_path):
         await asyncio.wait_for(asyncio.gather(*tuple(app._actions)), 2)
         after = await app.store.get_state(context, "bot")
         assert after.version == before.version + 1
-        assert after.value["pleasure"] > before.value["pleasure"]
+        assert after.value["pleasure"] == before.value["pleasure"] == 0
+        assert after.value["arousal"] > before.value["arousal"]
         assert len(await app.store.read_window(context)) == 2
         assert await app.store.relationship_ledger(context) == ledger
         refined_relation = await app.store.get_state(context, "relationship", context.account_id)
         assert refined_relation.value["score"] == relationship.value["score"]
         assert refined_relation.value["_runtime"] == relationship.value["_runtime"]
         assert refined_relation.version == relationship.version + 1
-        assert refined_relation.value["_account_affect"]["state"]["pleasure"] > relationship.value[
-            "_account_affect"]["state"]["pleasure"]
+        assert refined_relation.value["_account_affect"]["state"]["pleasure"] == relationship.value[
+            "_account_affect"]["state"]["pleasure"] == 0
+        assert refined_relation.value["_account_affect"]["state"]["arousal"] > relationship.value[
+            "_account_affect"]["state"]["arousal"]
         records = await app.console_records(context.account_key, "emotion")
         assert records["total"] == 2
         assert any("model_refined" in item["reason_codes"] for item in records["items"])

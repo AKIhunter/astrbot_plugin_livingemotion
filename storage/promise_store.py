@@ -11,7 +11,7 @@ import re
 import time
 from typing import Any
 
-from ..contracts import Context, stable_key
+from ..contracts import Context, stable_key, to_dict
 
 SCHEMA = (
     """CREATE TABLE IF NOT EXISTS promises (
@@ -61,22 +61,31 @@ MIGRATIONS = (
     "ALTER TABLE promises ADD COLUMN context_summary TEXT NOT NULL DEFAULT ''",
     # 兑现时真正发出去的文本（多气泡以换行连接），供追问命中与排错。
     "ALTER TABLE promises ADD COLUMN delivered_text TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE promises ADD COLUMN source_event_id TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE promises ADD COLUMN host_job_id TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE promises ADD COLUMN action_state TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE promises ADD COLUMN action_result_json TEXT NOT NULL DEFAULT '{}'",
+    "ALTER TABLE promises ADD COLUMN handoff_key TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE promises ADD COLUMN handoff_account_key TEXT NOT NULL DEFAULT ''",
 )
 
 # 允许的状态转换；越界的写入一律拒绝，避免状态机被绕过。
 TRANSITIONS = {
     # awaiting：已经到点，但处在耦合状态——不单独发消息，
     # 等对话里下一轮回复一并交付（见 application._inject_pending_promises）。
-    "scheduled": {"running", "awaiting", "cancelled", "failed"},
-    "running": {"sent", "failed", "unknown"},
+    "scheduled": {"running", "awaiting", "cancelled", "failed", "delegated"},
+    "running": {"sent", "failed", "unknown", "delegated", "waiting"},
     "awaiting": {"sent", "cancelled", "failed"},
     "sent": set(),
     "failed": set(),
     "cancelled": set(),
     "unknown": set(),
+    "delegated": set(),
+    # waiting 与旧 awaiting 不同：等待需求调整或结果核对，tick/heal 绝不能自动释放。
+    "waiting": {"scheduled", "cancelled", "failed"},
 }
 
-ACTIVE = ("scheduled", "running")
+ACTIVE = ("scheduled", "running", "waiting")
 
 # 「刚发过就别再建」的判定窗口（秒）。
 # 这条规则只用来挡住**同一条回复被重复提交**造成的双份任务，
@@ -118,13 +127,16 @@ class PromiseStore:
                     db.execute(statement)
                 except Exception:
                     pass  # 字段已存在
+            db.execute("CREATE UNIQUE INDEX IF NOT EXISTS promises_handoff "
+                       "ON promises(scope_key,handoff_key) WHERE handoff_key!=''")
 
         await self.store._run(create)
         self._ready = True
 
     async def create(self, context: Context, *, description: str, note: str,
                      bucket: str, due_at: float, depth: int = 0,
-                     ttl_days: int = 7, context_summary: str = "") -> dict[str, Any]:
+                     ttl_days: int = 7, context_summary: str = "",
+                     source_event_id: str = "") -> dict[str, Any]:
         await self.ensure()
         scope = context.scope_key
         fp = fingerprint(scope, description)
@@ -137,6 +149,24 @@ class PromiseStore:
 
         def create(db):
             def mutate():
+                if source_event_id:
+                    # 消息提交钩子可能晚于 LH 失败回执，不能再次建立同源图片任务。
+                    from ..runtime.promise_actions import needs_image
+                    if needs_image(description):
+                        handed = db.execute(
+                            """SELECT promise_id FROM promises
+                               WHERE scope_key=? AND source_event_id=? AND handoff_key!=''
+                                 AND (handoff_account_key='' OR handoff_account_key=?) LIMIT 1""",
+                            (scope, str(source_event_id), context.account_key)).fetchone()
+                        if handed:
+                            return {"status": "duplicate", "promise_id": handed["promise_id"]}
+                    owned = db.execute(
+                        """SELECT promise_id,host_job_id FROM promises
+                           WHERE scope_key=? AND source_event_id=? AND fingerprint=?
+                             AND status='delegated' LIMIT 1""",
+                        (scope, str(source_event_id), fp)).fetchone()
+                    if owned:
+                        return {"status": "delegated", **dict(owned)}
                 # 同内容已在队列里就不新建，只把时间提前（更早的到期更急）。
                 row = db.execute(
                     """SELECT promise_id, due_at, status FROM promises
@@ -171,17 +201,118 @@ class PromiseStore:
                     """INSERT INTO promises(promise_id,scope_key,generation,status,bucket,
                        fingerprint,description,note,due_at,original_due_at,original_bucket,
                        advance_count,depth,created_at,updated_at,sent_at,last_error,
-                       context_summary)
-                       VALUES(?,?,?,'scheduled',?,?,?,?,?,?,?,0,?,?,?,NULL,'',?)""",
+                       context_summary,source_event_id)
+                       VALUES(?,?,?,'scheduled',?,?,?,?,?,?,?,0,?,?,?,NULL,'',?,?)""",
                     (promise_id, scope, generation,
                      bucket, fp, normalize(description)[:500], str(note or "")[:2000],
                      due_at, due_at, bucket, max(0, int(depth)), now, now,
-                     str(context_summary or "")[:1200]))
+                     str(context_summary or "")[:1200], str(source_event_id or "")[:200]))
                 return {"status": "created", "promise_id": promise_id, "active": active + 1}
 
             return self.store._transaction(db, mutate)
 
         return await self.store._run(create)
+
+    async def accept_image_handoff(self, context: Context, *, request_id: str,
+                                   source_event_id: str, failure: dict) -> dict:
+        """同一请求只交接一次；创建与动作状态在同一事务中落盘。"""
+        await self.ensure()
+        now = self.store.clock()
+        generation = await self.store.get_generation(context)
+        pid = stable_key("image-followup", context.scope_key, request_id)
+        payload = json.dumps({**failure, "source_context": to_dict(context)}, ensure_ascii=False)
+        ready = failure["kind"] == "rate_limited" and not failure.get("use_reference")
+        status, action = ("scheduled", "retry_ready") if ready else ("waiting", "held")
+        bucket = "等待重试" if ready else "等待调整" if failure["kind"] == "content_rejected" else "等待核对"
+        description = "生图：" + failure["prompt"][:490]
+
+        def write(db):
+            def mutate():
+                if self.store._generation(db, context) != generation:
+                    return {"status": "rejected", "reason": "generation_changed"}
+                row = db.execute(
+                    "SELECT promise_id,status FROM promises WHERE scope_key=? AND handoff_key=?",
+                    (context.scope_key, request_id)).fetchone()
+                if row:
+                    return {"status": "duplicate", "promise_id": row["promise_id"],
+                            "task_status": row["status"]}
+                # 原回复已经登记过图片承诺时，复用唯一尚未执行的那条；不抢宿主/执行中任务。
+                from ..runtime.promise_actions import needs_image
+                originals = db.execute(
+                    """SELECT * FROM promises WHERE scope_key=? AND source_event_id=?
+                       AND handoff_key='' AND status NOT IN ('cancelled','failed')""",
+                    (context.scope_key, source_event_id)).fetchall() if source_event_id else []
+                originals = [r for r in originals if needs_image(r["description"])]
+                if originals:
+                    if (len(originals) != 1 or originals[0]["status"] != "scheduled"
+                            or originals[0]["generation"] != generation
+                            or originals[0]["host_job_id"]
+                            or originals[0]["action_state"] not in ("", "retry_ready")):
+                        return {"status": "rejected", "reason": "source_image_already_owned"}
+                    original = originals[0]
+                    db.execute(
+                        """UPDATE promises SET status=?,bucket=?,fingerprint=?,description=?,note=?,
+                           due_at=?,original_due_at=?,original_bucket=?,updated_at=?,context_summary=?,
+                           action_state=?,action_result_json=?,handoff_key=?,last_error=?,
+                           handoff_account_key=? WHERE promise_id=? AND status='scheduled'""",
+                        (status, bucket, fingerprint(context.scope_key, description), description,
+                         failure["prompt"], now + 300, now + 300, bucket, now, failure["reason"],
+                         action, payload, request_id, failure["kind"], context.account_key,
+                         original["promise_id"]))
+                    return {"status": "accepted", "promise_id": original["promise_id"],
+                            "task_status": status}
+                db.execute(
+                    """INSERT INTO promises
+                       (promise_id,scope_key,generation,status,bucket,fingerprint,description,note,
+                        due_at,original_due_at,original_bucket,depth,created_at,updated_at,
+                        context_summary,source_event_id,action_state,action_result_json,handoff_key,
+                        last_error,handoff_account_key)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?)""",
+                    (pid, context.scope_key, generation, status, bucket,
+                     fingerprint(context.scope_key, description), description, failure["prompt"],
+                     now + 300, now + 300, bucket, now, now,
+                     failure["reason"], source_event_id, action, payload, request_id, failure["kind"],
+                     context.account_key))
+                return {"status": "accepted", "promise_id": pid, "task_status": status}
+            return self.store._transaction(db, mutate)
+        return await self.store._run(write)
+
+    async def resume_image_handoff(self, context: Context, promise_id: str, *,
+                                   prompt: str, source_event_id: str) -> dict:
+        """仅用户新一轮明确调整可释放内容拒绝；结果未知不能由模型释放。"""
+        await self.ensure()
+        now = self.store.clock()
+        generation = await self.store.get_generation(context)
+
+        def write(db):
+            def mutate():
+                if self.store._generation(db, context) != generation:
+                    return {"status": "rejected", "reason": "generation_changed"}
+                row = db.execute(
+                    "SELECT * FROM promises WHERE promise_id=? AND scope_key=? "
+                    "AND handoff_account_key=? AND handoff_key!=''",
+                    (promise_id, context.scope_key, context.account_key)).fetchone()
+                if not row:
+                    return {"status": "missing"}
+                if row["status"] != "waiting":
+                    return {"status": "conflict"}
+                failure = json.loads(row["action_result_json"])
+                if (failure.get("kind") != "content_rejected" or failure.get("use_reference")
+                        or source_event_id == row["source_event_id"]
+                        or normalize(prompt) == normalize(failure["prompt"])):
+                    return {"status": "rejected", "reason": "adjustment_required"}
+                failure.update(prompt=prompt, kind="adjusted_request", reason="用户已调整画面需求")
+                description = "生图：" + prompt[:490]
+                db.execute(
+                    """UPDATE promises SET status='scheduled',action_state='retry_ready',
+                       action_result_json=?,description=?,note=?,fingerprint=?,due_at=?,
+                       bucket='马上',updated_at=?,generation=?,last_error=''
+                       WHERE promise_id=? AND status='waiting'""",
+                    (json.dumps(failure, ensure_ascii=False), description, prompt,
+                     fingerprint(context.scope_key, description), now + 20, now, generation, promise_id))
+                return {"status": "resumed", "promise_id": promise_id}
+            return self.store._transaction(db, mutate)
+        return await self.store._run(write)
 
     async def list(self, context: Context, *, statuses=ACTIVE, limit: int = 20) -> list[dict[str, Any]]:
         await self.ensure()
@@ -191,8 +322,9 @@ class PromiseStore:
         def read(db):
             rows = db.execute(
                 f"""SELECT * FROM promises WHERE scope_key=? AND status IN ({marks})
+                    AND (handoff_account_key='' OR handoff_account_key=?)
                     ORDER BY due_at ASC LIMIT ?""",
-                (scope, *statuses, max(1, min(200, int(limit))))).fetchall()
+                (scope, *statuses, context.account_key, max(1, min(200, int(limit))))).fetchall()
             return [dict(row) for row in rows]
 
         return await self.store._run(read)
@@ -222,8 +354,8 @@ class PromiseStore:
         await self.ensure()
 
         def read(db):
-            sql = ("SELECT promise_id,description,status,bucket,due_at,advance_count "
-                   "FROM promises WHERE status IN ('scheduled','running')")
+            sql = ("SELECT promise_id,description,status,bucket,due_at,advance_count,last_error "
+                   "FROM promises WHERE status IN ('scheduled','running','waiting')")
             args: list[Any] = []
             if scope_key:
                 sql += " AND scope_key=?"
@@ -351,6 +483,8 @@ class PromiseStore:
                 if not row:
                     return {"status": "missing"}
                 # 会话不在内存不是发送失败，只是“还不到时候”。
+                if row["status"] not in ("scheduled", "running"):
+                    return {"status": "conflict", "current": row["status"]}
                 # 这种等待不消耗重试预算，否则用户睡一觉承诺就全死了。
                 if no_penalty:
                     db.execute(
@@ -384,11 +518,49 @@ class PromiseStore:
             def mutate():
                 changed = db.execute(
                     """UPDATE promises SET status='scheduled', updated_at=?
-                       WHERE promise_id=? AND status IN ('running','unknown')""",
+                       WHERE promise_id=? AND status IN ('running','unknown')
+                         AND action_state NOT IN ('generating','sending','unknown')""",
                     (now, promise_id))
                 return {"status": "ok" if changed.rowcount else "noop"}
 
             return self.store._transaction(db, mutate)
+
+        return await self.store._run(write)
+
+    async def checkpoint_action(self, promise_id: str, state: str, result=None) -> bool:
+        """副作用前先落阶段，重启后不盲目重复收费或发送。"""
+        await self.ensure()
+        payload = json.dumps(result or {}, ensure_ascii=False)
+
+        def write(db):
+            changed = db.execute(
+                """UPDATE promises SET action_state=?, action_result_json=?, updated_at=?
+                   WHERE promise_id=? AND status='running'""",
+                (state, payload, self.store.clock(), promise_id))
+            return changed.rowcount == 1
+
+        return await self.store._run(write)
+
+    async def get(self, promise_id: str) -> dict | None:
+        await self.ensure()
+
+        def read(db):
+            row = db.execute("SELECT * FROM promises WHERE promise_id=?", (promise_id,)).fetchone()
+            return dict(row) if row else None
+
+        return await self.store._run(read)
+
+    async def delegate(self, promise_id: str, job_id: str) -> bool:
+        """宿主接管是独立终态，不能冒充本插件已发送。"""
+        await self.ensure()
+
+        def write(db):
+            changed = db.execute(
+                """UPDATE promises SET status='delegated', host_job_id=?, updated_at=?
+                   WHERE promise_id=? AND status IN ('scheduled','running')
+                     AND action_state=''""",
+                (str(job_id), self.store.clock(), promise_id))
+            return changed.rowcount == 1
 
         return await self.store._run(write)
 
@@ -516,7 +688,7 @@ class PromiseStore:
         def write(db):
             def mutate():
                 stale = db.execute(
-                    """SELECT promise_id FROM promises WHERE status IN ('sent','failed','cancelled','unknown')
+                    """SELECT promise_id FROM promises WHERE handoff_key='' AND status IN ('sent','failed','cancelled','unknown','delegated')
                        ORDER BY updated_at DESC LIMIT -1 OFFSET ?""", (keep,)).fetchall()
                 if not stale:
                     return 0

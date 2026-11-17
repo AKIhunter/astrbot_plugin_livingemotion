@@ -16,7 +16,8 @@ class NightStore:
         details.allowed gates the side effect, but elapsed state still commits.
         """
         from .sqlite import _Rejected
-        if operation not in ("tick", "reply_started", "reply_submitted", "wake", "manual", "dream_wake"):
+        if operation not in ("tick", "reply_started", "reply_submitted", "reply_failed",
+                             "wake", "manual", "dream_wake"):
             raise ValueError("invalid night operation")
         if operation.startswith("reply_") and (
             not isinstance(reply_id, str) or not reply_id.strip() or len(reply_id) > 512
@@ -40,6 +41,9 @@ class NightStore:
                                          (reply_key,)).fetchone()
                 if operation == "reply_started" and attempt:
                     return {"allowed": False, "status": "duplicate", "reason_code": "reply_exists"}
+                if operation == "reply_failed" and (attempt is None or attempt["status"] != "started"):
+                    return {"allowed": False, "status": "duplicate" if attempt else "rejected",
+                            "reason_code": "reply_not_started"}
                 if operation == "reply_submitted":
                     if attempt is None or attempt["status"] != "started":
                         return {"allowed": False, "status": "duplicate" if attempt else "rejected",
@@ -73,8 +77,26 @@ class NightStore:
                 value = dict(record.value) if record else {}
                 state = self._night_value(value) if record else NightState(updated_at=now)
                 runtime = dict(value.get("_runtime", {}))
-                after, changes, details = transform(state, runtime, now, dict(attempt) if attempt
-                                                    else None)
+                if (state.policy_version == 2 and state.wake_session
+                        and state.wake_replies_used >= state.wake_reply_limit):
+                    pending = db.execute(
+                        "SELECT COUNT(*) FROM reply_attempts WHERE status='started' "
+                        "AND wake_session=? AND cycle_id=?",
+                        (state.wake_session, state.cycle_id),
+                    ).fetchone()[0]
+                    if pending == 0:
+                        # 重启/取消已经清掉全部在途票据，末轮不能永远卡在唤醒窗口。
+                        from ..domain.night import finish_life_wake
+                        state = finish_life_wake(state, now=now)
+                admitted = dict(attempt) if attempt else None
+                if admitted and admitted["wake_session"]:
+                    # 共享作息下跨会话的已获准回复也属于同一唤醒窗，不能提前截断。
+                    admitted["pending_wake_replies"] = db.execute(
+                        "SELECT COUNT(*) FROM reply_attempts WHERE status='started' "
+                        "AND wake_session=? AND cycle_id=? AND reply_key<>?",
+                        (admitted["wake_session"], admitted["cycle_id"], reply_key),
+                    ).fetchone()[0]
+                after, changes, details = transform(state, runtime, now, admitted)
                 allowed = details.get("allowed", True)
                 reason = details.get("reason_code", "night_committed")
                 write = StateWrite("night", {**to_dict(after), "_runtime": runtime},
@@ -97,6 +119,9 @@ class NightStore:
                                "WHERE reply_key=?",
                                (now if allowed else None, "submitted" if allowed else "denied",
                                 reply_key))
+                elif operation == "reply_failed":
+                    db.execute("UPDATE reply_attempts SET status='failed' WHERE reply_key=?",
+                               (reply_key,))
                 elif operation == "wake":
                     db.execute("INSERT INTO wake_attempts VALUES(?,?,?,?,?,?)",
                                (event.idempotency_key, owner.owner_key if owner else
@@ -116,11 +141,18 @@ class NightStore:
         return await self._run(commit)
 
     async def reply_failed(self, context, reply_id):
-        key = stable_key("reply", context.scope_key, reply_id)
-        return await self._run(lambda db: bool(db.execute(
-            "UPDATE reply_attempts SET status='failed' WHERE reply_key=? AND status='started'",
-            (key,),
-        ).rowcount))
+        from ..domain.night import finish_life_wake
+
+        def transform(state, runtime, now, attempt):
+            if (state.policy_version == 2 and state.wake_session
+                    and state.wake_session == attempt["wake_session"]
+                    and state.wake_replies_used >= state.wake_reply_limit
+                    and attempt.get("pending_wake_replies", 0) == 0):
+                state = finish_life_wake(state, now=now)
+            return state, (), {"allowed": True, "reason_code": "reply_failed"}
+        result = await self.night_operation(context, transform, operation="reply_failed",
+                                           reply_id=reply_id)
+        return result.get("allowed") is True
 
     async def reply_ticket(self, context, reply_id):
         key = stable_key("reply", context.scope_key, reply_id)

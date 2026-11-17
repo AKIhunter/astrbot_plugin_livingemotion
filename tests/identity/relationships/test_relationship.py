@@ -39,12 +39,12 @@ class RelationshipTransitionTests(unittest.TestCase):
     def test_real_interaction_without_memory_establishes_familiarity_only(self):
         result = apply_relationship(Relationship(), event(), now=1000)
         state = result["relationship"]
-        self.assertEqual(state.score, 0.5)
-        self.assertEqual(state.familiarity, 0.005)
+        self.assertEqual(state.score, 0)
+        self.assertIsNone(state.familiarity)
         self.assertIsNone(state.trust)
         self.assertIsNone(state.boundary)
-        self.assertEqual(result["trace"]["charged"], 0.5)
-        self.assertEqual(state.normalized, 0.0005)
+        self.assertEqual(result["trace"]["charged"], 0)
+        self.assertEqual(state.normalized, 0)
 
     def test_legacy_score_does_not_invent_trust_or_boundary(self):
         legacy = Relationship(score=900, evidence_complete=False)
@@ -58,7 +58,7 @@ class RelationshipTransitionTests(unittest.TestCase):
                                     now=1000)
         self.assertAlmostEqual(result["relationship"].trust, 0.52)
         self.assertIsNone(result["relationship"].boundary)
-        result = apply_relationship(Relationship(), event(signals=("boundary_violated",)),
+        result = apply_relationship(Relationship(score=500), event(signals=("boundary_violated",)),
                                     now=1000)
         self.assertAlmostEqual(result["relationship"].boundary, 0.47)
         self.assertIsNone(result["relationship"].trust)
@@ -72,17 +72,17 @@ class RelationshipTransitionTests(unittest.TestCase):
                                       now=1000)
         negative = apply_relationship(Relationship(score=1), event(signals=("conflict",)),
                                       now=1000)
-        self.assertEqual(positive["relationship"].score, 990)
-        self.assertEqual(negative["relationship"].score, 0)
-        self.assertEqual(positive["trace"]["charged"], 3)
-        self.assertEqual(negative["trace"]["charged"], 5)
+        self.assertEqual(positive["relationship"].score, 999)
+        self.assertEqual(negative["relationship"].score, 1)
+        self.assertEqual(positive["trace"]["charged"], 0)
+        self.assertEqual(negative["trace"]["charged"], 0)
 
     def test_single_event_cap_even_for_many_signals(self):
         result = apply_relationship(Relationship(score=500), event(
             signals=("care", "gratitude", "promise_kept", "boundary_respected")),
             now=1000)
-        self.assertEqual(result["trace"]["charged"], 6)
-        self.assertEqual(result["relationship"].score, 506)
+        self.assertEqual(result["trace"]["charged"], 10)
+        self.assertEqual(result["relationship"].score, 510)
 
     def test_positive_and_negative_changes_never_refund_daily_budget(self):
         policy = RelationshipPolicy(daily_budget=8)
@@ -94,19 +94,19 @@ class RelationshipTransitionTests(unittest.TestCase):
         third = apply_relationship(second["relationship"],
                                    event(1800, "m3", ("care",)), now=1800,
                                    runtime=second["runtime"], policy=policy)
-        self.assertEqual(third["relationship"].score, 501)
-        self.assertEqual(third["runtime"]["days"]["1970-01-01"], 6)
+        self.assertEqual(third["relationship"].score, 503)
+        self.assertEqual(third["runtime"]["days"]["1970-01-01"], 8)
         self.assertEqual(third["runtime"]["negative_days"]["1970-01-01"], 5)
-        self.assertEqual(third["reason_codes"], ("rule_care",))
+        self.assertEqual(third["reason_codes"], ("daily_budget_exhausted",))
 
     def test_opposing_signals_in_one_event_charge_absolute_motion(self):
         policy = RelationshipPolicy(daily_budget=6)
         result = apply_relationship(Relationship(score=500),
                                     event(signals=("care", "conflict")), now=1000,
                                     policy=policy)
-        self.assertEqual(result["trace"]["charged"], 6)
-        self.assertAlmostEqual(result["relationship"].score, 498.5)
-        self.assertEqual(result["runtime"]["negative_days"]["1970-01-01"], 6)
+        self.assertEqual(result["trace"]["charged"], 5)
+        self.assertEqual(result["relationship"].score, 495)
+        self.assertEqual(result["runtime"]["negative_days"]["1970-01-01"], 5)
 
     def test_budget_survives_midnight_and_delayed_events_use_occurrence_day(self):
         policy = RelationshipPolicy(daily_budget=6)
@@ -120,9 +120,9 @@ class RelationshipTransitionTests(unittest.TestCase):
                                      event(86411, "m3", ("gratitude",)), now=86411,
                                      runtime=delayed["runtime"], policy=policy)
         self.assertTrue(new_day["applied"])
-        self.assertEqual(new_day["runtime"]["days"]["1970-01-01"], 3)
+        self.assertEqual(new_day["runtime"]["days"]["1970-01-01"], 6)
         self.assertEqual(new_day["runtime"]["negative_days"]["1970-01-01"], 6)
-        self.assertEqual(new_day["runtime"]["days"]["1970-01-02"], 2)
+        self.assertEqual(new_day["runtime"]["days"]["1970-01-02"], 5)
 
     def test_budget_calendar_uses_configured_timezone(self):
         result = apply_relationship(Relationship(), event(60000), now=60000,
@@ -136,7 +136,7 @@ class RelationshipTransitionTests(unittest.TestCase):
                                     runtime=first["runtime"])
         self.assertEqual(result["reason_codes"], ("clock_before_state",))
         self.assertEqual(first["runtime"], previous)
-        self.assertEqual(result["runtime"]["days"]["1970-01-02"], 0.5)
+        self.assertEqual(result["runtime"]["days"]["1970-01-02"], 0)
 
     def test_no_rewards_for_bot_self_reports_or_imaginary_events(self):
         for changes in (
@@ -155,8 +155,8 @@ class RelationshipTransitionTests(unittest.TestCase):
             result = apply_relationship(state, event(1000, str(number), ("care",)),
                                         now=1000, runtime=runtime)
             state, runtime = result["relationship"], result["runtime"]
-        self.assertEqual(state.score, 9)
-        self.assertEqual(runtime["days"]["1970-01-01"], 9)
+        self.assertEqual(state.score, 10)
+        self.assertEqual(runtime["days"]["1970-01-01"], 10)
         result = apply_relationship(state, event(1000, "0", ("care",)), now=1000,
                                     runtime=runtime)
         self.assertEqual(result["reason_codes"], ("duplicate_event",))
@@ -182,7 +182,8 @@ class RelationshipTransitionTests(unittest.TestCase):
                 runtime=first["runtime"])
 
     def test_observe_only_still_updates_and_disabled_does_not(self):
-        observed = apply_relationship(Relationship(), event(), now=1000, mode="observe_only")
+        observed = apply_relationship(Relationship(), event(signals=("praise",)),
+                                      now=1000, mode="observe_only")
         self.assertTrue(observed["applied"])
         stopped = apply_relationship(Relationship(), event(), now=1000, enabled=False)
         self.assertFalse(stopped["applied"])

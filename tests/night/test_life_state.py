@@ -44,6 +44,7 @@ async def life(tmp_path, le_context):
         night_policy_version=2, timezone="UTC", night_schedule_enabled=True,
         persona_shared_state=True, lie_in_min_minutes=0, lie_in_max_minutes=90,
         energy_fatigue_per_minute=0, energy_recovery_per_minute=0,
+        energy_reply_cost=4, wake_reply_limit=3,
     )
     store = SQLiteStore(tmp_path / "life.sqlite", config=config, clock=lambda: clock[0])
     await store.open()
@@ -63,6 +64,19 @@ async def energy(store, context, value):
     assert result.accepted
 
 
+async def prepare_nap(life, value=99):
+    """唤醒测试使用真实小憩；疲劳时段本身不再强制困或睡眠。"""
+    app, store, clock, context = life
+    clock[0] = at("2026-11-06T01:30:00")
+    await app.night_snapshot(context)
+    await energy(store, context, value)
+    record = await store.get_state(context, "night")
+    state = replace(store._night_value(record.value), cycle_kind="nap")
+    assert (await store.write_states(context, await store.get_generation(context), (
+        StateWrite("night", to_dict(state), record.version, owner=record.owner),
+    ))).accepted
+
+
 def human(context, now, number="1", signals=()):
     return Event("wake-" + number, "test", "message", context, "human", now, "source-" + number,
                  actor_id=context.account_id, signals=signals)
@@ -72,18 +86,18 @@ async def test_five_states_cross_midnight_and_persisted_lie_in(life):
     app, store, clock, context = life
     app.draws = [60]
     state = await app.night_snapshot(context)
-    assert state.display_state.value == "groggy"
-    assert state.drowsy_at == at("2026-11-06T01:00:00")
+    assert state.display_state.value == "awake"
+    assert state.drowsy_at is None
     assert state.deep_sleep_at == at("2026-11-06T02:30:00")
     assert state.wake_at == at("2026-11-06T09:00:00")
     assert app.draw_count == 1
     for value, display in (
-        ("2026-11-06T01:00:00", "drowsy"),
+        ("2026-11-06T01:00:00", "awake"),
         ("2026-11-06T02:30:00", "deep_sleep"),
         ("2026-11-06T07:30:00", "deep_sleep"),
         ("2026-11-06T08:59:59", "deep_sleep"),
         ("2026-11-06T09:00:00", "awake"),
-        ("2026-11-06T13:00:00", "nap"),
+        ("2026-11-06T13:00:00", "awake"),
         ("2026-11-06T14:30:00", "awake"),
     ):
         clock[0] = at(value)
@@ -149,9 +163,7 @@ async def test_restart_does_not_redraw_and_full_energy_cannot_exit_deep(life):
 
 async def test_low_energy_two_dice_then_increment_and_duplicate(life):
     app, store, clock, context = life
-    clock[0] = at("2026-11-06T01:30:00")
-    await app.night_snapshot(context)
-    await energy(store, context, 9.9)
+    await prepare_nap(life, 9.9)
     app.draws = [0, 0]
     first = human(context, clock[0])
     assert not (await app.wake_attempt(context, first))["allowed"]
@@ -169,9 +181,7 @@ async def test_low_energy_two_dice_then_increment_and_duplicate(life):
 
 async def test_first_two_dice_sum_can_wake_immediately(life):
     app, store, clock, context = life
-    clock[0] = at("2026-11-06T01:30:00")
-    await app.night_snapshot(context)
-    await energy(store, context, 1)
+    await prepare_nap(life, 1)
     app.draws = [4, 5]
     assert (await app.wake_attempt(context, human(context, clock[0])))["allowed"]
 
@@ -202,50 +212,48 @@ async def test_wake_eligibility(life, mode, kind, mentioned, allowed):
     app.config = replace(app.config, wake_mode=mode)
     context = replace(context, scene_kind=kind)
     await app.initialize_state_scope(context)
-    clock[0] = at("2026-11-06T01:30:00")
+    await prepare_nap((app, store, clock, context))
     event = human(context, clock[0], signals=("native_bot_mention",) if mentioned else ())
     assert (await app.wake_attempt(context, event))["allowed"] is allowed
 
 
 async def test_window_starts_only_first_submission_last_round_can_finish(life):
     app, store, clock, context = life
-    clock[0] = at("2026-11-06T01:30:00")
-    # 只有精力低于舒适线（80）时被叫醒，才进入唤醒窗口并计轮次。
-    await app.night_snapshot(context)
-    await energy(store, context, 50)
-    app.draws = [9, 9]
+    await prepare_nap(life)
     await app.wake_attempt(context, human(context, clock[0]))
     starts = []
     for number in range(3):
         result = await app.reply_started(context, f"reply-{number}")
         assert result["allowed"]
         starts.append(result)
-        assert result["night"].energy == 50
+        assert result["night"].energy == 99
         assert result["night"].wake_window_deadline is None
     assert not (await app.reply_started(context, "fourth"))["allowed"]
     first = await app.reply_submitted(context, "reply-0", ticket=starts[0]["ticket"])
-    assert first["allowed"] and first["night"].energy == 46
+    assert first["allowed"] and first["night"].energy == 95
     deadline = first["night"].wake_window_deadline
     clock[0] += 30
     last = await app.reply_submitted(context, "reply-2", ticket=starts[2]["ticket"])
-    assert last["allowed"] and last["night"].energy == 42
+    assert last["allowed"] and last["night"].energy == 91
     assert last["night"].wake_window_deadline == deadline
+    # 中间一轮仍在途，最后一轮先提交不能清掉它的唤醒会话。
+    middle = await app.reply_submitted(context, "reply-1", ticket=starts[1]["ticket"])
+    assert middle["allowed"] and middle["night"].energy == 87
+    assert middle["night"].wake_session is None
+    assert middle["night"].display_state.value == "awake"
     assert not (await app.reply_submitted(context, "reply-2", ticket=starts[2]["ticket"]))["allowed"]
-    assert (await store.get_state(context, "night")).value["energy"] == 42
+    assert (await store.get_state(context, "night")).value["energy"] == 87
 
 
 async def test_failed_generation_counts_but_not_energy_or_window(life):
     app, store, clock, context = life
-    clock[0] = at("2026-11-06T01:30:00")
-    await app.night_snapshot(context)
-    await energy(store, context, 50)
-    app.draws = [9, 9]
+    await prepare_nap(life)
     await app.wake_attempt(context, human(context, clock[0]))
     started = await app.reply_started(context, "failure")
     assert started["allowed"]
     assert await store.reply_failed(context, "failure")
     state = await app.night_snapshot(context)
-    assert state.wake_replies_used == 1 and state.energy == 50
+    assert state.wake_replies_used == 1 and state.energy == 99
     assert state.first_reply_submitted_at is None
     assert not (await app.reply_submitted(context, "failure", ticket=started["ticket"]))["allowed"]
 
@@ -253,10 +261,7 @@ async def test_failed_generation_counts_but_not_energy_or_window(life):
 @pytest.mark.parametrize("expired", ["window", "deep"])
 async def test_submission_rechecks_window_or_deep(life, expired):
     app, store, clock, context = life
-    clock[0] = at("2026-11-06T01:30:00")
-    await app.night_snapshot(context)
-    await energy(store, context, 50)
-    app.draws = [9, 9]
+    await prepare_nap(life)
     await app.wake_attempt(context, human(context, clock[0]))
     first = await app.reply_started(context, "first")
     pending = await app.reply_started(context, "pending")
@@ -334,7 +339,7 @@ async def test_sleeping_recovery_and_awake_fatigue_do_not_double_charge(life):
     await energy(store, context, 50)
     clock[0] += 60
     assert (await app.night_snapshot(context)).energy == 49.2
-    clock[0] = at("2026-11-06T01:00:00")
+    clock[0] = at("2026-11-06T02:30:00")
     await app.night_snapshot(context)
     await energy(store, context, 50)
     clock[0] += 60
@@ -357,18 +362,18 @@ async def test_night_precedes_overlapping_nap(life):
     app, store, clock, context = life
     app.config = replace(app.config, nap_start="22:00", nap_end="03:00")
     clock[0] = at("2026-11-06T22:30:00")
+    await app.night_snapshot(context)
+    await energy(store, context, 99)
     assert (await app.night_snapshot(context)).display_state.value == "nap"
     clock[0] = at("2026-11-06T23:30:00")
-    assert (await app.night_snapshot(context)).cycle_kind == "night"
+    assert (await app.night_snapshot(context)).display_state.value == "nap"
     clock[0] = at("2026-11-07T02:30:00")
     assert (await app.night_snapshot(context)).display_state.value == "deep_sleep"
 
 
 async def test_invalid_low_energy_wake_does_not_draw_dice(life):
     app, store, clock, context = life
-    clock[0] = at("2026-11-06T01:30:00")
-    await app.night_snapshot(context)
-    await energy(store, context, 1)
+    await prepare_nap(life, 1)
     app.config = replace(app.config, wake_mode="never")
     draws = app.draw_count
     assert not (await app.wake_attempt(context, human(context, clock[0])))["allowed"]
@@ -385,65 +390,10 @@ async def test_admin_sleep_after_manual_wake_is_effective(life):
 
 async def test_restart_cancels_reply_lease_but_keeps_used_round(life):
     app, store, clock, context = life
-    clock[0] = at("2026-11-06T01:30:00")
-    await app.night_snapshot(context)
-    await energy(store, context, 50)
-    app.draws = [9, 9]
+    await prepare_nap(life)
     await app.wake_attempt(context, human(context, clock[0]))
     started = await app.reply_started(context, "restart")
     await store.recover_inflight()
     assert not (await app.reply_submitted(context, "restart", ticket=started["ticket"]))["allowed"]
     state = await app.night_snapshot(context)
-    assert state.wake_replies_used == 1 and state.energy == 50
-
-
-async def test_rested_energy_skips_wake_window_and_full_wake(life):
-    """周期结束后精力在舒适线以上就是自然醒：不需要唤醒窗，也不消耗轮次。"""
-    app, store, clock, context = life
-    clock[0] = at("2026-11-06T01:30:00")
-    await app.night_snapshot(context)
-    # 熬到早上醒来，精力 80 以上属于清醒，直接可以参与。
-    clock[0] = at("2026-11-06T09:00:00")
-    await energy(store, context, 80)
-    state = await app.night_snapshot(context)
-    assert state.display_state.value == "awake"
-    assert (await app.availability(context)).available
-    for number in range(5):
-        assert (await app.reply_started(context, f"rested-{number}"))["allowed"]
-    assert (await app.night_snapshot(context)).display_state.value == "awake"
-
-
-async def test_low_energy_after_wake_needs_wake_window(life):
-    """精力低于舒适线时，回到夜里仍要睡；被叫醒才开唤醒窗并计轮次。"""
-    app, store, clock, context = life
-    clock[0] = at("2026-11-06T01:30:00")
-    await app.night_snapshot(context)
-    await energy(store, context, 60)
-    app.draws = [9, 9]
-    woke = await app.wake_attempt(context, human(context, clock[0]))
-    assert woke["allowed"] and woke["reason_code"] == "chat_wake"
-    state = await app.night_snapshot(context)
-    assert state.wake_session and state.wake_reply_limit == 3
-
-
-async def test_leftover_wake_session_clears_once_cycle_settled(life):
-    """周期已走完时残留的唤醒会话必须清零，否则满精力也会被卡住。"""
-    app, store, clock, context = life
-    # 白天没有睡眠周期，只有上一轮唤醒会话残留（线上 20:40 的实况）。
-    clock[0] = at("2026-11-06T15:00:00")
-    await app.night_snapshot(context)
-    await energy(store, context, 100)
-    record = await store.get_state(context, "night")
-    from astrbot_plugin_livingemotion.contracts import StateWrite
-    stale = replace(store._night_value(record.value), wake_session="stale",
-                    wake_replies_used=3, wake_reply_limit=3, wake_at=None,
-                    cycle_id=None, cycle_kind=None, cycle_started_at=None,
-                    deep_sleep_at=None, drowsy_at=None, display_state="awake")
-    await store.write_states(context, await store.get_generation(context), (
-        StateWrite("night", to_dict(stale), record.version, owner=record.owner),
-    ))
-    state = await app.night_snapshot(context)
-    assert state.wake_session is None and state.wake_replies_used == 0
-    assert state.display_state.value == "awake"
-    assert (await app.availability(context)).available
-    assert (await app.reply_started(context, "cleared"))["allowed"]
+    assert state.wake_replies_used == 1 and state.energy == 99

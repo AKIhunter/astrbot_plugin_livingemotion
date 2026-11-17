@@ -24,6 +24,7 @@ async def admitted(tmp_path, le_context):
         nap_enabled=False, persona_shared_state=True, wake_reply_limit=3,
         wake_window_minutes=10, energy_fatigue_per_minute=0,
         energy_recovery_per_minute=0,
+        energy_reply_cost=4,
     )
     store = SQLiteStore(tmp_path / "wake.sqlite", config=config, clock=lambda: clock[0])
     await store.open()
@@ -31,10 +32,10 @@ async def admitted(tmp_path, le_context):
         app = Harness(store, config)
         await app.initialize_state_scope(le_context)
         state = NightState(
-            policy_version=2, energy=100, energy_units=1000, updated_at=START,
-            cycle_id="incident-cycle", cycle_kind="night", cycle_started_at=START - 600,
-            drowsy_at=START - 300, wake_at=WAKE, base_wake_at=WAKE,
-            display_state=SleepState.DROWSY,
+            policy_version=2, energy=99, energy_units=990, updated_at=START,
+            cycle_id="incident-cycle", cycle_kind="nap", cycle_started_at=START - 600,
+            wake_at=WAKE, base_wake_at=WAKE,
+            display_state=SleepState.NAP,
         )
         record = await store.get_state(le_context, "night")
         assert (await store.write_states(le_context, await store.get_generation(le_context), (
@@ -70,7 +71,7 @@ async def test_admitted_reply_finishes_across_normal_wake(admitted, finish, tick
             assert state.wake_session is None
     submitted = await app.reply_submitted(context, "inflight", ticket=ticket)
     assert submitted["allowed"] is True
-    assert submitted["night"].energy == 96
+    assert submitted["night"].energy == 95
     if finish >= WAKE:
         assert submitted["night"].wake_window_deadline is None
         assert submitted["night"].wake_replies_used == 0

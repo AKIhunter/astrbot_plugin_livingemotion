@@ -433,7 +433,7 @@ try {
     assert.equal(await page.locator("#config-energy_reply_cost").getAttribute("step"), "0.1");
     assert.equal(await page.locator("#config-energy_max").isDisabled(), true);
     assert.equal(await page.locator("#config-energy_max").inputValue(), "100");
-    assert.match(await page.locator("#schedule-preview").textContent(), /恍惚转困 次日 01:00/);
+    assert.match(await page.locator("#schedule-preview").textContent(), /固定沉睡 次日 02:30/);
     await revealField(page, "energy_reply_cost");
     await page.locator("#config-energy_reply_cost").fill("4.15");
     assert.equal(await page.locator("#save").isDisabled(), true);

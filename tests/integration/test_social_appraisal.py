@@ -41,7 +41,10 @@ def test_current_message_score_and_bot_appraisal(le_event, body, signal, sign):
     result = apply_relationship(Relationship(score=400), event, now=event.occurred_at)
     assert (result["relationship"].score - 400) * sign > 0
     emotion = apply_emotion(BotAffect(), event, now=event.occurred_at)
-    assert emotion["affect"].pleasure * sign > 0
+    if signal == "constructive_criticism":
+        assert emotion["affect"].pleasure == 0  # 好感仍加分，合理纠错不增减开心。
+    else:
+        assert emotion["affect"].pleasure * sign > 0
 
 
 @pytest.mark.parametrize("body", [
@@ -56,10 +59,11 @@ def test_quoted_denied_and_meta_language_never_scores(le_event, body):
 def test_automatic_cap_special_and_care_multiplier(le_event):
     event = replace(le_event, body="你真棒")
     assert apply_relationship(Relationship(score=989), event, now=event.occurred_at)[
-        "relationship"].score == 990
+        "relationship"].score == 989
     special = Relationship(score=1000, reason_codes=("manual_correction",))
     assert apply_relationship(special, event, now=event.occurred_at)["relationship"] == special
-    care = replace(le_event, body="你辛苦了")
+    # 使用未触及开心限幅的小刺激，验证原有亲近关怀倍率仍保留。
+    care = replace(le_event, body="你辛苦了", confidence=.1)
     near = apply_emotion(BotAffect(), care, now=care.occurred_at,
                          relationship=Relationship(score=500))["affect"]
     friendly = apply_emotion(BotAffect(), care, now=care.occurred_at,
@@ -142,14 +146,14 @@ async def test_joint_refinement_authorized_memory_and_single_ledger(tmp_path, re
             assert after == local and bot == bot_before
             assert app.emotion_model_analysis([context])["status"] == "discarded"
         else:
-            assert after.value["score"] == local.value["score"] + 2.5
+            assert after.value["score"] == local.value["score"] == 205
             assert after.version == local.version + 1 and bot.version == bot_before.version + 1
-            assert after.value["_account_affect"]["state"]["pleasure"] > local.value[
-                "_account_affect"]["state"]["pleasure"]
+            assert after.value["_account_affect"]["state"]["pleasure"] == local.value[
+                "_account_affect"]["state"]["pleasure"] == 0
             ledger = await app.store.relationship_ledger(context)
             scores = [r for r in ledger if r["dimension"] == "score"]
-            assert len(scores) == 2 and scores[-1]["delta"] == 3
-            assert sum(after.value["_runtime"]["days"].values()) == 3.5
+            assert len(scores) == 1 and scores[-1]["delta"] == 5
+            assert sum(after.value["_runtime"]["days"].values()) == 5
             await app.on_message(message)
             assert (await app.store.get_state(context, "relationship", context.account_id)) == after
         assert len(calls) == 1 and host.sends == 0
@@ -168,7 +172,7 @@ async def test_manual_start_keeps_changing_special_persists_and_restart(tmp_path
         await write_relationship_override(app.store, context, expected_version=0,
             actor_id="test-admin", reason="test", score=95)
         await app.on_message(Message("after-edit", "你真棒"))
-        assert (await app.current_relationship(context)).score == 952
+        assert (await app.current_relationship(context)).score == 955
         await write_relationship_override(app.store, context, expected_version=1,
             actor_id="test-admin", reason="test", score=100, note="主人，温柔陪伴")
         await app.on_message(Message("special", "你就是个废物"))
@@ -237,6 +241,6 @@ def test_positive_budget_does_not_immunize_insults(le_event):
                "days": {day: 24}}
     result = apply_relationship(Relationship(score=500), replace(
         le_event, body="你就是个废物"), now=le_event.occurred_at, runtime=runtime)
-    assert result["relationship"].score == 494
+    assert result["relationship"].score == 490
     assert result["runtime"]["days"][day] == 24
-    assert result["runtime"]["negative_days"][day] == 6
+    assert result["runtime"]["negative_days"][day] == 10

@@ -3,7 +3,7 @@
 ![livingEmotion 原创 LE 字标与四维状态线](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-%E2%89%A54.29.1-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.3.0-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.0-3a8060)](CHANGELOG.md)
 
 **简体中文** · [English](README.en.md)
 
@@ -30,7 +30,7 @@ LivingEmotion 给你的 AstrBot 角色增加持续变化的心情、人物关系
 | 🧬 沿用原来的人设 | 默认跟随当前会话原生人格，也可显式选择或关闭；不带固定“绫”人设 |
 | 🧠 感受持续变化 | 愉悦、唤醒、压力、社交需求按规则限幅并随时间恢复；页面五轴雷达另显示模型写回的「底气」；情绪强度三档可调 |
 | 👂 理解对方 | “我很难过”是对方观察，不直接覆盖 Bot 心情 |
-| 🤝 关系可解释 | 以人格为中心的二维力图、平台账号搜索、好感 0–100／步进 0.1 手动修改；缺失维度不猜测 |
+| 🤝 关系可解释 | 好感 V2 按明确对象的当前言行自动增减 0.5–1 分；二维力图、账号搜索与 0.1 步进人工校正 |
 | 🌙 长夜与精力 | 清醒、小憩、恍惚、困、沉睡；回复轮数、唤醒倒计时、24 小时曲线和事件日志 |
 | 💬 自然地主动聊天 | 随机等待、记忆回访、近况关心和关系/情绪驱动；话题避重、未回应退避，实际发送默认关闭 |
 | 💭 **说了就记得做** | 回复里那句“一会儿发你”会被记成待办，到点自己兑现，不用你再催 |
@@ -73,7 +73,7 @@ LivingEmotion 给你的 AstrBot 角色增加持续变化的心情、人物关系
 
 ## 💭 承诺任务
 
-这是 0.3.0 的主线：**它在聊天里答应过的事，会被真的记下来，到点自己去做。**
+它在聊天里答应稍后做的事，会记成带时间的待办，到点执行。
 
 以前“一会儿发你”“晚点告诉你”只是句客气话，说完就散了。现在回复末尾会带一个
 不显示给用户的标记（`<!--promise:档位:描述-->`），插件把它落成一条待办；
@@ -149,8 +149,8 @@ flowchart TD
   凌晨两点也照发。深睡且确实发不出去时，推迟到醒来，不消耗重试次数。
 - **会话消失就判死。** 对方删号、换实例导致会话不存在时，直接置 `cancelled`，
   不会每 60 秒空转一次。
-- **重试有上限。** 发送被拒或被记为未知，300 秒后重试，最多 3 次，之后落 `failed`。
-  每次重试换一个意图世代（`#1`、`#2`…），避免撞上第一次失败的记录。
+- **重试有上限。** 明确拒收按退避重试，最多首次加三次；图片已经生成就重发原图。
+  可能已收费或已发送的未知结果停止自动重试，具体阶段见[延迟生图说明](docs/promise-actions-20261116.md)。
 - **不伪造送达。** 页面和日志里的 `sent` 表示「宿主适配器已接手」，
   不等于平台确认送达；`unknown` 不自动重发。
 
@@ -160,17 +160,22 @@ flowchart TD
 不参与本地规则、衰减基准和回复注入。详细口径见
 [五维情绪：计算、展示与强度档位](docs/emotion-five-dimension.md)。
 
+0.4.0 增加[开心窗口](docs/joy-window.md)：最近 300 秒内，事件刺激带来的开心
+累计最多上涨 5、下降 10 个百分点，正负额度独立。每条消息即时计算；
+普通互动、中性纠错及对象不明确时保持刺激前开心，自然回落和天气影响另算。
+
 ```mermaid
 flowchart LR
     A[真实互动事件] --> B[规则增量 × 置信度 × 强度增益]
     B --> C[单次上限 0.15×增益]
     C --> D[同类刺激 300 秒累计 0.30×增益]
-    D --> E[四维状态]
+    D --> W[开心方向校验与300秒正负预算]
+    W --> E[四维状态]
     E --> F[半衰期回落到动态基准]
     F --> G[LivingHello 注入]
     E --> H[页面五轴雷达]
     I[异步情绪模型] --> J[四维增量 ×0.5]
-    J --> E
+    J --> W
     I --> K[底气 control]
     K --> L[EMA 0.2 + 60 分钟半衰期]
     L --> H
@@ -197,9 +202,15 @@ flowchart LR
 - [AstrBot 插件帮助手册与完整流程图](docs/plugin-manual.md)
 - [页面、作息、关系、记忆与快速开始](docs/life-console.md)
 - [五维情绪：计算、展示与强度档位](docs/emotion-five-dimension.md)
+- [开心 5 分钟窗口与证据边界](docs/joy-window.md)
+- [好感度计分 V2](docs/relationship-scoring-v2.md)
+- [分阶段生图婉拒概率](docs/relationship-image-refusal.md)
+- [睡眠与精力规则](docs/sleep-energy-rules.md)
 - [承诺任务：识别、兑现与取消](docs/promise.md)
 - [未来事件任务：用户发起 vs Bot 承诺](docs/future-tasks.md)
 - [承诺兑现的上下文、多气泡与片段缓存](docs/promise-memory.md)
+- [延迟生图与任务去重](docs/promise-actions-20261116.md)
+- [LivingHello / LivingEmotion 协作契约](docs/cooperation-contract-20261116.md)
 - [随机主动聊天、选题与节奏配置](docs/proactive-life.md)
 - [安装与原生配置](docs/installation.md)
 - [架构与状态计算](docs/architecture.md)
@@ -317,8 +328,9 @@ npm --prefix tests/ui run test:browser
 
 ## 📦 更新日志与来源
 
-当前版本 **0.3.0**：承诺任务上线——说过的事会到点兑现，重启后也能发出去；
-兑现内容会写进记忆，追问接得上。
+当前版本 **0.4.0**：开心 300 秒限幅、好感度 V2、分阶段生图婉拒概率、
+睡眠精力开关及延迟生图/宿主任务协作去重。已有配置和关系数据继续沿用，
+完整变化与兼容边界见 [CHANGELOG.md](CHANGELOG.md)。
 
 版本与更新见 [metadata.yaml](metadata.yaml)、[CHANGELOG.md](CHANGELOG.md)。
 情绪、关系、作息、补课和额度由本插件实现。

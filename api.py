@@ -67,6 +67,7 @@ class LivingEmotionAPI:
             "ok", "capabilities", schema_version=SCHEMA_VERSION,
             operations=["get_capabilities", "resolve_producer_context", "ingest_event", "get_bot_state",
                         "get_current_emotion",
+                        "get_action_policy", "handoff_image_failure", "resume_image_followup",
                         "get_observation", "get_relationship", "get_availability",
                         "preview_behavior", "get_health"],
             mode=mode, memory_mode=self._config.memory_mode,
@@ -292,6 +293,103 @@ class LivingEmotionAPI:
 
     async def get_observation(self, context: Context | Mapping[str, Any]) -> dict[str, Any]:
         return await self._snapshot(context, "observation", None)
+
+    async def _image_scope(self, context, event):
+        """写接口只接受原生事件的真实来源，不从工具参数、文本或昵称推导身份。"""
+        await self._sync()
+        app = self._application
+        if not self._active or not self._config.enabled or app is None or app.closed:
+            raise ValueError("plugin_unavailable")
+        timed = bool(event.get_extra("cron_job") or event.get_extra("livingemotion:promise_id"))
+        if context is None and timed:
+            # 宿主 cron 没有入站消息钩子：只从已登记的真实会话重建来源。
+            sender = str(event.get_sender_id())
+            route = str(event.unified_msg_origin)
+            candidates = [c for c in await self._store.list_contexts()
+                          if c.account_id == sender and c.adapter_id == route.split(":", 1)[0]]
+            from dataclasses import replace
+            from .contracts import rebuild_route
+            context = next((replace(c, route=route) for c in candidates
+                            if rebuild_route(c) == route), None)
+        scope = self._context(context)
+        check = app.validate_delivery if timed else app.validate_context
+        if (scope.instance_id != self._instance_id or not scope.route
+                or scope.route != getattr(event, "unified_msg_origin", None)
+                or scope.account_id != str(event.get_sender_id())
+                or scope.scene_id != str(event.get_group_id() or event.get_sender_id())
+                or scope.scene_kind.value != ("group" if event.get_group_id() else "private")
+                or app.effective_mode(scope) != "active"
+                or not await check(scope)):
+            raise ValueError("context_changed")
+        event.set_extra("livingemotion:context", to_dict(scope))
+        return scope
+
+    async def get_action_policy(self, context, *, event) -> dict[str, Any]:
+        """关系只拦新个人生图请求；已经落库的生图义务不因关系变化撤销。"""
+        try:
+            scope = await self._image_scope(context, event)
+            pid = event.get_extra("livingemotion:promise_id")
+            if pid:
+                row = await self._application._promises().promises.get(str(pid))
+                if (row and row["scope_key"] == scope.scope_key
+                        and row.get("handoff_account_key", "") in ("", scope.account_key)
+                        and row["status"] in ("scheduled", "running")):
+                    from .runtime.promise_actions import needs_image
+                    if needs_image(row["description"]):
+                        return self._result(
+                            "ok", "action_policy", contract="livingemotion.image-policy.v1",
+                            data={"allowed": True, "reason": "existing_obligation"})
+            data = await self._application.image_action_policy(scope, event=event)
+            return self._result("ok", "action_policy", contract="livingemotion.image-policy.v1", data=data)
+        except Exception:
+            return self._result("unavailable", "action_policy_unavailable")
+
+    async def handoff_image_failure(self, context, *, event) -> dict[str, Any]:
+        """LH 已说明失败后交接；原请求 ID、原因和画面均取自受信事件。"""
+        try:
+            scope = await self._image_scope(context, event)
+            app = self._application
+            if not app.config.promise_enabled or not app.promise_actions_active():
+                return self._result("unavailable", "promise_actions_disabled")
+            failure = event.get_extra("_livinghello_image_failure")
+            if (not isinstance(failure, dict)
+                    or failure.get("notified") is not True
+                    or failure.get("kind") not in {
+                        "content_rejected", "rate_limited", "provider_error", "result_unknown",
+                        "delivery_unknown", "quota_exhausted"}
+                    or not isinstance(failure.get("prompt"), str)
+                    or not 1 <= len(failure["prompt"]) <= 4000
+                    or not isinstance(failure.get("request_id"), str)
+                    or not 1 <= len(failure["request_id"]) <= 128
+                    or not isinstance(failure.get("reason"), str)
+                    or not 1 <= len(failure["reason"]) <= 300
+                    or type(failure.get("use_reference")) is not bool):
+                return self._result("rejected", "invalid_image_failure")
+            source_id = str(event.message_obj.message_id)
+            result = await app._promises().promises.accept_image_handoff(
+                scope, request_id=failure["request_id"], source_event_id=source_id,
+                failure={k: failure[k] for k in
+                         ("request_id", "prompt", "kind", "reason", "use_reference")})
+            return self._result("ok", "image_failure_handoff",
+                                contract="livingemotion.image-followup.v1", data=result)
+        except Exception:
+            return self._result("unavailable", "image_handoff_failed")
+
+    async def resume_image_followup(self, context, *, event, promise_id, prompt) -> dict[str, Any]:
+        try:
+            scope = await self._image_scope(context, event)
+            app = self._application
+            if not app.config.promise_enabled or not app.promise_actions_active():
+                return self._result("unavailable", "promise_actions_disabled")
+            if (not isinstance(promise_id, str) or not 1 <= len(promise_id) <= 128
+                    or not isinstance(prompt, str) or not 1 <= len(prompt.strip()) <= 4000):
+                return self._result("rejected", "invalid_image_adjustment")
+            result = await app._promises().promises.resume_image_handoff(
+                scope, promise_id, prompt=prompt.strip(), source_event_id=str(event.message_obj.message_id))
+            return self._result("ok", "image_followup_resume",
+                                contract="livingemotion.image-followup.v1", data=result)
+        except Exception:
+            return self._result("unavailable", "image_followup_resume_failed")
 
     async def get_relationship(self, context: Context | Mapping[str, Any]) -> dict[str, Any]:
         return await self._snapshot(

@@ -17,7 +17,7 @@ from ..domain.emotion import (
     DIMENSIONS, baseline_values, decay_affect, emotion_policy,
 )
 from ..domain.dreaming import six_emotions, weather_bonus
-from ..domain.relationship import relationship_stage_dto
+from ..domain.relationship import IMAGE_REFUSAL_FIELDS, relationship_stage_dto
 from ..storage.console_data import (
     apply_relationship_override, context_dto, query_console_records, query_relationships,
     project_relationship_clues, query_scopes, selected_contexts, write_relationship_override,
@@ -113,8 +113,7 @@ def night_subsection(name):
     """长夜分区内的二级归类；非长夜字段返回空串。"""
     if field_section(name) != "night":
         return ""
-    if name in ("energy_comfort_percent", "energy_reply_cost",
-                "energy_fatigue_per_minute", "energy_recovery_per_minute"):
+    if name.startswith(("energy_", "recovery_")):
         return "energy"
     if name.startswith(("catchup_", "wake_autocatchup", "wake_greeting")):
         return "catchup"
@@ -169,6 +168,9 @@ FIELD_LABELS = {
     "energy_reply_cost": "每次回复精力消耗", "energy_fatigue_per_minute": "疲劳精力消耗速率",
     "energy_recovery_per_minute": "精力恢复速率", "catchup_enabled": "醒后阅读未读",
     "energy_comfort_percent": "清醒精力线",
+    "energy_daytime_recovery_enabled": "白天自动恢复精力",
+    "recovery_follow_wake_at": "补觉按起床时间截止",
+    "recovery_max_minutes": "补觉最长时长",
     "catchup_reply_enabled": "醒后历史补答", "closing_enabled": "睡前晚安",
     "closing_random": "道别语随机生成", "closing_lead_minutes": "晚安提前量",
     "diary_provider_id": "日记模型", "dream_provider_id": "梦境模型",
@@ -178,6 +180,11 @@ FIELD_LABELS = {
     "relationship_stage_names": "关系阶段自定义名称",
     "relationship_stage_descriptions": "关系阶段描述",
     "relationship_special_description": "独特关系说明",
+    "relationship_image_refusal_averse": "反感 · 生图婉拒概率",
+    "relationship_image_refusal_unfamiliar": "陌生 · 生图婉拒概率",
+    "relationship_image_refusal_friendly": "友好 · 生图婉拒概率",
+    "relationship_image_refusal_close": "亲近 · 生图婉拒概率",
+    "relationship_image_refusal_unique": "独特 · 生图婉拒概率",
     "relationship_edit_enabled": "允许在关系页修改好感",
     "wake_autocatchup_enabled": "自然醒后主动补答",
     "wake_greeting_enabled": "先发一句刚醒的招呼",
@@ -211,7 +218,7 @@ def field_section(name):
     for prefixes, group in (
             (("persona",), "persona"), (("memory", "livingmemory", "embedding", "window", "body",
                                         "event_days"), "memory"),
-            (("night", "sleep", "wake", "nap", "fatigue", "deep_sleep", "lie_in", "energy",
+            (("night", "sleep", "wake", "nap", "fatigue", "deep_sleep", "lie_in", "energy", "recovery",
               "allow_sleep", "catchup", "closing"), "night"),
             (("diary", "dream", "experience", "home_city"), "experience"),
             (("autonomy", "group", "behavior", "proactive", "dnd", "active", "muted"), "behavior"),
@@ -516,6 +523,13 @@ class Console:
                 item.update(min=1, max=1440 if f.name == "behavior_idle_minutes" else 10080)
             if f.name in ("emotion_quiet_start_hour", "emotion_quiet_end_hour"):
                 item.update(min=0, max=23)
+            if f.name == "recovery_max_minutes":
+                item.update(min=1, max=1440)
+            if f.name in ("energy_reply_cost", "energy_fatigue_per_minute",
+                          "energy_recovery_per_minute"):
+                item.update(min=0, max=100)
+            if f.name in IMAGE_REFUSAL_FIELDS:
+                item.update(min=0, max=100, step=1, unit="%")
             result_fields.append(item)
         return {
             "revision": self.config_revision, "source": "AstrBot native plugin configuration",
@@ -812,9 +826,8 @@ class Console:
                       "cycle_kind": night.cycle_kind, "lie_in_minutes": night.lie_in_minutes,
                       "reason": night_reason_text(night.reason_codes),
                       # 清醒线与当前是否算「睡够了」，供长夜页直接画分界线。
-                      "comfort_percent": float(getattr(self.config, "energy_comfort_percent", 80)),
-                      "rested": night.energy >= float(
-                          getattr(self.config, "energy_comfort_percent", 80)),
+                      "comfort_percent": 20.0,
+                      "rested": night.energy > 20.0,
                       "wake_replies_used": getattr(night, "wake_replies_used", 0),
                       "wake_reply_limit": getattr(night, "wake_reply_limit", 0),
                       "schedule": {
@@ -1211,7 +1224,8 @@ class Console:
                     "description": row["description"],
                     "status": row["status"],
                     "bucket_label": row.get("bucket") or "",
-                    "eta_seconds": max(0, int(row["due_at"] - now)),
+                    "eta_seconds": None if row["status"] == "waiting" else max(0, int(row["due_at"] - now)),
+                    "reason": row.get("last_error", ""),
                     "advance_count": int(row.get("advance_count") or 0),
                 })
         import logging
