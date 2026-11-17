@@ -3,7 +3,7 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "test": "node --test model.test.mjs",
+    "test": "node --test model.test.mjs draft.test.mjs",
     "fixture:native": "../../.venv/bin/python export-native-dto.py",
     "test:browser": "node browser.test.mjs",
     "preview": "node server.mjs"

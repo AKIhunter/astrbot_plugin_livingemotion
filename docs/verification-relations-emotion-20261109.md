@@ -95,7 +95,6 @@ UI 源文件和原生 DTO 来源哈希检查均通过。200 节点交互准备�
 不将显示正常解释为生产模型分析已恢复。梦境本轮未再次生成，真实 QQ 发送未执行。
 
 日记完成后再次核对生产源哈希、资源、状态、服务、配置与 SQLite，全部通过。
-详细报告：
-[线上部署与复验](file:///Users/bytedance/Desktop/bot_manager/LivingEmotion-线上部署与日记情绪复验-20261109.md)。
+详细运维记录单独留存；公开验收流程见[部署与复验说明](delivery-notes.md)。
 生产备份位于 `/var/lib/astrbot/backups/livingemotion-relations-20261109-7a9bc9d6/`；
 原始无正文证据位于 `/tmp/livingemotion-daily-20261109/production-current/`。

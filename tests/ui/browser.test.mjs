@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import os from "node:os";
 import { startServer } from "./server.mjs";
-import { ATTACK, nativeDTOEvidence } from "./fixtures.mjs";
+import { ATTACK, nativeDTO, nativeDTOEvidence } from "./fixtures.mjs";
 
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
@@ -36,7 +36,7 @@ for (const name of ["index.html", "theme.js", "style.css", "app.mjs", "api.mjs",
   const source = await readFile(new URL(`../../pages/livingemotion/${name}`, import.meta.url));
   report.source_sha256[name] = createHash("sha256").update(source).digest("hex");
 }
-const navigation = ["overview", "persona", "emotion", "relationships", "behavior", "night", "experience", "memory", "settings"];
+const navigation = ["overview", "persona", "relationships", "behavior", "night", "experience", "memory", "settings"];
 async function open(scenario = "normal", options = {}, init) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, colorScheme: "light", reducedMotion: "reduce", ...options });
   if (init) await context.addInitScript(init);
@@ -55,7 +55,8 @@ async function open(scenario = "normal", options = {}, init) {
 }
 async function section(page, name) {
   await page.locator(`[data-section="${name}"]`).click();
-  if (["emotion", "behavior", "experience"].includes(name)) await page.locator("#record-body[aria-busy=false]").waitFor();
+  if (name === "behavior") await page.locator("#behavior-outcome[aria-busy=false]").waitFor();
+  if (name === "experience") await page.locator("#record-body[aria-busy=false]").waitFor();
   if (name === "relationships") await page.locator("#relationship-body[aria-busy=false]").waitFor();
   if (name === "night") await page.locator("#energy-body[aria-busy=false]").waitFor();
 }
@@ -71,7 +72,7 @@ async function revealField(page, key) {
 }
 async function caseRun(name, task) {
   try { await task(); report.cases.push({ name, passed: true }); console.log(`通过：${name}`); }
-  catch (error) { report.cases.push({ name, passed: false, error: error.message }); console.error(`失败：${name}：${error.message}`); }
+  catch (error) { report.cases.push({ name, passed: false, error: error.message }); console.error(`失败：${name}：${error.stack}`); }
 }
 async function shot(page, name) {
   await page.screenshot({ path: fileURLToPath(new URL(name, evidence)), fullPage: !name.includes("settings") });
@@ -140,7 +141,7 @@ function inspectContrast() {
 }
 
 try {
-  await caseRun("双主题 × 390/1280 × 九区布局、正文与控件对比度", async () => {
+  await caseRun("双主题 × 390/1280 × 八区布局、正文与控件对比度", async () => {
     for (const width of [1280, 390]) {
       const { context, page } = await open("normal", { viewport: { width, height: width === 390 ? 844 : 900 } });
       for (const theme of ["light", "dark"]) {
@@ -152,11 +153,12 @@ try {
             navigationCount: document.querySelectorAll("[data-section]").length,
             unnamed: [...document.querySelectorAll("button")].filter(button => button.checkVisibility() && !button.textContent.trim() && !button.getAttribute("aria-label")).length,
             small: [...document.querySelectorAll("button,input,select,summary")].filter(element => element.checkVisibility() &&
-              element.getAttribute("type") !== "checkbox" && element.getBoundingClientRect().height < 43).length,
+              element.getAttribute("type") !== "checkbox" &&
+              element.getBoundingClientRect().height < (element.matches(".help-button") ? 18 : 24) - 1).length,
           }));
           report.layouts.push({ width, theme, section: name, ...metrics });
           assert.ok(metrics.scrollWidth <= width, `${width}/${theme}/${name} 页面横向溢出`);
-          assert.equal(metrics.unnamed, 0); assert.equal(metrics.small, 0); assert.equal(metrics.navigationCount, 9);
+          assert.equal(metrics.unnamed, 0); assert.equal(metrics.small, 0); assert.equal(metrics.navigationCount, navigation.length);
           const contrast = await page.evaluate(inspectContrast);
           report.contrast.push({ width, theme, section: name, ...contrast });
           assert.ok(contrast.textMin >= 4.5, `${theme}/${name} 正文对比度 ${contrast.textMin} ${JSON.stringify(contrast.failures)}`);
@@ -164,7 +166,6 @@ try {
           assert.ok(contrast.focusMin >= 3, `${theme}/${name} 焦点对比度 ${contrast.focusMin}`);
           if (name === "overview") await shot(page, `${width}-${theme}-overview.png`);
           if (["relationships", "night", "settings"].includes(name)) await shot(page, `${width}-${theme}-${name}.png`);
-          if (name === "emotion" && width === 390) await shot(page, `${width}-${theme}-emotion.png`);
         }
       }
       await context.close();
@@ -197,10 +198,10 @@ try {
   });
   await caseRun("每页10条、分页与刷新保留、主题不改业务或触发请求", async () => {
     const { context, page } = await open();
-    await section(page, "emotion");
+    await section(page, "experience");
     assert.equal(await page.locator("#record-body > article").count(), 10);
     await page.locator("#record-body").getByRole("button", { name: "下一页" }).click();
-    await page.locator('[data-record-id="fixture-emotion-11"]').waitFor();
+    await page.locator('[data-record-id="fixture-diary-11"]').waitFor();
     assert.equal(await page.evaluate(() => document.activeElement.textContent), "下一页");
     const count = await page.locator("#record-body > article").count();
     assert.equal(count, 10);
@@ -209,20 +210,19 @@ try {
     const after = await page.evaluate(() => ({ calls: window.__fixture.calls.length, config: window.__fixture.state.config }));
     assert.deepEqual(after, before);
     await page.reload(); await page.locator("#record-body[aria-busy=false]").waitFor();
-    assert.equal(await page.locator('[data-record-id="fixture-emotion-11"]').count(), 1);
+    assert.equal(await page.locator('[data-record-id="fixture-diary-11"]').count(), 1);
     assert.equal(await page.locator("#record-body > article").count(), count);
     assert.equal(await page.locator("#record-body details[open]").count(), 0);
     await context.close();
   });
   await caseRun("原生配置草稿、409冲突复核、保存仅发patch与版本", async () => {
-    const { context, page } = await open("conflict");
+    const { context, page } = await open("save-race");
     await section(page, "settings");
-    await page.getByLabel("工作模式", { exact: true }).selectOption("active");
-    await page.locator("#change-reason").fill("合成验证：切换模式");
+    await page.locator("#config-home_city").fill("深圳");
     await page.locator('[data-theme-choice="dark"]').click();
-    assert.equal(await page.getByLabel("工作模式", { exact: true }).inputValue(), "active");
+    assert.equal(await page.locator("#config-home_city").inputValue(), "深圳");
     await page.locator("#refresh").click(); await page.locator("#content[aria-busy=false]").waitFor();
-    assert.equal(await page.getByLabel("工作模式", { exact: true }).inputValue(), "active");
+    assert.equal(await page.locator("#config-home_city").inputValue(), "深圳");
     await page.locator("#save").click();
     await page.locator("#rebase").waitFor();
     assert.equal(await page.locator("#save").isDisabled(), true);
@@ -231,17 +231,16 @@ try {
     await page.getByText("已保存到原生配置。", { exact: true }).waitFor();
     const writes = await page.evaluate(() => window.__fixture.calls.filter(call => call.path === "console/config"));
     assert.equal(writes.length, 2);
-    assert.equal(writes[0].payload.expected_revision, "config-1");
-    assert.equal(writes[1].payload.expected_revision, "config-2");
-    assert.deepEqual(writes[1].payload.patch, { mode: "active" });
+    assert.equal(writes[0].payload.expected_revision, nativeDTO.config.revision);
+    assert.equal(writes[1].payload.expected_revision, "race-2");
+    assert.deepEqual(writes[1].payload.patch, { home_city: "深圳" });
+    assert.equal(writes[1].payload.reason, "控制台保存配置");
     assert.equal(await page.locator("#editor").isVisible(), false);
     await context.close();
   });
   await caseRun("键盘导航、模拟零发送、单次操作与unknown不重试", async () => {
     const { context, page } = await open("action-unknown");
-    await page.locator("#view-scope").selectOption("private");
-    await page.locator("#content[aria-busy=false]").waitFor();
-    await page.keyboard.press("Tab");
+    await page.locator(".skip-link").focus();
     assert.equal(await page.evaluate(() => document.activeElement.className), "skip-link");
     await page.keyboard.press("Enter");
     assert.equal(await page.evaluate(() => document.activeElement.id), "main");
@@ -249,12 +248,16 @@ try {
     await page.keyboard.press("ArrowRight"); await page.keyboard.press("Enter");
     assert.equal(await page.locator("#section-title").textContent(), "人格");
     await section(page, "behavior");
-    await page.locator('[data-operation="preview"]').focus(); await page.keyboard.press("Enter");
-    await page.getByText("合成模拟内容", { exact: true }).waitFor();
+    await page.locator('[data-operation="behavior.simulate"]').focus(); await page.keyboard.press("Enter");
+    await page.locator("#simulation-emotion").selectOption("joy");
+    await page.locator("#behavior-simulation-dialog").getByRole("button", { name: "生成", exact: true }).click();
+    await page.locator("#behavior-simulation-dialog").waitFor({ state: "hidden" });
     const previewCalls = await page.evaluate(() => window.__fixture.calls.filter(call => call.method === "POST"));
     assert.deepEqual(previewCalls.map(call => call.path), ["console/behavior-simulate"]);
+    assert.equal(previewCalls[0].payload.emotion, "joy");
     assert.equal(await page.locator('[data-operation="behavior.send"]').isDisabled(), true);
     await section(page, "night");
+    await page.getByText("手动作息", { exact: true }).click();
     await page.locator('[data-operation="night.sleep"]').click();
     await page.getByText(/操作结果：结果不明/).waitFor();
     await page.locator("#refresh").click(); await page.locator("#content[aria-busy=false]").waitFor();
@@ -263,48 +266,36 @@ try {
     assert.equal(sends.length, 1); assert.equal(sends[0].payload.confirmed, true);
     await context.close();
   });
-  await caseRun("日记与梦境置顶保存、刷新回显和冲突不重试", async () => {
+  await caseRun("日记与梦境私人正文、展开状态刷新保留与零写入", async () => {
     const { context, page } = await open();
     await section(page, "experience");
     const first = page.locator("#record-body > article").first();
-    await first.getByText("阅读私人正文", { exact: true }).click();
-    await first.getByRole("button", { name: "置顶", exact: true }).click();
-    await page.getByText(/操作结果：已更新/).waitFor();
-    assert.equal(await first.getByRole("button", { name: "置顶", exact: true }).isDisabled(), true);
+    await first.locator("summary").click();
+    assert.ok((await first.locator(".paper-body").textContent()).length > 10);
     await page.locator("#refresh").click();
     await page.locator("#record-body[aria-busy=false]").waitFor();
     assert.equal(await first.locator("details").first().getAttribute("open"), "");
-    await first.getByRole("button", { name: "取消置顶", exact: true }).click();
-    await page.getByText(/操作结果：已更新/).waitFor();
-    const calls = await page.evaluate(() => window.__fixture.calls.filter(call => call.path === "console/action"));
-    assert.equal(calls.length, 2);
-    assert.deepEqual(calls.map(call => [call.payload.entry_id, call.payload.pinned, call.payload.expected_pinned]),
-      [["fixture-diary-1", true, false], ["fixture-diary-1", false, true]]);
-    assert.ok(calls.every(call => call.payload.context_id === "fixture-a" && call.payload.confirmed));
+    assert.equal(await first.locator("[data-pin-entry], button").count(), 0);
+    await page.getByRole("tab", { name: "梦境", exact: true }).click();
+    await page.locator("#record-body[aria-busy=false]").waitFor();
+    assert.equal(await page.locator("#record-body > article").count(), 10);
+    assert.equal(await page.evaluate(() => window.__fixture.calls.filter(call => call.method === "POST").length), 0);
     await context.close();
-    const conflict = await open("pin-conflict");
-    await section(conflict.page, "experience");
-    await conflict.page.locator("#record-body > article").first().getByText("阅读私人正文", { exact: true }).click();
-    await conflict.page.locator("[data-pin-entry]").first().click();
-    await conflict.page.getByText(/置顶已被修改/).waitFor();
-    assert.equal(await conflict.page.evaluate(() => window.__fixture.calls.filter(call => call.path === "console/action").length), 1);
-    await conflict.context.close();
   });
-  await caseRun("恶意文本仅作为文字、私人正文与四类来源分型", async () => {
+  await caseRun("恶意文本仅作为文字、私人正文不展示素材与置顶控件", async () => {
     const { context, page } = await open("malicious");
     assert.equal(await page.locator(".hero-value").textContent(), ATTACK);
     await section(page, "experience");
     const first = page.locator("#record-body > article").first();
-    await first.getByText("阅读私人正文", { exact: true }).click();
-    assert.equal(await first.locator(".body").first().textContent(), ATTACK);
-    await first.getByText("素材来源与角色", { exact: true }).click();
-    assert.equal(await first.getByText("我做的", { exact: true }).isVisible(), true);
-    assert.equal(await first.getByText("来源不明", { exact: true }).isVisible(), true);
+    await first.locator("summary").click();
+    assert.equal(await first.locator(".paper-body").textContent(), ATTACK);
+    assert.equal(await first.locator("[data-pin-entry], button").count(), 0);
+    assert.doesNotMatch(await first.textContent(), /素材来源与角色|fixture-human-1/);
     assert.equal(await page.locator("img").count(), 0);
     assert.equal(await page.evaluate(() => window.__injected === true), false);
-    await page.locator('[data-record-kind="dream"]').click();
+    await page.getByRole("tab", { name: "梦境", exact: true }).click();
     await page.locator("#record-body[aria-busy=false]").waitFor();
-    assert.equal(await page.getByText("梦境 · 想象，不是现实事实", { exact: true }).count(), 10);
+    assert.match(await page.locator("#content").textContent(), /梦境始终是想象/);
     await context.close();
   });
   await caseRun("缺失/非法数值、空记录、接口失败、缺bridge均不伪造状态", async () => {
@@ -312,23 +303,22 @@ try {
       const { context, page } = await open(scenario);
       if (scenario === "missing-state") {
         assert.equal(await page.locator(".hero-value").textContent(), "尚无 TA 状态");
-        await section(page, "emotion");
-        assert.equal(await page.getByText("只有对方观察，不能变成 TA 感受", { exact: true }).isVisible(), true);
+        assert.doesNotMatch(await page.locator(".hero").textContent(), /只有对方观察/);
       } else if (scenario === "invalid-numbers") {
-        assert.equal(await page.locator(".radar-current").count(), 0);
-        assert.equal(await page.locator(".radar-values dd").allTextContents().then(values => values.every(value => value === "未提供")), true);
+        assert.equal(await page.locator(".radar3d-figure").getAttribute("data-current-complete"), "false");
+        assert.equal(await page.locator(".radar3d-values dd").allTextContents().then(values => values.every(value => value.includes("未提供"))), true);
       } else if (scenario === "missing-bridge") {
         assert.match(await page.locator("#notice").textContent(), /missing_bridge/);
         assert.equal(await page.locator(".hero").count(), 0);
       } else if (scenario === "no-context") {
-        await section(page, "emotion");
+        await page.locator('[data-section="experience"]').click();
+        await page.locator("#record-body[aria-busy=false]").waitFor();
         assert.match(await page.locator("#record-body").textContent(), /没有已授权范围/);
       } else if (scenario === "malformed-optional") {
         await section(page, "settings");
-        assert.equal(await page.getByLabel("工作模式", { exact: true }).inputValue(), "observe_only");
+        assert.equal(await page.locator("#config-mode").inputValue(), "observe_only");
       } else {
-        await page.locator('[data-section="emotion"]').click();
-        await page.locator("#record-body[aria-busy=false]").waitFor();
+        await section(page, "experience");
         assert.equal(await page.locator("#record-body > article").count(), 0);
         assert.match(await page.locator("#record-body").textContent(), scenario === "empty" ? /暂无记录/ : /读取失败/);
       }
@@ -338,10 +328,10 @@ try {
   await caseRun("401/403及读取中认证失效清空私人视图与草稿", async () => {
     for (const scenario of ["unauthorized", "forbidden", "records-denied", "message-only-auth", "untyped-auth"]) {
       const { context, page } = await open(scenario);
-      if (scenario === "records-denied") await page.locator('[data-section="emotion"]').click();
+      if (scenario === "records-denied") await page.locator('[data-section="behavior"]').click();
       await page.getByText("私人内容已清空。请在 AstrBot 宿主重新登录并确认管理权限。", { exact: true }).waitFor();
       assert.equal(await page.locator(".hero").count(), 0);
-      assert.equal(await page.locator("#context").isDisabled(), true);
+      assert.equal(await page.locator("#context, #view-scope").count(), 0);
       assert.equal(await page.locator("#records > *").count(), 0);
       assert.equal(await page.locator("#settings > *").count(), 0);
       assert.equal(await page.locator("#editor").isVisible(), false);
@@ -363,18 +353,16 @@ try {
     for (const theme of ["light", "dark"]) {
       const { context, page } = await open("normal", { colorScheme: theme, viewport: { width: 390, height: 844 } });
       await section(page, "settings");
-      await page.getByLabel("工作模式", { exact: true }).selectOption("active");
+      await page.locator("#config-mode").selectOption("active");
       await measure(page, theme, "expanded-form-and-editor");
       await page.locator("#discard").click();
       await section(page, "experience");
       const first = page.locator("#record-body > article").first();
-      await first.getByText("阅读私人正文", { exact: true }).click();
-      await first.getByText("素材来源与角色", { exact: true }).click();
-      await measure(page, theme, "private-body-and-source");
+      await first.locator("summary").click();
+      await measure(page, theme, "private-body");
       await shot(page, `390-${theme}-private-reading.png`);
       await section(page, "night");
-      await page.locator("#view-scope").selectOption("private");
-      await page.locator("#content[aria-busy=false]").waitFor();
+      await page.getByText("手动作息", { exact: true }).click();
       await page.locator('[data-operation="night.sleep"]').click();
       await page.getByText(/操作结果：已完成/).waitFor();
       await measure(page, theme, "night-result");
@@ -387,8 +375,10 @@ try {
         const fixture = await open(scenario, { colorScheme: theme, viewport: { width: 390, height: 844 } });
         if (scenario === "refresh-error") {
           await fixture.page.locator("#refresh").click();
-          await fixture.page.getByText(/当前显示旧快照/).waitFor();
-        } else if (scenario !== "unauthorized") await section(fixture.page, "emotion");
+          await fixture.page.locator("#connection").filter({ hasText: "旧快照 · 写操作已停用" }).waitFor({ state: "attached" });
+          assert.match(await fixture.page.locator("#notice").textContent(), /合成刷新失败/);
+          assert.equal(await fixture.page.locator(".hero").count(), 1);
+        } else if (scenario !== "unauthorized") await section(fixture.page, "experience");
         await measure(fixture.page, theme, scenario);
         await fixture.context.close();
       }
@@ -404,13 +394,13 @@ try {
     await second.locator('html[data-le-theme="light"]').waitFor();
     await section(page, "settings");
     await revealField(page, "model_daily_limit");
-    await page.getByLabel("每日模型预算", { exact: true }).fill("1.5");
+    await page.locator("#config-model_daily_limit").fill("1.5");
     assert.equal(await page.locator("#save").isDisabled(), true);
     await section(page, "memory");
     assert.equal(await page.locator("#save").isDisabled(), true);
     await section(page, "settings"); await revealField(page, "model_daily_limit");
-    assert.equal(await page.getByLabel("每日模型预算", { exact: true }).inputValue(), "1.5");
-    await page.getByLabel("每日模型预算", { exact: true }).fill("50");
+    assert.equal(await page.locator("#config-model_daily_limit").inputValue(), "1.5");
+    await page.locator("#config-model_daily_limit").fill("50");
     assert.equal(await page.locator("#save").isDisabled(), false);
     await page.locator("#discard").click();
     await context.close();
@@ -428,7 +418,9 @@ try {
   await caseRun("真实Console样例、原生字段单位、float步进与一次保存刷新", async () => {
     const { context, page } = await open("native-dto");
     await section(page, "settings");
-    assert.equal(await page.locator("#settings [data-key]").count(), nativeDTOEvidence.field_count + 1);
+    // 关系阶段编辑器对同一个原生数组提供多个输入；按键覆盖核对，不能按控件个数计数。
+    const keys = await page.locator("#settings [data-key]").evaluateAll(fields => [...new Set(fields.map(field => field.dataset.key))].sort());
+    assert.deepEqual(keys, [...nativeDTO.config.fields, ...nativeDTO.config.readonly].map(field => field.key).sort());
     assert.equal(await page.locator("#config-energy_reply_cost").getAttribute("type"), "number");
     assert.equal(await page.locator("#config-energy_reply_cost").getAttribute("step"), "0.1");
     assert.equal(await page.locator("#config-energy_max").isDisabled(), true);
@@ -440,12 +432,12 @@ try {
     await page.locator("#config-energy_reply_cost").fill("4.1");
     await revealField(page, "provider_id");
     await page.locator("#config-provider_id").selectOption("fixture-chat");
-    await page.locator("#change-reason").fill("合成：原生DTO float与Provider");
     await page.locator("#save").click();
     await page.getByText("已保存到原生配置。", { exact: true }).waitFor();
     await page.reload(); await page.locator("#content[aria-busy=false]").waitFor();
     await revealField(page, "energy_reply_cost");
     assert.equal(await page.locator("#config-energy_reply_cost").inputValue(), "4.1");
+    await revealField(page, "provider_id");
     assert.equal(await page.locator("#config-provider_id").inputValue(), "fixture-chat");
     const names = await page.locator("#settings label").allTextContents();
     assert.ok(names.every(name => /[\u4e00-\u9fff]/.test(name)), "全部设置标签应为中文");
@@ -454,8 +446,8 @@ try {
   await caseRun("主动行为号码输入、下拉追加、节奏模型与保存回显", async () => {
     const { context, page } = await open();
     await section(page, "behavior");
-    assert.match(await page.locator("#content").textContent(), /随机等待 90–240 分钟/);
-    assert.match(await page.locator("#content").textContent(), /还在聊天，先不插话/);
+    assert.equal(await page.locator(".behavior-log-table tbody tr").count(), 10);
+    assert.equal(await page.locator("#behavior-log-query").isVisible(), true);
     await section(page, "settings");
     assert.equal(await page.locator("[data-autonomy-scope]").count(), 0);
     await revealField(page, "autonomy_qq_ids");
@@ -469,7 +461,6 @@ try {
     await page.locator("#config-behavior_random_max_minutes").fill("300");
     await revealField(page, "behavior_provider_id");
     await page.locator("#config-behavior_provider_id").selectOption("fixture-chat");
-    await page.locator("#change-reason").fill("仅合成：选择主动联系范围和节奏");
     await page.locator("#save").click();
     await page.getByText("已保存到原生配置。", { exact: true }).waitFor();
     const calls = await page.evaluate(() => window.__fixture.calls.filter(call => call.method === "POST"));
@@ -479,7 +470,9 @@ try {
     await revealField(page, "autonomy_qq_ids");
     assert.equal(await page.locator("#config-autonomy_qq_ids").inputValue(), "20002, 10001");
     assert.equal(await page.locator("#config-autonomy_qq_group_ids").inputValue(), "30003，40004");
+    await revealField(page, "behavior_style");
     assert.equal(await page.locator("#config-behavior_style").inputValue(), "gentle");
+    await revealField(page, "behavior_provider_id");
     assert.equal(await page.locator("#config-behavior_provider_id").inputValue(), "fixture-chat");
     await context.close();
   });
@@ -488,7 +481,9 @@ try {
     await section(page, "settings"); await revealField(page, "nap_start");
     assert.equal(await page.locator("#config-records").isVisible(), false);
     assert.equal(await page.locator('[data-settings-jump="night"]').getAttribute("aria-expanded"), "true");
-    assert.equal(await page.locator("#settings [data-config-help]").count(), nativeDTOEvidence.field_count + 1);
+    const helpKeys = await page.locator("#settings [data-config-help]").evaluateAll(fields => fields.map(field => field.dataset.configHelp));
+    assert.equal(new Set(helpKeys).size, helpKeys.length);
+    assert.ok(helpKeys.every(key => [...nativeDTO.config.fields, ...nativeDTO.config.readonly].some(field => field.key === key)));
     assert.equal(await page.locator("#config-night_block_chat,#config-sleep_at,#config-memory_mode,#config-autonomy_scopes").count(), 0);
     assert.equal(await page.locator("#config-nap_start").locator("xpath=..").getAttribute("data-level"), "2");
     const help = page.locator('[data-config-help="autonomy_qq_ids"]');
@@ -502,23 +497,21 @@ try {
     await page.locator("#config-autonomy_qq_ids").fill("bad");
     assert.equal(await page.locator("#save").isDisabled(), true);
     await page.locator("#config-autonomy_qq_ids").fill("12345678");
-    await section(page, "emotion");
+    await section(page, "overview");
     await section(page, "settings"); await revealField(page, "autonomy_qq_ids");
     assert.equal(await page.locator("#config-autonomy_qq_ids").inputValue(), "12345678");
     await page.locator('[data-settings-jump="memory"]').click();
     assert.equal(await page.locator('[data-settings-jump="memory"]').getAttribute("aria-expanded"), "true");
     await context.close();
   });
-  await caseRun("范围DTO、同人格共享开关与普通分区不出现配置", async () => {
+  await caseRun("全局人格视图、共享开关单次保存与普通分区不出现配置", async () => {
     const { context, page } = await open();
-    assert.equal(await page.locator("#view-scope").inputValue(), "global");
-    assert.equal(await page.locator("#context").isDisabled(), true);
+    assert.equal(await page.locator("#view-scope, #context, #change-reason").count(), 0);
     await section(page, "settings");
     await revealField(page, "persona_shared_state");
     await page.locator("#config-persona_shared_state").check();
     await revealField(page, "energy_reply_cost");
     await page.locator("#config-energy_reply_cost").fill("4.1");
-    await page.locator("#change-reason").fill("合成：共享状态与精力单次保存");
     await page.locator("#save").click();
     await page.getByText("已保存到原生配置。", { exact: true }).waitFor();
     const writes = await page.evaluate(() => window.__fixture.calls.filter(call => call.path === "console/config"));
@@ -529,37 +522,30 @@ try {
     assert.equal(await page.locator("#config-energy_reply_cost").inputValue(), "4.1");
     assert.equal(await page.locator("#config-persona_shared_state").isChecked(), true);
     await section(page, "overview");
-    assert.match(await page.locator(".hero").textContent(), /共享同一份人格情绪/);
+    assert.equal(await page.locator(".hero").count(), 1);
     assert.equal(await page.locator("#settings").isVisible(), false);
-    await page.locator("#view-scope").selectOption("private"); await page.locator("#content[aria-busy=false]").waitFor();
-    await page.locator("#context").selectOption("fixture-a"); await page.locator("#content[aria-busy=false]").waitFor();
-    assert.equal(await page.locator("#context").inputValue(), "fixture-a");
-    await page.locator("#view-scope").selectOption("group"); await page.locator("#content[aria-busy=false]").waitFor();
-    await page.locator("#context").selectOption("fixture-b"); await page.locator("#content[aria-busy=false]").waitFor();
-    assert.equal(await page.locator("#context").inputValue(), "fixture-b");
     await section(page, "persona");
     await page.locator("#persona-picker").selectOption("fixture-persona-b");
     await page.getByRole("button", { name: "应用", exact: true }).click(); await page.locator("#content[aria-busy=false]").waitFor();
     const last = await page.evaluate(() => window.__fixture.calls.filter(call => call.path === "console/state").at(-1));
-    assert.equal(last.payload.persona_id, "fixture-persona-b"); assert.equal(last.payload.view_scope, "group");
+    assert.equal(last.payload.persona_id, "fixture-persona-b"); assert.equal(last.payload.view_scope, "global");
     assert.equal(last.payload.context_id, undefined);
     await context.close();
   });
-  await caseRun("情绪仅查询emotion、真实baseline缺失不补，日梦二级键盘", async () => {
+  await caseRun("情绪球缺失基准不补造、TA不读日记与日梦二级键盘", async () => {
     const { context, page } = await open("missing-baseline");
-    assert.equal(await page.locator(".radar-baseline").count(), 0);
-    await section(page, "emotion");
-    assert.equal(await page.locator("#record-body").getByText(/日记/).count(), 0);
+    assert.equal(await page.locator(".radar3d-figure").getAttribute("data-baseline-complete"), "false");
+    assert.equal(await page.locator('[data-section="emotion"]').count(), 0);
     const recordCalls = await page.evaluate(() => window.__fixture.calls.filter(call => call.path === "console/records"));
-    assert.ok(recordCalls.every(call => call.payload.kind === "emotion"));
+    assert.equal(recordCalls.length, 0);
     await section(page, "experience");
-    await page.locator('[data-record-kind="diary"]').focus();
+    await page.getByRole("tab", { name: "日记", exact: true }).focus();
     await page.keyboard.press("ArrowRight");
     await page.locator("#record-body[aria-busy=false]").waitFor();
-    assert.equal(await page.locator('[data-record-kind="dream"]').getAttribute("aria-selected"), "true");
-    assert.equal(await page.evaluate(() => document.activeElement.dataset.recordKind), "dream");
+    assert.equal(await page.getByRole("tab", { name: "梦境", exact: true }).getAttribute("aria-selected"), "true");
+    assert.equal(await page.evaluate(() => document.activeElement.id), "experience-tab-dream");
     await page.keyboard.press("Home");
-    assert.equal(await page.locator('[data-record-kind="settings"]').getAttribute("aria-selected"), "true");
+    assert.equal(await page.getByRole("tab", { name: "设置", exact: true }).getAttribute("aria-selected"), "true");
     await context.close();
   });
   await caseRun("关系200裁剪、平台同号、键盘选择、拖动缩放暂停与搜索表10", async () => {
@@ -656,21 +642,22 @@ try {
     assert.match(await page.locator(".graph-detail").textContent(), /10001/);
     await page.locator("[data-relationship-id]").getByRole("button", { name: "编辑", exact: true }).click();
     await page.locator("#relationship-note").fill("仅合成备注");
-    await page.locator("#relationship-reason").fill("核对备注");
     await page.getByRole("button", { name: "保存基础信息" }).click();
     await page.locator("#relationship-body[aria-busy=false]").waitFor();
     await page.locator('.graph-person[data-node-id="fixture-persona/qq/10001"]').focus(); await page.keyboard.press("Enter");
     assert.match(await page.locator(".graph-detail").textContent(), /仅合成备注/);
     await context.close();
   });
-  await caseRun("情绪分析状态和发送用途凭据按真实字段展示", async () => {
+  await caseRun("发送日志只显示历史情绪、目标和正文，缺失快照不补当前情绪", async () => {
     const { context, page } = await open("model-diagnostics");
-    await section(page, "emotion");
-    assert.match(await page.locator('[data-model-diagnostic="emotion"]').textContent(), /变化也可能为零/);
     await section(page, "behavior");
-    assert.match(await page.locator('[data-model-diagnostic="behavior"]').textContent(), /尚未调用模型/);
-    assert.match(await page.locator("#record-body").textContent(), /结果不明，可能已经发送/);
-    assert.match(await page.locator("#record-body").textContent(), /醒后补答.*协议端已确认.*-123456/s);
+    const first = page.locator(".behavior-log-table tbody tr").first();
+    assert.equal(await first.locator("td").count(), 6);
+    assert.equal(await first.locator("td").nth(2).textContent(), "开心、兴奋");
+    assert.equal(await first.locator("td").nth(3).textContent(), "QQ号 10001");
+    assert.equal(await first.locator("td").nth(4).textContent(), "合成历史发送");
+    assert.equal(await first.locator("td").nth(5).textContent(), "true");
+    assert.equal(await page.locator(".behavior-log-table tbody tr").nth(1).locator("td").nth(2).textContent(), "未记录");
     assert.equal(await page.evaluate(() => window.__fixture.calls.filter(c => c.method === "POST").length), 0);
     await context.close();
   });
@@ -697,7 +684,6 @@ try {
     await page.locator("[data-relationship-id]").first().getByRole("button", { name: "编辑", exact: true }).click();
     await page.locator("#relationship-affinity").fill("61.1");
     await page.locator("#relationship-frozen").check();
-    await page.locator("#relationship-reason").fill("合成关系修正");
     await page.locator("#relationship-note").fill("合成备注");
     await page.getByRole("button", { name: "保存基础信息" }).click();
     await page.getByText(/关系版本已变化/).waitFor();
@@ -722,7 +708,7 @@ try {
     const { context, page } = await open("relationship-unknown");
     await section(page, "relationships");
     await page.locator("[data-relationship-id]").first().getByRole("button", { name: "编辑", exact: true }).click();
-    await page.locator("#relationship-reason").fill("合成unknown");
+    await page.locator("#relationship-note").fill("合成unknown");
     await page.getByRole("button", { name: "保存基础信息" }).click();
     await page.getByText(/已禁止重复提交/).waitFor();
     await section(page, "overview"); await section(page, "relationships");
@@ -767,16 +753,16 @@ try {
     assert.match(await page.locator(".energy-chart").textContent(), /18:00/);
     await context.close();
   });
-  await caseRun("本地预览入口、九区与三轴模块真实加载", async () => {
+  await caseRun("本地预览入口、八区与三轴模块真实加载", async () => {
     const preview = process.env.UI_PREVIEW_URL || url;
     const { context, page } = await open();
     await page.goto(preview); await page.locator("#content[aria-busy=false]").waitFor();
-    assert.equal(await page.locator("[data-section]").count(), 9);
+    assert.equal(await page.locator("[data-section]").count(), navigation.length);
     await section(page, "relationships");
     assert.equal(await page.locator(".graph-person").count(), 200);
     const entries = await page.evaluate(() => performance.getEntriesByType("resource").map(item => item.name));
-    assert.ok(entries.some(name => name.endsWith("/charts/relationships.mjs")));
-    assert.ok(entries.some(name => name.endsWith("/charts/force3d.mjs")));
+    assert.ok(entries.some(name => new URL(name).pathname.endsWith("/charts/relationships.mjs")));
+    assert.ok(entries.some(name => new URL(name).pathname.endsWith("/charts/force3d.mjs")));
     await context.close();
   });
   await caseRun("200节点1秒内交互、最多2秒布局、隐藏停止与按需模块", async () => {

@@ -1316,7 +1316,8 @@ function render(preserveSettings = false) {
   $("mode").textContent = modeLabel;
   $("mode").className = `status ${state.data.mode === "active" ? "good" : "warn"}`;
   $("mode").title = text(detail.reason_text, "");
-  if (preserveSettings && state.section === "settings") {
+  // 整页刷新后设置节点仍为空，必须先渲染；只有已挂载表单才保留草稿与焦点。
+  if (preserveSettings && state.section === "settings" && $("settings").childElementCount > 0) {
     syncSettingsValues($("settings"), state); updateControls(); return;
   }
   if (state.section === "behavior" && $("behavior-panel")?.dataset.persona ===

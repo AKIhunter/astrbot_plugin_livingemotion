@@ -14,8 +14,12 @@ const assets = new Map([
 export async function startServer(port = 0) {
   const template = await readFile(path.join(root, "pages/livingemotion/index.html"), "utf8");
   const fixture = template.replaceAll('src="./', 'src="/pages/livingemotion/').replaceAll('href="./', 'href="/pages/livingemotion/')
-    .replace('<script type="module" src="/pages/livingemotion/app.mjs">',
-      '<script type="module" src="/tests/ui/fixture-bridge.mjs"></script>\n  <script type="module" src="/pages/livingemotion/app.mjs">');
+    // 保留生产资源的缓存参数，只在合成页面的应用入口前注入测试桥。
+    .replace(/<script type="module" src="\/pages\/livingemotion\/app\.mjs(?:\?[^"]*)?">/,
+      match => `<script type="module" src="/tests/ui/fixture-bridge.mjs"></script>\n  ${match}`);
+  if (!fixture.includes('src="/tests/ui/fixture-bridge.mjs"')) {
+    throw new Error("Synthetic fixture bridge was not injected before the application");
+  }
   const server = http.createServer(async (request, response) => {
     const pathname = new URL(request.url, "http://127.0.0.1").pathname;
     response.setHeader("Cache-Control", "no-store");

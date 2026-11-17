@@ -41,6 +41,8 @@ export function makeState(contextId = "fixture-a") {
       diary: { status: "idle" }, dream: { status: "idle" },
       diary_enabled: false, dream_enabled: false, reason: "手动生成未配置模型，自动任务默认关闭。" },
     memory: { mode: "local_vector", provider: "待配置 embedding", can_read: false, can_write: false, capabilities: [], reason: "未配置原生向量模型；情绪与作息继续运行。" },
+    // 当前全局 DTO 的动作仍绑定具体会话，不能把空 context_id 当作发送目标。
+    action_target: { context_id: contextId, label: "合成会话" },
     actions: [
       { id: "night.sleep", enabled: true }, { id: "night.wake", enabled: true },
       { id: "diary.generate", enabled: false, reason: "未配置模型" }, { id: "dream.generate", enabled: false, reason: "未配置模型" },

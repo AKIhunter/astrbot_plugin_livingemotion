@@ -1,7 +1,7 @@
 // Generated from real Console; synthetic host, no model or sends.
 export const nativeDTO = {
   "config": {
-    "revision": "3a97bdc532db1eece287d8deed200726050525200876702c9afa31a42aec412e",
+    "revision": "cfbdfece39807601a8a6ef31d9f7483c3c6f31f4ebc571800f8bef39de8bff53",
     "source": "AstrBot native plugin configuration",
     "values": {
       "enabled": true,
@@ -9,6 +9,7 @@ export const nativeDTO = {
       "memory_read": false,
       "autonomy_enabled": false,
       "group_autonomy_enabled": false,
+      "proactive_native_yield": true,
       "emotion_model_enabled": false,
       "dream_enabled": false,
       "dream_theme_pool": "[\"赛博朋克\", \"绿野仙踪\", \"生活日常\", \"星际漫游\", \"海底王国\", \"古堡奇遇\", \"森林童话\", \"校园时光\", \"蒸汽幻想\", \"云端旅行\", \"四季庭院\", \"时光回廊\"]",
@@ -74,13 +75,24 @@ export const nativeDTO = {
       "lie_in_min_minutes": 0,
       "lie_in_max_minutes": 90,
       "wake_mode": "chat",
-      "wake_reply_limit": 3,
+      "wake_reply_limit": 10,
       "wake_window_minutes": 10,
-      "energy_reply_cost": 4.0,
-      "energy_fatigue_per_minute": 0.8,
-      "energy_recovery_per_minute": 1.5,
+      "energy_reply_cost": 2.0,
+      "energy_fatigue_per_minute": 0.5,
+      "energy_recovery_per_minute": 1.0,
+      "energy_daytime_recovery_enabled": false,
+      "recovery_follow_wake_at": true,
+      "recovery_max_minutes": 120,
       "catchup_enabled": true,
       "catchup_reply_enabled": true,
+      "promise_enabled": true,
+      "promise_max_active": 3,
+      "promise_max_depth": 3,
+      "promise_advance_limit": 3,
+      "promise_tick_seconds": 15,
+      "promise_trace_ttl_hours": 24.0,
+      "promise_recall_limit": 4,
+      "coupling_promise_actions": "auto",
       "closing_enabled": false,
       "closing_random": false,
       "closing_lead_minutes": 5,
@@ -89,12 +101,28 @@ export const nativeDTO = {
       "catchup_provider_id": "",
       "closing_provider_id": "",
       "home_city": "",
+      "weather_factor_enabled": true,
+      "weather_poll_seconds": 14400,
+      "weather_transition_seconds": 900,
+      "weather_weight_scale": 1.0,
+      "weather_stale_seconds": 7200,
+      "weather_forecast_days": 7,
+      "weather_forecast_refresh_seconds": 21600,
+      "weather_window_start_hour": 6,
+      "weather_window_end_hour": 1,
+      "weather_degrade_after_failures": 3,
+      "weather_recover_after_successes": 2,
       "embedding_provider_id": "",
       "livingmemory_enabled": false,
       "memory_write": false,
       "relationship_stage_names": "[\"反感\",\"陌生\",\"友好\",\"亲近\",\"独特\"]",
       "relationship_stage_descriptions": "[\"\",\"\",\"\",\"\"]",
       "relationship_special_description": "",
+      "relationship_image_refusal_averse": 90,
+      "relationship_image_refusal_unfamiliar": 60,
+      "relationship_image_refusal_friendly": 30,
+      "relationship_image_refusal_close": 10,
+      "relationship_image_refusal_unique": 5,
       "wake_autocatchup_enabled": true,
       "wake_greeting_enabled": true,
       "wake_greeting_texts": "刚醒，我看看之前你们说了什么。|我醒了，先把这几小时翻一翻。|醒了…看看都说了什么。",
@@ -173,6 +201,19 @@ export const nativeDTO = {
         "help": "允许在已授权的群聊主动发言。",
         "details": "群聊总开关独立于私聊；关闭时即使填了群号也不主动发送，不向群聊分享私聊情绪或私有记忆。",
         "example": "只希望主动私聊：保持关闭，群号可留空。",
+        "parent": "autonomy_enabled",
+        "level": 1
+      },
+      {
+        "key": "proactive_native_yield",
+        "label": "宿主主动聊天时让行",
+        "section": "behavior",
+        "value": true,
+        "type": "boolean",
+        "advanced": false,
+        "help": "检测到宿主主动聊天时让行。",
+        "details": "只读宿主任务表，不修改、不删除任何任务；让行只作用于随机主动行为，承诺兑现、晚安与补课不受影响。关掉宿主那条任务后，最长5分钟自动恢复接管。",
+        "example": "宿主里还留着「主动找主人聊话题」时保持开启，避免同一时段各说一次。",
         "parent": "autonomy_enabled",
         "level": 1
       },
@@ -407,6 +448,8 @@ export const nativeDTO = {
         "value": false,
         "type": "boolean",
         "advanced": false,
+        "subsection": "schedule",
+        "subsection_label": "作息时间",
         "help": "自动按作息维护睡眠周期。",
         "details": "启用前填写时区；自动作息与允许睡眠分别控制时间记录和聊天阻断。旧配置保持原行为，直至完成新规则迁移。",
         "example": "时区Asia/Shanghai，夜间23:30、沉睡02:30、基础起床08:00。",
@@ -420,6 +463,8 @@ export const nativeDTO = {
         "value": "08:00",
         "type": "string",
         "advanced": false,
+        "subsection": "schedule",
+        "subsection_label": "作息时间",
         "help": "未加赖床时间的基础起床时刻。",
         "details": "每个夜晚只抽取一次赖床值并保存；刷新页面不会重新抽取，实际起床可能更晚。",
         "example": "08:00、赖床0–90分钟，实际起床在08:00至09:30。",
@@ -716,9 +761,9 @@ export const nativeDTO = {
         "value": 2,
         "type": "integer",
         "advanced": false,
-        "help": "每个睡眠周期的梦境尝试上限。",
-        "details": "范围1–2；所有尝试计入本周期额度，失败不会让额度无限恢复。",
-        "example": "1表示每晚最多尝试一次梦境。",
+        "help": "每个睡眠周期成功保存的梦境上限。",
+        "details": "范围1–2；每篇最多3次自动尝试，失败仍计入模型预算；结果不明不自动重发。",
+        "example": "1表示每晚最多保存一篇，明确失败时最多尝试3次。",
         "parent": "dream_enabled",
         "level": 1,
         "step": 1,
@@ -776,11 +821,13 @@ export const nativeDTO = {
         "value": 2000,
         "type": "integer",
         "advanced": false,
-        "help": "一篇日记或梦境的字数上限。",
-        "details": "范围1–8000字符，用于限制生成记录体积；Token预算另行限制。",
-        "example": "2000限制每篇正文最多约2000字符。",
+        "help": "一篇日记或梦境的正文上限。",
+        "details": "范围1–2000字符；日期、天气和标题另计。旧版超过2000的设置升级后按2000执行。",
+        "example": "2000允许正文最多2000字符。",
         "parent": "emotion_model_enabled",
         "level": 1,
+        "min": 1,
+        "max": 2000,
         "step": 1,
         "unit": "次"
       },
@@ -927,9 +974,9 @@ export const nativeDTO = {
         "value": 1024,
         "type": "integer",
         "advanced": true,
-        "help": "每次后台任务请求的输出Token上限。",
-        "details": "范围1–8192；部分主动行为会采用更小的内部上限，以控制长度和打扰。",
-        "example": "1024可用于日记；主动消息仍会更简短。",
+        "help": "普通后台任务的输出Token上限。",
+        "details": "范围1–8192；日记/梦境独立使用8192 Token，正文最多2000字；路由上游输出限制仍生效。",
+        "example": "1024控制普通后台任务，不限制日记和梦境正文。",
         "parent": "emotion_model_enabled",
         "level": 1,
         "step": 1,
@@ -1045,6 +1092,8 @@ export const nativeDTO = {
         "value": true,
         "type": "boolean",
         "advanced": false,
+        "subsection": "schedule",
+        "subsection_label": "作息时间",
         "help": "允许睡眠状态影响聊天可用性。",
         "details": "关闭后继续记录精力，但不因睡眠阻断聊天；开启时还需自动作息和相应规则生效。",
         "example": "希望夜里仍随时回复：关闭；希望有真实作息：开启。",
@@ -1058,6 +1107,8 @@ export const nativeDTO = {
         "value": true,
         "type": "boolean",
         "advanced": false,
+        "subsection": "schedule",
+        "subsection_label": "作息时间",
         "help": "启用午休时间段。",
         "details": "与午休开始和结束配合；允许睡眠关闭时仍不阻断聊天。",
         "example": "开启并设置13:00至14:30。",
@@ -1071,6 +1122,8 @@ export const nativeDTO = {
         "value": "13:00",
         "type": "string",
         "advanced": false,
+        "subsection": "schedule",
+        "subsection_label": "作息时间",
         "help": "午休的开始时间。",
         "details": "本地24小时HH:MM；必须与午休结束不同，支持跨午夜但一般使用白天。",
         "example": "13:00表示下午一点开始午休。",
@@ -1084,6 +1137,8 @@ export const nativeDTO = {
         "value": "14:30",
         "type": "string",
         "advanced": false,
+        "subsection": "schedule",
+        "subsection_label": "作息时间",
         "help": "午休的结束时间。",
         "details": "与午休开始配对，实际可用性还受精力和其他作息状态影响。",
         "example": "14:30表示下午两点半结束午休。",
@@ -1097,9 +1152,11 @@ export const nativeDTO = {
         "value": "23:30",
         "type": "string",
         "advanced": false,
-        "help": "夜间疲劳与睡眠周期的起点。",
-        "details": "从此时开始夜间阶段；恍惚转困时间取起点与沉睡时间之间的中点。",
-        "example": "23:30起点、02:30沉睡，则次日01:00转困。",
+        "subsection": "schedule",
+        "subsection_label": "作息时间",
+        "help": "夜间疲劳消耗的起点。",
+        "details": "不按时间中点转困；>20%清醒、0%＜精力≤20%恍惚、0%困。",
+        "example": "00:00起点、02:30沉睡、0.5点/分钟，无回复时满精力降至25%。",
         "parent": "night_schedule_enabled",
         "level": 1
       },
@@ -1110,6 +1167,8 @@ export const nativeDTO = {
         "value": "07:00",
         "type": "string",
         "advanced": false,
+        "subsection": "schedule",
+        "subsection_label": "作息时间",
         "help": "夜间疲劳消耗的结束时间。",
         "details": "停止这一段疲劳消耗，不代表可以退出沉睡；基础起床加本周期赖床值决定实际起床。",
         "example": "07:00停止疲劳消耗，但08:00起床配置仍有效。",
@@ -1123,6 +1182,8 @@ export const nativeDTO = {
         "value": "02:30",
         "type": "string",
         "advanced": false,
+        "subsection": "schedule",
+        "subsection_label": "作息时间",
         "help": "进入沉睡的时间。",
         "details": "须位于夜间起点与基础起床之间，支持跨午夜；本地HH:MM，宿主校验时间顺序。",
         "example": "23:30→02:30→08:00合法；沉睡09:00会被拒绝。",
@@ -1136,6 +1197,8 @@ export const nativeDTO = {
         "value": 0,
         "type": "integer",
         "advanced": false,
+        "subsection": "schedule",
+        "subsection_label": "作息时间",
         "help": "本周期赖床的最少分钟数。",
         "details": "可设0；最少不得大于最多，实际抽取结果在本周期内固定。",
         "example": "0至30，允许准时起床或赖床最多半小时。",
@@ -1151,6 +1214,8 @@ export const nativeDTO = {
         "value": 90,
         "type": "integer",
         "advanced": false,
+        "subsection": "schedule",
+        "subsection_label": "作息时间",
         "help": "本周期赖床的最多分钟数。",
         "details": "范围0–1440分钟；与最少值组成随机区间，不是每次刷新重抽。",
         "example": "最少15、最多45，基础08:00则08:15至08:45起床。",
@@ -1166,6 +1231,8 @@ export const nativeDTO = {
         "value": "chat",
         "type": "enum",
         "advanced": false,
+        "subsection": "wake",
+        "subsection_label": "聊天唤醒",
         "help": "谁可以通过聊天叫醒 TA。",
         "details": "仅私聊、不允许唤醒、私聊或群聊原生@Bot；普通文本里的@名字不等于原生提及。",
         "example": "不想群聊打断睡眠：选“仅私聊”。",
@@ -1190,12 +1257,14 @@ export const nativeDTO = {
         "key": "wake_reply_limit",
         "label": "唤醒回复轮数",
         "section": "night",
-        "value": 3,
+        "value": 10,
         "type": "integer",
         "advanced": false,
+        "subsection": "wake",
+        "subsection_label": "聊天唤醒",
         "help": "一次聊天唤醒可用的回复尝试数。",
-        "details": "范围1–100；生成失败也计入，窗口时间到达同样停止。",
-        "example": "3轮、10分钟，最多尝试3次并且不超过窗口。",
+        "details": "范围1–100；生成失败也计入；结束后>20%清醒、0%＜精力≤20%恍惚、0%困。",
+        "example": "10轮表示最多尝试10次，仍受时间窗口限制。",
         "parent": "night_schedule_enabled",
         "level": 1,
         "step": 1,
@@ -1208,6 +1277,8 @@ export const nativeDTO = {
         "value": 10,
         "type": "integer",
         "advanced": false,
+        "subsection": "wake",
+        "subsection_label": "聊天唤醒",
         "help": "一次聊天唤醒的最长窗口。",
         "details": "范围1–1440分钟，从第一次宿主提交开始固定计算，后续消息不无限延长。",
         "example": "10表示叫醒后最多维持10分钟的回复窗口。",
@@ -1220,46 +1291,107 @@ export const nativeDTO = {
         "key": "energy_reply_cost",
         "label": "每次回复精力消耗",
         "section": "night",
-        "value": 4.0,
+        "value": 2.0,
         "type": "float",
         "advanced": false,
-        "help": "每次可见回复消耗的精力点数。",
-        "details": "总精力固定100；数值0–100，步进0.1，每次可见回复只记一次。",
-        "example": "4.0表示一条实际回复消耗4点。",
+        "subsection": "energy",
+        "subsection_label": "精力与清醒",
+        "help": "每次宿主提交回复消耗的精力点数。",
+        "details": "总精力固定100；数值0–100，步进0.1；同一回复只记一次，提交不代表送达。",
+        "example": "2.0表示一次最终回复提交消耗2点。",
         "parent": "night_schedule_enabled",
         "level": 1,
         "step": 0.1,
-        "unit": "点/次"
+        "unit": "点/次",
+        "min": 0,
+        "max": 100
       },
       {
         "key": "energy_fatigue_per_minute",
         "label": "疲劳精力消耗速率",
         "section": "night",
-        "value": 0.8,
+        "value": 0.5,
         "type": "float",
         "advanced": false,
-        "help": "清醒疲劳阶段每分钟消耗精力。",
-        "details": "数值0–100，步进0.1；只在适用疲劳状态消耗，不将子项相加冒充总变化。",
-        "example": "0.8表示适用状态持续10分钟约消耗8点。",
+        "subsection": "energy",
+        "subsection_label": "精力与清醒",
+        "help": "夜间疲劳时段未睡眠时每分钟消耗精力。",
+        "details": "数值0–100，步进0.1；小憩和沉睡只恢复，白天未睡眠是否回血由“白天自动恢复精力”控制。",
+        "example": "0.5表示夜间未睡眠持续10分钟消耗5点。",
         "parent": "night_schedule_enabled",
         "level": 1,
         "step": 0.1,
-        "unit": "点/分钟"
+        "unit": "点/分钟",
+        "min": 0,
+        "max": 100
       },
       {
         "key": "energy_recovery_per_minute",
         "label": "精力恢复速率",
         "section": "night",
-        "value": 1.5,
+        "value": 1.0,
         "type": "float",
         "advanced": false,
-        "help": "睡眠或非疲劳阶段每分钟恢复精力。",
-        "details": "数值0–100，步进0.1；实际恢复受阶段和总上限100限制。",
-        "example": "1.5表示适用状态10分钟约恢复15点，上限100。",
+        "subsection": "energy",
+        "subsection_label": "精力与清醒",
+        "help": "睡眠恢复速度，也用于开启后的白天自动恢复。",
+        "details": "数值0–100，步进0.1；默认只在小憩、沉睡时恢复。在本区开启“白天自动恢复精力”后，非疲劳时段未睡眠也使用此速度；固定沉睡结束恢复100%。",
+        "example": "1.0表示10分钟恢复10点，上限100。",
         "parent": "night_schedule_enabled",
         "level": 1,
         "step": 0.1,
-        "unit": "点/分钟"
+        "unit": "点/分钟",
+        "min": 0,
+        "max": 100
+      },
+      {
+        "key": "energy_daytime_recovery_enabled",
+        "label": "白天自动恢复精力",
+        "section": "night",
+        "value": false,
+        "type": "boolean",
+        "advanced": false,
+        "subsection": "energy",
+        "subsection_label": "精力与清醒",
+        "help": "关闭：白天未睡眠不回血；开启：按本区“每分钟恢复”回血。",
+        "details": "白天指“作息时间”中夜间疲劳时段之外；开启后清醒、恍惚、困也恢复，速度在本区“每分钟恢复”设置。小憩和沉睡恢复不受此开关影响。",
+        "example": "默认关闭；开启且恢复速度1.0时，白天10分钟恢复10点。",
+        "parent": "",
+        "level": 0
+      },
+      {
+        "key": "recovery_follow_wake_at",
+        "label": "补觉按起床时间截止",
+        "section": "night",
+        "value": true,
+        "type": "boolean",
+        "advanced": false,
+        "subsection": "energy",
+        "subsection_label": "精力与清醒",
+        "help": "开启：截止取下一次起床＋赖床；关闭：使用下方补觉时长。",
+        "details": "默认开启。在“设置→长夜→作息时间”调整基础起床和赖床；关闭后在本区“补觉最长时长”设置分钟数。恢复100%可提前结束，固定夜间沉睡优先。修改只影响新补觉周期，当前周期截止保持不变。",
+        "example": "开启：15:00补觉截止到次日08:00加赖床；关闭且时长120：最晚17:00结束。",
+        "parent": "",
+        "level": 0
+      },
+      {
+        "key": "recovery_max_minutes",
+        "label": "补觉最长时长",
+        "section": "night",
+        "value": 120,
+        "type": "integer",
+        "advanced": false,
+        "subsection": "energy",
+        "subsection_label": "精力与清醒",
+        "help": "仅关闭“补觉按起床时间截止”时使用，默认120分钟。",
+        "details": "在本区关闭“补觉按起床时间截止”后生效，范围1–1440分钟，整数。从补觉开始计算；恢复100%提前结束，到期按精力退出、不强制回满，重新计算30分钟静默。修改只影响新周期。",
+        "example": "120：15:00开始，最晚17:00退出；恢复速度0时仍会到期退出。",
+        "parent": "",
+        "level": 0,
+        "step": 1,
+        "unit": "分钟",
+        "min": 1,
+        "max": 1440
       },
       {
         "key": "catchup_enabled",
@@ -1268,6 +1400,8 @@ export const nativeDTO = {
         "value": true,
         "type": "boolean",
         "advanced": false,
+        "subsection": "catchup",
+        "subsection_label": "醒后补课",
         "help": "醒来后阅读已保存的未读消息。",
         "details": "从本插件有真实来源的未读归档读取；不等于访问平台全部历史，补答开关独立。",
         "example": "只希望醒后了解聊天：开启阅读、关闭历史补答。",
@@ -1281,11 +1415,143 @@ export const nativeDTO = {
         "value": true,
         "type": "boolean",
         "advanced": false,
+        "subsection": "catchup",
+        "subsection_label": "醒后补课",
         "help": "阅读未读后允许有限历史补答。",
         "details": "需要醒后阅读、可用模型和预算；生成与发送仍受身份及可用性检查。",
         "example": "阅读与补答同时开启，醒后可对仍有意义的未读内容补充回复。",
         "parent": "catchup_enabled",
         "level": 2
+      },
+      {
+        "key": "promise_enabled",
+        "label": "记住答应过的事",
+        "section": "promise",
+        "value": true,
+        "type": "boolean",
+        "advanced": false,
+        "help": "允许把对话里答应的事记成待办承诺。",
+        "details": "开启后，模型说过的承诺会落成可追踪条目，按轮次推进状态；关闭则完全不记，也不追问。",
+        "example": "开启：答应的事会被记住并在后续对话里推进；关闭：只当普通聊天，不留承诺。",
+        "parent": "",
+        "level": 0
+      },
+      {
+        "key": "promise_max_active",
+        "label": "同时追踪的承诺条数",
+        "section": "promise",
+        "value": 3,
+        "type": "integer",
+        "advanced": false,
+        "help": "同时追踪的承诺条数上限。",
+        "details": "范围1–20；超出后先丢弃最旧的低优先级条目，不会无限堆积。",
+        "example": "填3表示同时最多跟3件答应过的事。",
+        "parent": "promise_enabled",
+        "level": 1,
+        "step": 1,
+        "unit": "次"
+      },
+      {
+        "key": "promise_max_depth",
+        "label": "单条承诺最多拆几层",
+        "section": "promise",
+        "value": 3,
+        "type": "integer",
+        "advanced": false,
+        "help": "单条承诺允许推进的层数上限。",
+        "details": "范围1–10；防止一条承诺被反复拆解成子任务而无限展开。",
+        "example": "填3表示最多拆三层。",
+        "parent": "promise_enabled",
+        "level": 1,
+        "step": 1,
+        "unit": "次"
+      },
+      {
+        "key": "promise_advance_limit",
+        "label": "每轮最多推进几条",
+        "section": "promise",
+        "value": 3,
+        "type": "integer",
+        "advanced": false,
+        "help": "一轮对话里最多推进几条承诺。",
+        "details": "范围1–10；避免一次回复里连珠炮似地追问一堆事。",
+        "example": "填3表示每轮最多推进3条。",
+        "parent": "promise_enabled",
+        "level": 1,
+        "step": 1,
+        "unit": "次"
+      },
+      {
+        "key": "promise_tick_seconds",
+        "label": "承诺推进间隔",
+        "section": "promise",
+        "value": 15,
+        "type": "integer",
+        "advanced": false,
+        "help": "后台检查到期承诺的间隔。",
+        "details": "单位秒，范围15–600；到点会单独发消息，不并入下一轮回复。",
+        "example": "填15表示每15秒检查一次，2分钟的承诺通常几秒内发出。",
+        "parent": "promise_enabled",
+        "level": 1,
+        "step": 1,
+        "unit": "秒"
+      },
+      {
+        "key": "promise_trace_ttl_hours",
+        "label": "兑现片段保留时长",
+        "section": "promise",
+        "value": 24.0,
+        "type": "float",
+        "advanced": false,
+        "help": "兑现后片段缓存保留多久。",
+        "details": "范围1–168小时；期间用户追问直接读缓存，不再走向量检索；到期自动释放，追问回到正常检索。",
+        "example": "填24表示刚兑现的一天内，追问「刚才那张」能直接接上。",
+        "parent": "promise_enabled",
+        "level": 1,
+        "step": 0.1,
+        "unit": "次"
+      },
+      {
+        "key": "promise_recall_limit",
+        "label": "预取几条记忆材料",
+        "section": "promise",
+        "value": 4,
+        "type": "integer",
+        "advanced": false,
+        "help": "承诺落库时预取几条记忆材料。",
+        "details": "范围1–8；外部 LivingMemory 只接受真实事件授权，必须在消息刚提交时取，等到点再取会返回空。取不到时只用概要生成，不影响兑现。",
+        "example": "填4表示最多带4条相关材料进到期生成。",
+        "parent": "promise_enabled",
+        "level": 1,
+        "step": 1,
+        "unit": "次"
+      },
+      {
+        "key": "coupling_promise_actions",
+        "label": "承诺到点如何交付",
+        "section": "coupling",
+        "value": "auto",
+        "type": "enum",
+        "advanced": false,
+        "help": "承诺到点时怎么交付：并进下一轮回复，还是单独发一条。",
+        "details": "auto：检测到 LivingHello 且两侧都启用时走并轨——不单独发消息、不为兑现文案额外调模型，由对话里下一轮回复顺带交付（有图就发图），因此不会和被动回复出现两条一样的话；on：始终并轨；off：始终单独发送一条文字（这时可能与被动回复重复，属预期）。",
+        "example": "auto 适合长期使用；off 仅用于排查「承诺到底有没有到点」这类问题。",
+        "parent": "",
+        "level": 0,
+        "options": [
+          {
+            "value": "auto",
+            "label": "自动（跟随检测）"
+          },
+          {
+            "value": "on",
+            "label": "始终执行动作"
+          },
+          {
+            "value": "off",
+            "label": "始终只发文字"
+          }
+        ]
       },
       {
         "key": "closing_enabled",
@@ -1294,6 +1560,8 @@ export const nativeDTO = {
         "value": false,
         "type": "boolean",
         "advanced": false,
+        "subsection": "closing",
+        "subsection_label": "睡前晚安",
         "help": "允许睡前在近期参与的会话道晚安。",
         "details": "只考虑真实且近期参与过的会话；不是向所有好友群发，发送仍需守卫允许。",
         "example": "夜间23:30开始、提前5分钟，可在23:25附近评估晚安。",
@@ -1307,6 +1575,8 @@ export const nativeDTO = {
         "value": false,
         "type": "boolean",
         "advanced": false,
+        "subsection": "closing",
+        "subsection_label": "睡前晚安",
         "help": "使用模型生成睡前道别。",
         "details": "关闭时使用本地模板；开启时一次生成占用模型预算，不保证每次发送。",
         "example": "想减少模型调用：关闭；希望道别更有变化：开启。",
@@ -1320,6 +1590,8 @@ export const nativeDTO = {
         "value": 5,
         "type": "integer",
         "advanced": false,
+        "subsection": "closing",
+        "subsection_label": "睡前晚安",
         "help": "夜间起点前多久评估晚安。",
         "details": "范围0–60分钟，以疲劳开始时间为基准；调度间隔影响实际评估时刻。",
         "example": "起点23:30、提前5分钟，计划在23:25附近评估。",
@@ -1383,6 +1655,8 @@ export const nativeDTO = {
         "value": "",
         "type": "enum",
         "advanced": false,
+        "subsection": "catchup",
+        "subsection_label": "醒后补课",
         "help": "醒后补课与补答使用的模型。",
         "details": "留空跟随默认或会话模型，不会修改正常聊天所用模型。",
         "example": "未读较多时选支持较长上下文的已配置模型。",
@@ -1407,6 +1681,8 @@ export const nativeDTO = {
         "value": "",
         "type": "enum",
         "advanced": false,
+        "subsection": "closing",
+        "subsection_label": "睡前晚安",
         "help": "睡前道别专用模型。",
         "details": "只在随机生成道别启用且有预算时使用；留空沿用默认模型。",
         "example": "选择轻量模型生成一句简短晚安。",
@@ -1436,6 +1712,169 @@ export const nativeDTO = {
         "example": "填“上海”，同时将时区设为Asia/Shanghai。",
         "parent": "",
         "level": 0
+      },
+      {
+        "key": "weather_factor_enabled",
+        "label": "天气影响情绪",
+        "section": "emotion",
+        "value": true,
+        "type": "boolean",
+        "advanced": false,
+        "help": "天气作为本地权重因子影响情绪回落目标。",
+        "details": "本地定时轮询实况天气，不经大模型；只调整四维的回落目标，不改当前值、不落库，也不参与六情绪计算。关闭后天气只作为日记与梦境的背景文字。",
+        "example": "需要TA的心情随晴雨缓慢变化：开启；只想保留天气文字：关闭。",
+        "parent": "emotion_model_enabled",
+        "level": 1
+      },
+      {
+        "key": "weather_poll_seconds",
+        "label": "天气抓取间隔",
+        "section": "emotion",
+        "value": 14400,
+        "type": "integer",
+        "advanced": false,
+        "help": "天气轮询间隔。",
+        "details": "范围300–21600秒，默认3600即每小时一次；请求失败自动退避到60–300秒重试，不会形成重试风暴。",
+        "example": "3600每小时取一次实况。",
+        "parent": "emotion_model_enabled",
+        "level": 1,
+        "step": 1,
+        "unit": "秒"
+      },
+      {
+        "key": "weather_transition_seconds",
+        "label": "天气过渡时长",
+        "section": "emotion",
+        "value": 900,
+        "type": "integer",
+        "advanced": false,
+        "help": "天气权重切换的过渡时间。",
+        "details": "范围0–7200秒；天气从雨转晴时新权重按指数曲线逼近，避免整点跳变。0表示立即生效。",
+        "example": "900表示约15分钟平滑过渡。",
+        "parent": "emotion_model_enabled",
+        "level": 1,
+        "step": 1,
+        "unit": "秒"
+      },
+      {
+        "key": "weather_weight_scale",
+        "label": "天气影响强度",
+        "section": "emotion",
+        "value": 1.0,
+        "type": "float",
+        "advanced": false,
+        "help": "天气权重总倍率。",
+        "details": "范围0–3；1.0为标定值，0等于关闭影响（等价于 enabled=false），2.0加倍。只缩放四维回落目标的偏移，不改半衰期。",
+        "example": "觉得雨天的情绪影响太弱：调到1.5。",
+        "parent": "emotion_model_enabled",
+        "level": 1,
+        "step": 0.1,
+        "unit": "次"
+      },
+      {
+        "key": "weather_stale_seconds",
+        "label": "天气过期时间",
+        "section": "emotion",
+        "value": 7200,
+        "type": "integer",
+        "advanced": false,
+        "help": "天气权重的缓存保鲜期。",
+        "details": "范围300–86400秒；超过该时长没有成功取到天气，权重回落到中性，避免用两天前的晴天影响今天的情绪。",
+        "example": "7200表示两小时后失效。",
+        "parent": "emotion_model_enabled",
+        "level": 1,
+        "step": 1,
+        "unit": "秒"
+      },
+      {
+        "key": "weather_forecast_days",
+        "label": "预报天数",
+        "section": "emotion",
+        "value": 7,
+        "type": "integer",
+        "advanced": false,
+        "help": "一次预取的预报天数。",
+        "details": "范围1–16天；接口一次请求就能返回多天，实况请求失败时直接改用当天预报，不必回落到中性权重。",
+        "example": "7表示一次拿七天。",
+        "parent": "emotion_model_enabled",
+        "level": 1,
+        "step": 1,
+        "unit": "天"
+      },
+      {
+        "key": "weather_forecast_refresh_seconds",
+        "label": "预报刷新间隔",
+        "section": "emotion",
+        "value": 21600,
+        "type": "integer",
+        "advanced": false,
+        "help": "预报表刷新周期。",
+        "details": "范围600–86400秒，默认21600即6小时一次；预报比实况稳定，不会天天失败。",
+        "example": "21600一天最多刷新4次。",
+        "parent": "emotion_model_enabled",
+        "level": 1,
+        "step": 1,
+        "unit": "秒"
+      },
+      {
+        "key": "weather_window_start_hour",
+        "label": "抓取窗口开始",
+        "section": "emotion",
+        "value": 6,
+        "type": "integer",
+        "advanced": false,
+        "help": "天气抓取窗口的起点整点。",
+        "details": "本地时区，范围0–23；窗口外完全不发请求，夜间不打扰接口。",
+        "example": "填6表示06:00开始。",
+        "parent": "emotion_model_enabled",
+        "level": 1,
+        "step": 1,
+        "unit": "时"
+      },
+      {
+        "key": "weather_window_end_hour",
+        "label": "抓取窗口结束",
+        "section": "emotion",
+        "value": 1,
+        "type": "integer",
+        "advanced": false,
+        "help": "天气抓取窗口的终点整点。",
+        "details": "本地时区，范围0–23，可跨夜；与起点相同表示全天抓取。",
+        "example": "填1表示次日01:00结束。",
+        "parent": "emotion_model_enabled",
+        "level": 1,
+        "step": 1,
+        "unit": "时"
+      },
+      {
+        "key": "weather_degrade_after_failures",
+        "label": "连续失败降级阈值",
+        "section": "emotion",
+        "value": 3,
+        "type": "integer",
+        "advanced": false,
+        "help": "连续失败多少次后降级。",
+        "details": "范围1–10；降级后停止高频抓取，改为每天窗口起点只刷一次日粒度预报，用它保底，不再反复撞接口。",
+        "example": "填3表示连挂三次就改每日一次。",
+        "parent": "emotion_model_enabled",
+        "level": 1,
+        "step": 1,
+        "unit": "次"
+      },
+      {
+        "key": "weather_recover_after_successes",
+        "label": "恢复所需成功次数",
+        "section": "emotion",
+        "value": 2,
+        "type": "integer",
+        "advanced": false,
+        "help": "连续多少次日粒度成功才恢复高频。",
+        "details": "范围1–7；默认2天，避免刚恢复又撞墙。",
+        "example": "填2表示连续两天抓到预报后再试高频。",
+        "parent": "emotion_model_enabled",
+        "level": 1,
+        "step": 1,
+        "unit": "次"
       },
       {
         "key": "embedding_provider_id",
@@ -1527,12 +1966,99 @@ export const nativeDTO = {
         "level": 1
       },
       {
+        "key": "relationship_image_refusal_averse",
+        "label": "反感 · 生图婉拒概率",
+        "section": "relationship",
+        "value": 90,
+        "type": "integer",
+        "advanced": false,
+        "help": "反感阶段的个人生图及新图片承诺婉拒概率。",
+        "details": "在设置→关系填写0–100整数百分比；0不因关系随机拒绝，100必定婉拒。同一请求只判定一次，拒绝不登记待办；已有待办继续履行，情绪只影响语气。",
+        "example": "90表示90%婉拒概率；接受后仍需通过生图额度和服务检查。",
+        "parent": "",
+        "level": 0,
+        "step": 1,
+        "unit": "%",
+        "min": 0,
+        "max": 100
+      },
+      {
+        "key": "relationship_image_refusal_unfamiliar",
+        "label": "陌生 · 生图婉拒概率",
+        "section": "relationship",
+        "value": 60,
+        "type": "integer",
+        "advanced": false,
+        "help": "陌生阶段的个人生图及新图片承诺婉拒概率。",
+        "details": "在设置→关系填写0–100整数百分比；0不因关系随机拒绝，100必定婉拒。同一请求只判定一次，拒绝不登记待办；已有待办继续履行，情绪只影响语气。",
+        "example": "60表示60%婉拒概率；接受后仍需通过生图额度和服务检查。",
+        "parent": "",
+        "level": 0,
+        "step": 1,
+        "unit": "%",
+        "min": 0,
+        "max": 100
+      },
+      {
+        "key": "relationship_image_refusal_friendly",
+        "label": "友好 · 生图婉拒概率",
+        "section": "relationship",
+        "value": 30,
+        "type": "integer",
+        "advanced": false,
+        "help": "友好阶段的个人生图及新图片承诺婉拒概率。",
+        "details": "在设置→关系填写0–100整数百分比；0不因关系随机拒绝，100必定婉拒。同一请求只判定一次，拒绝不登记待办；已有待办继续履行，情绪只影响语气。",
+        "example": "30表示30%婉拒概率；接受后仍需通过生图额度和服务检查。",
+        "parent": "",
+        "level": 0,
+        "step": 1,
+        "unit": "%",
+        "min": 0,
+        "max": 100
+      },
+      {
+        "key": "relationship_image_refusal_close",
+        "label": "亲近 · 生图婉拒概率",
+        "section": "relationship",
+        "value": 10,
+        "type": "integer",
+        "advanced": false,
+        "help": "亲近阶段的个人生图及新图片承诺婉拒概率。",
+        "details": "在设置→关系填写0–100整数百分比；0不因关系随机拒绝，100必定婉拒。同一请求只判定一次，拒绝不登记待办；已有待办继续履行，情绪只影响语气。",
+        "example": "10表示10%婉拒概率；接受后仍需通过生图额度和服务检查。",
+        "parent": "",
+        "level": 0,
+        "step": 1,
+        "unit": "%",
+        "min": 0,
+        "max": 100
+      },
+      {
+        "key": "relationship_image_refusal_unique",
+        "label": "独特 · 生图婉拒概率",
+        "section": "relationship",
+        "value": 5,
+        "type": "integer",
+        "advanced": false,
+        "help": "独特阶段的个人生图及新图片承诺婉拒概率。",
+        "details": "在设置→关系填写0–100整数百分比；0不因关系随机拒绝，100必定婉拒。同一请求只判定一次，拒绝不登记待办；已有待办继续履行，情绪只影响语气。",
+        "example": "5表示5%婉拒概率；接受后仍需通过生图额度和服务检查。",
+        "parent": "",
+        "level": 0,
+        "step": 1,
+        "unit": "%",
+        "min": 0,
+        "max": 100
+      },
+      {
         "key": "wake_autocatchup_enabled",
         "label": "自然醒后主动补答",
         "section": "night",
         "value": true,
         "type": "boolean",
         "advanced": false,
+        "subsection": "catchup",
+        "subsection_label": "醒后补课",
         "help": "自然醒后是否主动爬楼补答。",
         "details": "只对这一段睡眠期确有未读的会话生效；没有未读就不读不发，也不会重复补答。",
         "example": "希望它醒来自己看看群里的消息：开启；只想被动等消息：关闭。",
@@ -1546,6 +2072,8 @@ export const nativeDTO = {
         "value": true,
         "type": "boolean",
         "advanced": false,
+        "subsection": "catchup",
+        "subsection_label": "醒后补课",
         "help": "爬楼前是否先发一句刚醒的招呼。",
         "details": "招呼只是一句话，用来交代「刚醒」；关闭后直接进入补答或继续安静。",
         "example": "不想它冒头时关闭。",
@@ -1559,6 +2087,8 @@ export const nativeDTO = {
         "value": "刚醒，我看看之前你们说了什么。|我醒了，先把这几小时翻一翻。|醒了…看看都说了什么。",
         "type": "string",
         "advanced": false,
+        "subsection": "catchup",
+        "subsection_label": "醒后补课",
         "help": "刚醒招呼的候选句子。",
         "details": "用竖线 | 分隔，每次随机取一条；留空则使用默认一句。",
         "example": "刚醒，我看看之前你们说了什么。|我醒了，先把这几小时翻一翻。",
@@ -1616,7 +2146,18 @@ export const nativeDTO = {
           "emotion_intensity",
           "model_input_tokens",
           "model_output_tokens",
-          "model_timeout_seconds"
+          "model_timeout_seconds",
+          "weather_factor_enabled",
+          "weather_poll_seconds",
+          "weather_transition_seconds",
+          "weather_weight_scale",
+          "weather_stale_seconds",
+          "weather_forecast_days",
+          "weather_forecast_refresh_seconds",
+          "weather_window_start_hour",
+          "weather_window_end_hour",
+          "weather_degrade_after_failures",
+          "weather_recover_after_successes"
         ]
       },
       {
@@ -1626,6 +2167,11 @@ export const nativeDTO = {
           "relationship_stage_names",
           "relationship_stage_descriptions",
           "relationship_special_description",
+          "relationship_image_refusal_averse",
+          "relationship_image_refusal_unfamiliar",
+          "relationship_image_refusal_friendly",
+          "relationship_image_refusal_close",
+          "relationship_image_refusal_unique",
           "relationship_edit_enabled"
         ]
       },
@@ -1635,6 +2181,7 @@ export const nativeDTO = {
         "field_keys": [
           "autonomy_enabled",
           "group_autonomy_enabled",
+          "proactive_native_yield",
           "autonomy_qq_ids",
           "autonomy_qq_group_ids",
           "muted_scopes",
@@ -1652,6 +2199,19 @@ export const nativeDTO = {
           "behavior_style",
           "behavior_emotional_share",
           "behavior_provider_id"
+        ]
+      },
+      {
+        "id": "promise",
+        "label": "承诺代办",
+        "field_keys": [
+          "promise_enabled",
+          "promise_max_active",
+          "promise_max_depth",
+          "promise_advance_limit",
+          "promise_tick_seconds",
+          "promise_trace_ttl_hours",
+          "promise_recall_limit"
         ]
       },
       {
@@ -1675,6 +2235,9 @@ export const nativeDTO = {
           "energy_reply_cost",
           "energy_fatigue_per_minute",
           "energy_recovery_per_minute",
+          "energy_daytime_recovery_enabled",
+          "recovery_follow_wake_at",
+          "recovery_max_minutes",
           "catchup_enabled",
           "catchup_reply_enabled",
           "closing_enabled",
@@ -1723,8 +2286,39 @@ export const nativeDTO = {
           "livingmemory_enabled",
           "memory_write"
         ]
+      },
+      {
+        "id": "coupling",
+        "label": "功能耦合",
+        "field_keys": [
+          "coupling_promise_actions"
+        ]
       }
     ],
+    "subsections": {
+      "night": [
+        {
+          "id": "schedule",
+          "label": "作息时间"
+        },
+        {
+          "id": "energy",
+          "label": "精力与清醒"
+        },
+        {
+          "id": "wake",
+          "label": "聊天唤醒"
+        },
+        {
+          "id": "catchup",
+          "label": "醒后补课"
+        },
+        {
+          "id": "closing",
+          "label": "睡前晚安"
+        }
+      ]
+    },
     "readonly": [
       {
         "key": "energy_max",
@@ -1735,6 +2329,8 @@ export const nativeDTO = {
         "unit": "点",
         "readonly": true,
         "section": "night",
+        "subsection": "energy",
+        "subsection_label": "精力与清醒",
         "parent": "night_schedule_enabled",
         "level": 1,
         "help": "总精力固定为100点。",
@@ -2011,7 +2607,7 @@ export const nativeDTO = {
     },
     "revision": "config-1",
     "config": {
-      "revision": "3a97bdc532db1eece287d8deed200726050525200876702c9afa31a42aec412e",
+      "revision": "cfbdfece39807601a8a6ef31d9f7483c3c6f31f4ebc571800f8bef39de8bff53",
       "source": "AstrBot native plugin configuration",
       "values": {
         "enabled": true,
@@ -2019,6 +2615,7 @@ export const nativeDTO = {
         "memory_read": false,
         "autonomy_enabled": false,
         "group_autonomy_enabled": false,
+        "proactive_native_yield": true,
         "emotion_model_enabled": false,
         "dream_enabled": false,
         "dream_theme_pool": "[\"赛博朋克\", \"绿野仙踪\", \"生活日常\", \"星际漫游\", \"海底王国\", \"古堡奇遇\", \"森林童话\", \"校园时光\", \"蒸汽幻想\", \"云端旅行\", \"四季庭院\", \"时光回廊\"]",
@@ -2084,13 +2681,24 @@ export const nativeDTO = {
         "lie_in_min_minutes": 0,
         "lie_in_max_minutes": 90,
         "wake_mode": "chat",
-        "wake_reply_limit": 3,
+        "wake_reply_limit": 10,
         "wake_window_minutes": 10,
-        "energy_reply_cost": 4.0,
-        "energy_fatigue_per_minute": 0.8,
-        "energy_recovery_per_minute": 1.5,
+        "energy_reply_cost": 2.0,
+        "energy_fatigue_per_minute": 0.5,
+        "energy_recovery_per_minute": 1.0,
+        "energy_daytime_recovery_enabled": false,
+        "recovery_follow_wake_at": true,
+        "recovery_max_minutes": 120,
         "catchup_enabled": true,
         "catchup_reply_enabled": true,
+        "promise_enabled": true,
+        "promise_max_active": 3,
+        "promise_max_depth": 3,
+        "promise_advance_limit": 3,
+        "promise_tick_seconds": 15,
+        "promise_trace_ttl_hours": 24.0,
+        "promise_recall_limit": 4,
+        "coupling_promise_actions": "auto",
         "closing_enabled": false,
         "closing_random": false,
         "closing_lead_minutes": 5,
@@ -2099,12 +2707,28 @@ export const nativeDTO = {
         "catchup_provider_id": "",
         "closing_provider_id": "",
         "home_city": "",
+        "weather_factor_enabled": true,
+        "weather_poll_seconds": 14400,
+        "weather_transition_seconds": 900,
+        "weather_weight_scale": 1.0,
+        "weather_stale_seconds": 7200,
+        "weather_forecast_days": 7,
+        "weather_forecast_refresh_seconds": 21600,
+        "weather_window_start_hour": 6,
+        "weather_window_end_hour": 1,
+        "weather_degrade_after_failures": 3,
+        "weather_recover_after_successes": 2,
         "embedding_provider_id": "",
         "livingmemory_enabled": false,
         "memory_write": false,
         "relationship_stage_names": "[\"反感\",\"陌生\",\"友好\",\"亲近\",\"独特\"]",
         "relationship_stage_descriptions": "[\"\",\"\",\"\",\"\"]",
         "relationship_special_description": "",
+        "relationship_image_refusal_averse": 90,
+        "relationship_image_refusal_unfamiliar": 60,
+        "relationship_image_refusal_friendly": 30,
+        "relationship_image_refusal_close": 10,
+        "relationship_image_refusal_unique": 5,
         "wake_autocatchup_enabled": true,
         "wake_greeting_enabled": true,
         "wake_greeting_texts": "刚醒，我看看之前你们说了什么。|我醒了，先把这几小时翻一翻。|醒了…看看都说了什么。",
@@ -2183,6 +2807,19 @@ export const nativeDTO = {
           "help": "允许在已授权的群聊主动发言。",
           "details": "群聊总开关独立于私聊；关闭时即使填了群号也不主动发送，不向群聊分享私聊情绪或私有记忆。",
           "example": "只希望主动私聊：保持关闭，群号可留空。",
+          "parent": "autonomy_enabled",
+          "level": 1
+        },
+        {
+          "key": "proactive_native_yield",
+          "label": "宿主主动聊天时让行",
+          "section": "behavior",
+          "value": true,
+          "type": "boolean",
+          "advanced": false,
+          "help": "检测到宿主主动聊天时让行。",
+          "details": "只读宿主任务表，不修改、不删除任何任务；让行只作用于随机主动行为，承诺兑现、晚安与补课不受影响。关掉宿主那条任务后，最长5分钟自动恢复接管。",
+          "example": "宿主里还留着「主动找主人聊话题」时保持开启，避免同一时段各说一次。",
           "parent": "autonomy_enabled",
           "level": 1
         },
@@ -2417,6 +3054,8 @@ export const nativeDTO = {
           "value": false,
           "type": "boolean",
           "advanced": false,
+          "subsection": "schedule",
+          "subsection_label": "作息时间",
           "help": "自动按作息维护睡眠周期。",
           "details": "启用前填写时区；自动作息与允许睡眠分别控制时间记录和聊天阻断。旧配置保持原行为，直至完成新规则迁移。",
           "example": "时区Asia/Shanghai，夜间23:30、沉睡02:30、基础起床08:00。",
@@ -2430,6 +3069,8 @@ export const nativeDTO = {
           "value": "08:00",
           "type": "string",
           "advanced": false,
+          "subsection": "schedule",
+          "subsection_label": "作息时间",
           "help": "未加赖床时间的基础起床时刻。",
           "details": "每个夜晚只抽取一次赖床值并保存；刷新页面不会重新抽取，实际起床可能更晚。",
           "example": "08:00、赖床0–90分钟，实际起床在08:00至09:30。",
@@ -2726,9 +3367,9 @@ export const nativeDTO = {
           "value": 2,
           "type": "integer",
           "advanced": false,
-          "help": "每个睡眠周期的梦境尝试上限。",
-          "details": "范围1–2；所有尝试计入本周期额度，失败不会让额度无限恢复。",
-          "example": "1表示每晚最多尝试一次梦境。",
+          "help": "每个睡眠周期成功保存的梦境上限。",
+          "details": "范围1–2；每篇最多3次自动尝试，失败仍计入模型预算；结果不明不自动重发。",
+          "example": "1表示每晚最多保存一篇，明确失败时最多尝试3次。",
           "parent": "dream_enabled",
           "level": 1,
           "step": 1,
@@ -2786,11 +3427,13 @@ export const nativeDTO = {
           "value": 2000,
           "type": "integer",
           "advanced": false,
-          "help": "一篇日记或梦境的字数上限。",
-          "details": "范围1–8000字符，用于限制生成记录体积；Token预算另行限制。",
-          "example": "2000限制每篇正文最多约2000字符。",
+          "help": "一篇日记或梦境的正文上限。",
+          "details": "范围1–2000字符；日期、天气和标题另计。旧版超过2000的设置升级后按2000执行。",
+          "example": "2000允许正文最多2000字符。",
           "parent": "emotion_model_enabled",
           "level": 1,
+          "min": 1,
+          "max": 2000,
           "step": 1,
           "unit": "次"
         },
@@ -2937,9 +3580,9 @@ export const nativeDTO = {
           "value": 1024,
           "type": "integer",
           "advanced": true,
-          "help": "每次后台任务请求的输出Token上限。",
-          "details": "范围1–8192；部分主动行为会采用更小的内部上限，以控制长度和打扰。",
-          "example": "1024可用于日记；主动消息仍会更简短。",
+          "help": "普通后台任务的输出Token上限。",
+          "details": "范围1–8192；日记/梦境独立使用8192 Token，正文最多2000字；路由上游输出限制仍生效。",
+          "example": "1024控制普通后台任务，不限制日记和梦境正文。",
           "parent": "emotion_model_enabled",
           "level": 1,
           "step": 1,
@@ -3055,6 +3698,8 @@ export const nativeDTO = {
           "value": true,
           "type": "boolean",
           "advanced": false,
+          "subsection": "schedule",
+          "subsection_label": "作息时间",
           "help": "允许睡眠状态影响聊天可用性。",
           "details": "关闭后继续记录精力，但不因睡眠阻断聊天；开启时还需自动作息和相应规则生效。",
           "example": "希望夜里仍随时回复：关闭；希望有真实作息：开启。",
@@ -3068,6 +3713,8 @@ export const nativeDTO = {
           "value": true,
           "type": "boolean",
           "advanced": false,
+          "subsection": "schedule",
+          "subsection_label": "作息时间",
           "help": "启用午休时间段。",
           "details": "与午休开始和结束配合；允许睡眠关闭时仍不阻断聊天。",
           "example": "开启并设置13:00至14:30。",
@@ -3081,6 +3728,8 @@ export const nativeDTO = {
           "value": "13:00",
           "type": "string",
           "advanced": false,
+          "subsection": "schedule",
+          "subsection_label": "作息时间",
           "help": "午休的开始时间。",
           "details": "本地24小时HH:MM；必须与午休结束不同，支持跨午夜但一般使用白天。",
           "example": "13:00表示下午一点开始午休。",
@@ -3094,6 +3743,8 @@ export const nativeDTO = {
           "value": "14:30",
           "type": "string",
           "advanced": false,
+          "subsection": "schedule",
+          "subsection_label": "作息时间",
           "help": "午休的结束时间。",
           "details": "与午休开始配对，实际可用性还受精力和其他作息状态影响。",
           "example": "14:30表示下午两点半结束午休。",
@@ -3107,9 +3758,11 @@ export const nativeDTO = {
           "value": "23:30",
           "type": "string",
           "advanced": false,
-          "help": "夜间疲劳与睡眠周期的起点。",
-          "details": "从此时开始夜间阶段；恍惚转困时间取起点与沉睡时间之间的中点。",
-          "example": "23:30起点、02:30沉睡，则次日01:00转困。",
+          "subsection": "schedule",
+          "subsection_label": "作息时间",
+          "help": "夜间疲劳消耗的起点。",
+          "details": "不按时间中点转困；>20%清醒、0%＜精力≤20%恍惚、0%困。",
+          "example": "00:00起点、02:30沉睡、0.5点/分钟，无回复时满精力降至25%。",
           "parent": "night_schedule_enabled",
           "level": 1
         },
@@ -3120,6 +3773,8 @@ export const nativeDTO = {
           "value": "07:00",
           "type": "string",
           "advanced": false,
+          "subsection": "schedule",
+          "subsection_label": "作息时间",
           "help": "夜间疲劳消耗的结束时间。",
           "details": "停止这一段疲劳消耗，不代表可以退出沉睡；基础起床加本周期赖床值决定实际起床。",
           "example": "07:00停止疲劳消耗，但08:00起床配置仍有效。",
@@ -3133,6 +3788,8 @@ export const nativeDTO = {
           "value": "02:30",
           "type": "string",
           "advanced": false,
+          "subsection": "schedule",
+          "subsection_label": "作息时间",
           "help": "进入沉睡的时间。",
           "details": "须位于夜间起点与基础起床之间，支持跨午夜；本地HH:MM，宿主校验时间顺序。",
           "example": "23:30→02:30→08:00合法；沉睡09:00会被拒绝。",
@@ -3146,6 +3803,8 @@ export const nativeDTO = {
           "value": 0,
           "type": "integer",
           "advanced": false,
+          "subsection": "schedule",
+          "subsection_label": "作息时间",
           "help": "本周期赖床的最少分钟数。",
           "details": "可设0；最少不得大于最多，实际抽取结果在本周期内固定。",
           "example": "0至30，允许准时起床或赖床最多半小时。",
@@ -3161,6 +3820,8 @@ export const nativeDTO = {
           "value": 90,
           "type": "integer",
           "advanced": false,
+          "subsection": "schedule",
+          "subsection_label": "作息时间",
           "help": "本周期赖床的最多分钟数。",
           "details": "范围0–1440分钟；与最少值组成随机区间，不是每次刷新重抽。",
           "example": "最少15、最多45，基础08:00则08:15至08:45起床。",
@@ -3176,6 +3837,8 @@ export const nativeDTO = {
           "value": "chat",
           "type": "enum",
           "advanced": false,
+          "subsection": "wake",
+          "subsection_label": "聊天唤醒",
           "help": "谁可以通过聊天叫醒 TA。",
           "details": "仅私聊、不允许唤醒、私聊或群聊原生@Bot；普通文本里的@名字不等于原生提及。",
           "example": "不想群聊打断睡眠：选“仅私聊”。",
@@ -3200,12 +3863,14 @@ export const nativeDTO = {
           "key": "wake_reply_limit",
           "label": "唤醒回复轮数",
           "section": "night",
-          "value": 3,
+          "value": 10,
           "type": "integer",
           "advanced": false,
+          "subsection": "wake",
+          "subsection_label": "聊天唤醒",
           "help": "一次聊天唤醒可用的回复尝试数。",
-          "details": "范围1–100；生成失败也计入，窗口时间到达同样停止。",
-          "example": "3轮、10分钟，最多尝试3次并且不超过窗口。",
+          "details": "范围1–100；生成失败也计入；结束后>20%清醒、0%＜精力≤20%恍惚、0%困。",
+          "example": "10轮表示最多尝试10次，仍受时间窗口限制。",
           "parent": "night_schedule_enabled",
           "level": 1,
           "step": 1,
@@ -3218,6 +3883,8 @@ export const nativeDTO = {
           "value": 10,
           "type": "integer",
           "advanced": false,
+          "subsection": "wake",
+          "subsection_label": "聊天唤醒",
           "help": "一次聊天唤醒的最长窗口。",
           "details": "范围1–1440分钟，从第一次宿主提交开始固定计算，后续消息不无限延长。",
           "example": "10表示叫醒后最多维持10分钟的回复窗口。",
@@ -3230,46 +3897,107 @@ export const nativeDTO = {
           "key": "energy_reply_cost",
           "label": "每次回复精力消耗",
           "section": "night",
-          "value": 4.0,
+          "value": 2.0,
           "type": "float",
           "advanced": false,
-          "help": "每次可见回复消耗的精力点数。",
-          "details": "总精力固定100；数值0–100，步进0.1，每次可见回复只记一次。",
-          "example": "4.0表示一条实际回复消耗4点。",
+          "subsection": "energy",
+          "subsection_label": "精力与清醒",
+          "help": "每次宿主提交回复消耗的精力点数。",
+          "details": "总精力固定100；数值0–100，步进0.1；同一回复只记一次，提交不代表送达。",
+          "example": "2.0表示一次最终回复提交消耗2点。",
           "parent": "night_schedule_enabled",
           "level": 1,
           "step": 0.1,
-          "unit": "点/次"
+          "unit": "点/次",
+          "min": 0,
+          "max": 100
         },
         {
           "key": "energy_fatigue_per_minute",
           "label": "疲劳精力消耗速率",
           "section": "night",
-          "value": 0.8,
+          "value": 0.5,
           "type": "float",
           "advanced": false,
-          "help": "清醒疲劳阶段每分钟消耗精力。",
-          "details": "数值0–100，步进0.1；只在适用疲劳状态消耗，不将子项相加冒充总变化。",
-          "example": "0.8表示适用状态持续10分钟约消耗8点。",
+          "subsection": "energy",
+          "subsection_label": "精力与清醒",
+          "help": "夜间疲劳时段未睡眠时每分钟消耗精力。",
+          "details": "数值0–100，步进0.1；小憩和沉睡只恢复，白天未睡眠是否回血由“白天自动恢复精力”控制。",
+          "example": "0.5表示夜间未睡眠持续10分钟消耗5点。",
           "parent": "night_schedule_enabled",
           "level": 1,
           "step": 0.1,
-          "unit": "点/分钟"
+          "unit": "点/分钟",
+          "min": 0,
+          "max": 100
         },
         {
           "key": "energy_recovery_per_minute",
           "label": "精力恢复速率",
           "section": "night",
-          "value": 1.5,
+          "value": 1.0,
           "type": "float",
           "advanced": false,
-          "help": "睡眠或非疲劳阶段每分钟恢复精力。",
-          "details": "数值0–100，步进0.1；实际恢复受阶段和总上限100限制。",
-          "example": "1.5表示适用状态10分钟约恢复15点，上限100。",
+          "subsection": "energy",
+          "subsection_label": "精力与清醒",
+          "help": "睡眠恢复速度，也用于开启后的白天自动恢复。",
+          "details": "数值0–100，步进0.1；默认只在小憩、沉睡时恢复。在本区开启“白天自动恢复精力”后，非疲劳时段未睡眠也使用此速度；固定沉睡结束恢复100%。",
+          "example": "1.0表示10分钟恢复10点，上限100。",
           "parent": "night_schedule_enabled",
           "level": 1,
           "step": 0.1,
-          "unit": "点/分钟"
+          "unit": "点/分钟",
+          "min": 0,
+          "max": 100
+        },
+        {
+          "key": "energy_daytime_recovery_enabled",
+          "label": "白天自动恢复精力",
+          "section": "night",
+          "value": false,
+          "type": "boolean",
+          "advanced": false,
+          "subsection": "energy",
+          "subsection_label": "精力与清醒",
+          "help": "关闭：白天未睡眠不回血；开启：按本区“每分钟恢复”回血。",
+          "details": "白天指“作息时间”中夜间疲劳时段之外；开启后清醒、恍惚、困也恢复，速度在本区“每分钟恢复”设置。小憩和沉睡恢复不受此开关影响。",
+          "example": "默认关闭；开启且恢复速度1.0时，白天10分钟恢复10点。",
+          "parent": "",
+          "level": 0
+        },
+        {
+          "key": "recovery_follow_wake_at",
+          "label": "补觉按起床时间截止",
+          "section": "night",
+          "value": true,
+          "type": "boolean",
+          "advanced": false,
+          "subsection": "energy",
+          "subsection_label": "精力与清醒",
+          "help": "开启：截止取下一次起床＋赖床；关闭：使用下方补觉时长。",
+          "details": "默认开启。在“设置→长夜→作息时间”调整基础起床和赖床；关闭后在本区“补觉最长时长”设置分钟数。恢复100%可提前结束，固定夜间沉睡优先。修改只影响新补觉周期，当前周期截止保持不变。",
+          "example": "开启：15:00补觉截止到次日08:00加赖床；关闭且时长120：最晚17:00结束。",
+          "parent": "",
+          "level": 0
+        },
+        {
+          "key": "recovery_max_minutes",
+          "label": "补觉最长时长",
+          "section": "night",
+          "value": 120,
+          "type": "integer",
+          "advanced": false,
+          "subsection": "energy",
+          "subsection_label": "精力与清醒",
+          "help": "仅关闭“补觉按起床时间截止”时使用，默认120分钟。",
+          "details": "在本区关闭“补觉按起床时间截止”后生效，范围1–1440分钟，整数。从补觉开始计算；恢复100%提前结束，到期按精力退出、不强制回满，重新计算30分钟静默。修改只影响新周期。",
+          "example": "120：15:00开始，最晚17:00退出；恢复速度0时仍会到期退出。",
+          "parent": "",
+          "level": 0,
+          "step": 1,
+          "unit": "分钟",
+          "min": 1,
+          "max": 1440
         },
         {
           "key": "catchup_enabled",
@@ -3278,6 +4006,8 @@ export const nativeDTO = {
           "value": true,
           "type": "boolean",
           "advanced": false,
+          "subsection": "catchup",
+          "subsection_label": "醒后补课",
           "help": "醒来后阅读已保存的未读消息。",
           "details": "从本插件有真实来源的未读归档读取；不等于访问平台全部历史，补答开关独立。",
           "example": "只希望醒后了解聊天：开启阅读、关闭历史补答。",
@@ -3291,11 +4021,143 @@ export const nativeDTO = {
           "value": true,
           "type": "boolean",
           "advanced": false,
+          "subsection": "catchup",
+          "subsection_label": "醒后补课",
           "help": "阅读未读后允许有限历史补答。",
           "details": "需要醒后阅读、可用模型和预算；生成与发送仍受身份及可用性检查。",
           "example": "阅读与补答同时开启，醒后可对仍有意义的未读内容补充回复。",
           "parent": "catchup_enabled",
           "level": 2
+        },
+        {
+          "key": "promise_enabled",
+          "label": "记住答应过的事",
+          "section": "promise",
+          "value": true,
+          "type": "boolean",
+          "advanced": false,
+          "help": "允许把对话里答应的事记成待办承诺。",
+          "details": "开启后，模型说过的承诺会落成可追踪条目，按轮次推进状态；关闭则完全不记，也不追问。",
+          "example": "开启：答应的事会被记住并在后续对话里推进；关闭：只当普通聊天，不留承诺。",
+          "parent": "",
+          "level": 0
+        },
+        {
+          "key": "promise_max_active",
+          "label": "同时追踪的承诺条数",
+          "section": "promise",
+          "value": 3,
+          "type": "integer",
+          "advanced": false,
+          "help": "同时追踪的承诺条数上限。",
+          "details": "范围1–20；超出后先丢弃最旧的低优先级条目，不会无限堆积。",
+          "example": "填3表示同时最多跟3件答应过的事。",
+          "parent": "promise_enabled",
+          "level": 1,
+          "step": 1,
+          "unit": "次"
+        },
+        {
+          "key": "promise_max_depth",
+          "label": "单条承诺最多拆几层",
+          "section": "promise",
+          "value": 3,
+          "type": "integer",
+          "advanced": false,
+          "help": "单条承诺允许推进的层数上限。",
+          "details": "范围1–10；防止一条承诺被反复拆解成子任务而无限展开。",
+          "example": "填3表示最多拆三层。",
+          "parent": "promise_enabled",
+          "level": 1,
+          "step": 1,
+          "unit": "次"
+        },
+        {
+          "key": "promise_advance_limit",
+          "label": "每轮最多推进几条",
+          "section": "promise",
+          "value": 3,
+          "type": "integer",
+          "advanced": false,
+          "help": "一轮对话里最多推进几条承诺。",
+          "details": "范围1–10；避免一次回复里连珠炮似地追问一堆事。",
+          "example": "填3表示每轮最多推进3条。",
+          "parent": "promise_enabled",
+          "level": 1,
+          "step": 1,
+          "unit": "次"
+        },
+        {
+          "key": "promise_tick_seconds",
+          "label": "承诺推进间隔",
+          "section": "promise",
+          "value": 15,
+          "type": "integer",
+          "advanced": false,
+          "help": "后台检查到期承诺的间隔。",
+          "details": "单位秒，范围15–600；到点会单独发消息，不并入下一轮回复。",
+          "example": "填15表示每15秒检查一次，2分钟的承诺通常几秒内发出。",
+          "parent": "promise_enabled",
+          "level": 1,
+          "step": 1,
+          "unit": "秒"
+        },
+        {
+          "key": "promise_trace_ttl_hours",
+          "label": "兑现片段保留时长",
+          "section": "promise",
+          "value": 24.0,
+          "type": "float",
+          "advanced": false,
+          "help": "兑现后片段缓存保留多久。",
+          "details": "范围1–168小时；期间用户追问直接读缓存，不再走向量检索；到期自动释放，追问回到正常检索。",
+          "example": "填24表示刚兑现的一天内，追问「刚才那张」能直接接上。",
+          "parent": "promise_enabled",
+          "level": 1,
+          "step": 0.1,
+          "unit": "次"
+        },
+        {
+          "key": "promise_recall_limit",
+          "label": "预取几条记忆材料",
+          "section": "promise",
+          "value": 4,
+          "type": "integer",
+          "advanced": false,
+          "help": "承诺落库时预取几条记忆材料。",
+          "details": "范围1–8；外部 LivingMemory 只接受真实事件授权，必须在消息刚提交时取，等到点再取会返回空。取不到时只用概要生成，不影响兑现。",
+          "example": "填4表示最多带4条相关材料进到期生成。",
+          "parent": "promise_enabled",
+          "level": 1,
+          "step": 1,
+          "unit": "次"
+        },
+        {
+          "key": "coupling_promise_actions",
+          "label": "承诺到点如何交付",
+          "section": "coupling",
+          "value": "auto",
+          "type": "enum",
+          "advanced": false,
+          "help": "承诺到点时怎么交付：并进下一轮回复，还是单独发一条。",
+          "details": "auto：检测到 LivingHello 且两侧都启用时走并轨——不单独发消息、不为兑现文案额外调模型，由对话里下一轮回复顺带交付（有图就发图），因此不会和被动回复出现两条一样的话；on：始终并轨；off：始终单独发送一条文字（这时可能与被动回复重复，属预期）。",
+          "example": "auto 适合长期使用；off 仅用于排查「承诺到底有没有到点」这类问题。",
+          "parent": "",
+          "level": 0,
+          "options": [
+            {
+              "value": "auto",
+              "label": "自动（跟随检测）"
+            },
+            {
+              "value": "on",
+              "label": "始终执行动作"
+            },
+            {
+              "value": "off",
+              "label": "始终只发文字"
+            }
+          ]
         },
         {
           "key": "closing_enabled",
@@ -3304,6 +4166,8 @@ export const nativeDTO = {
           "value": false,
           "type": "boolean",
           "advanced": false,
+          "subsection": "closing",
+          "subsection_label": "睡前晚安",
           "help": "允许睡前在近期参与的会话道晚安。",
           "details": "只考虑真实且近期参与过的会话；不是向所有好友群发，发送仍需守卫允许。",
           "example": "夜间23:30开始、提前5分钟，可在23:25附近评估晚安。",
@@ -3317,6 +4181,8 @@ export const nativeDTO = {
           "value": false,
           "type": "boolean",
           "advanced": false,
+          "subsection": "closing",
+          "subsection_label": "睡前晚安",
           "help": "使用模型生成睡前道别。",
           "details": "关闭时使用本地模板；开启时一次生成占用模型预算，不保证每次发送。",
           "example": "想减少模型调用：关闭；希望道别更有变化：开启。",
@@ -3330,6 +4196,8 @@ export const nativeDTO = {
           "value": 5,
           "type": "integer",
           "advanced": false,
+          "subsection": "closing",
+          "subsection_label": "睡前晚安",
           "help": "夜间起点前多久评估晚安。",
           "details": "范围0–60分钟，以疲劳开始时间为基准；调度间隔影响实际评估时刻。",
           "example": "起点23:30、提前5分钟，计划在23:25附近评估。",
@@ -3393,6 +4261,8 @@ export const nativeDTO = {
           "value": "",
           "type": "enum",
           "advanced": false,
+          "subsection": "catchup",
+          "subsection_label": "醒后补课",
           "help": "醒后补课与补答使用的模型。",
           "details": "留空跟随默认或会话模型，不会修改正常聊天所用模型。",
           "example": "未读较多时选支持较长上下文的已配置模型。",
@@ -3417,6 +4287,8 @@ export const nativeDTO = {
           "value": "",
           "type": "enum",
           "advanced": false,
+          "subsection": "closing",
+          "subsection_label": "睡前晚安",
           "help": "睡前道别专用模型。",
           "details": "只在随机生成道别启用且有预算时使用；留空沿用默认模型。",
           "example": "选择轻量模型生成一句简短晚安。",
@@ -3446,6 +4318,169 @@ export const nativeDTO = {
           "example": "填“上海”，同时将时区设为Asia/Shanghai。",
           "parent": "",
           "level": 0
+        },
+        {
+          "key": "weather_factor_enabled",
+          "label": "天气影响情绪",
+          "section": "emotion",
+          "value": true,
+          "type": "boolean",
+          "advanced": false,
+          "help": "天气作为本地权重因子影响情绪回落目标。",
+          "details": "本地定时轮询实况天气，不经大模型；只调整四维的回落目标，不改当前值、不落库，也不参与六情绪计算。关闭后天气只作为日记与梦境的背景文字。",
+          "example": "需要TA的心情随晴雨缓慢变化：开启；只想保留天气文字：关闭。",
+          "parent": "emotion_model_enabled",
+          "level": 1
+        },
+        {
+          "key": "weather_poll_seconds",
+          "label": "天气抓取间隔",
+          "section": "emotion",
+          "value": 14400,
+          "type": "integer",
+          "advanced": false,
+          "help": "天气轮询间隔。",
+          "details": "范围300–21600秒，默认3600即每小时一次；请求失败自动退避到60–300秒重试，不会形成重试风暴。",
+          "example": "3600每小时取一次实况。",
+          "parent": "emotion_model_enabled",
+          "level": 1,
+          "step": 1,
+          "unit": "秒"
+        },
+        {
+          "key": "weather_transition_seconds",
+          "label": "天气过渡时长",
+          "section": "emotion",
+          "value": 900,
+          "type": "integer",
+          "advanced": false,
+          "help": "天气权重切换的过渡时间。",
+          "details": "范围0–7200秒；天气从雨转晴时新权重按指数曲线逼近，避免整点跳变。0表示立即生效。",
+          "example": "900表示约15分钟平滑过渡。",
+          "parent": "emotion_model_enabled",
+          "level": 1,
+          "step": 1,
+          "unit": "秒"
+        },
+        {
+          "key": "weather_weight_scale",
+          "label": "天气影响强度",
+          "section": "emotion",
+          "value": 1.0,
+          "type": "float",
+          "advanced": false,
+          "help": "天气权重总倍率。",
+          "details": "范围0–3；1.0为标定值，0等于关闭影响（等价于 enabled=false），2.0加倍。只缩放四维回落目标的偏移，不改半衰期。",
+          "example": "觉得雨天的情绪影响太弱：调到1.5。",
+          "parent": "emotion_model_enabled",
+          "level": 1,
+          "step": 0.1,
+          "unit": "次"
+        },
+        {
+          "key": "weather_stale_seconds",
+          "label": "天气过期时间",
+          "section": "emotion",
+          "value": 7200,
+          "type": "integer",
+          "advanced": false,
+          "help": "天气权重的缓存保鲜期。",
+          "details": "范围300–86400秒；超过该时长没有成功取到天气，权重回落到中性，避免用两天前的晴天影响今天的情绪。",
+          "example": "7200表示两小时后失效。",
+          "parent": "emotion_model_enabled",
+          "level": 1,
+          "step": 1,
+          "unit": "秒"
+        },
+        {
+          "key": "weather_forecast_days",
+          "label": "预报天数",
+          "section": "emotion",
+          "value": 7,
+          "type": "integer",
+          "advanced": false,
+          "help": "一次预取的预报天数。",
+          "details": "范围1–16天；接口一次请求就能返回多天，实况请求失败时直接改用当天预报，不必回落到中性权重。",
+          "example": "7表示一次拿七天。",
+          "parent": "emotion_model_enabled",
+          "level": 1,
+          "step": 1,
+          "unit": "天"
+        },
+        {
+          "key": "weather_forecast_refresh_seconds",
+          "label": "预报刷新间隔",
+          "section": "emotion",
+          "value": 21600,
+          "type": "integer",
+          "advanced": false,
+          "help": "预报表刷新周期。",
+          "details": "范围600–86400秒，默认21600即6小时一次；预报比实况稳定，不会天天失败。",
+          "example": "21600一天最多刷新4次。",
+          "parent": "emotion_model_enabled",
+          "level": 1,
+          "step": 1,
+          "unit": "秒"
+        },
+        {
+          "key": "weather_window_start_hour",
+          "label": "抓取窗口开始",
+          "section": "emotion",
+          "value": 6,
+          "type": "integer",
+          "advanced": false,
+          "help": "天气抓取窗口的起点整点。",
+          "details": "本地时区，范围0–23；窗口外完全不发请求，夜间不打扰接口。",
+          "example": "填6表示06:00开始。",
+          "parent": "emotion_model_enabled",
+          "level": 1,
+          "step": 1,
+          "unit": "时"
+        },
+        {
+          "key": "weather_window_end_hour",
+          "label": "抓取窗口结束",
+          "section": "emotion",
+          "value": 1,
+          "type": "integer",
+          "advanced": false,
+          "help": "天气抓取窗口的终点整点。",
+          "details": "本地时区，范围0–23，可跨夜；与起点相同表示全天抓取。",
+          "example": "填1表示次日01:00结束。",
+          "parent": "emotion_model_enabled",
+          "level": 1,
+          "step": 1,
+          "unit": "时"
+        },
+        {
+          "key": "weather_degrade_after_failures",
+          "label": "连续失败降级阈值",
+          "section": "emotion",
+          "value": 3,
+          "type": "integer",
+          "advanced": false,
+          "help": "连续失败多少次后降级。",
+          "details": "范围1–10；降级后停止高频抓取，改为每天窗口起点只刷一次日粒度预报，用它保底，不再反复撞接口。",
+          "example": "填3表示连挂三次就改每日一次。",
+          "parent": "emotion_model_enabled",
+          "level": 1,
+          "step": 1,
+          "unit": "次"
+        },
+        {
+          "key": "weather_recover_after_successes",
+          "label": "恢复所需成功次数",
+          "section": "emotion",
+          "value": 2,
+          "type": "integer",
+          "advanced": false,
+          "help": "连续多少次日粒度成功才恢复高频。",
+          "details": "范围1–7；默认2天，避免刚恢复又撞墙。",
+          "example": "填2表示连续两天抓到预报后再试高频。",
+          "parent": "emotion_model_enabled",
+          "level": 1,
+          "step": 1,
+          "unit": "次"
         },
         {
           "key": "embedding_provider_id",
@@ -3537,12 +4572,99 @@ export const nativeDTO = {
           "level": 1
         },
         {
+          "key": "relationship_image_refusal_averse",
+          "label": "反感 · 生图婉拒概率",
+          "section": "relationship",
+          "value": 90,
+          "type": "integer",
+          "advanced": false,
+          "help": "反感阶段的个人生图及新图片承诺婉拒概率。",
+          "details": "在设置→关系填写0–100整数百分比；0不因关系随机拒绝，100必定婉拒。同一请求只判定一次，拒绝不登记待办；已有待办继续履行，情绪只影响语气。",
+          "example": "90表示90%婉拒概率；接受后仍需通过生图额度和服务检查。",
+          "parent": "",
+          "level": 0,
+          "step": 1,
+          "unit": "%",
+          "min": 0,
+          "max": 100
+        },
+        {
+          "key": "relationship_image_refusal_unfamiliar",
+          "label": "陌生 · 生图婉拒概率",
+          "section": "relationship",
+          "value": 60,
+          "type": "integer",
+          "advanced": false,
+          "help": "陌生阶段的个人生图及新图片承诺婉拒概率。",
+          "details": "在设置→关系填写0–100整数百分比；0不因关系随机拒绝，100必定婉拒。同一请求只判定一次，拒绝不登记待办；已有待办继续履行，情绪只影响语气。",
+          "example": "60表示60%婉拒概率；接受后仍需通过生图额度和服务检查。",
+          "parent": "",
+          "level": 0,
+          "step": 1,
+          "unit": "%",
+          "min": 0,
+          "max": 100
+        },
+        {
+          "key": "relationship_image_refusal_friendly",
+          "label": "友好 · 生图婉拒概率",
+          "section": "relationship",
+          "value": 30,
+          "type": "integer",
+          "advanced": false,
+          "help": "友好阶段的个人生图及新图片承诺婉拒概率。",
+          "details": "在设置→关系填写0–100整数百分比；0不因关系随机拒绝，100必定婉拒。同一请求只判定一次，拒绝不登记待办；已有待办继续履行，情绪只影响语气。",
+          "example": "30表示30%婉拒概率；接受后仍需通过生图额度和服务检查。",
+          "parent": "",
+          "level": 0,
+          "step": 1,
+          "unit": "%",
+          "min": 0,
+          "max": 100
+        },
+        {
+          "key": "relationship_image_refusal_close",
+          "label": "亲近 · 生图婉拒概率",
+          "section": "relationship",
+          "value": 10,
+          "type": "integer",
+          "advanced": false,
+          "help": "亲近阶段的个人生图及新图片承诺婉拒概率。",
+          "details": "在设置→关系填写0–100整数百分比；0不因关系随机拒绝，100必定婉拒。同一请求只判定一次，拒绝不登记待办；已有待办继续履行，情绪只影响语气。",
+          "example": "10表示10%婉拒概率；接受后仍需通过生图额度和服务检查。",
+          "parent": "",
+          "level": 0,
+          "step": 1,
+          "unit": "%",
+          "min": 0,
+          "max": 100
+        },
+        {
+          "key": "relationship_image_refusal_unique",
+          "label": "独特 · 生图婉拒概率",
+          "section": "relationship",
+          "value": 5,
+          "type": "integer",
+          "advanced": false,
+          "help": "独特阶段的个人生图及新图片承诺婉拒概率。",
+          "details": "在设置→关系填写0–100整数百分比；0不因关系随机拒绝，100必定婉拒。同一请求只判定一次，拒绝不登记待办；已有待办继续履行，情绪只影响语气。",
+          "example": "5表示5%婉拒概率；接受后仍需通过生图额度和服务检查。",
+          "parent": "",
+          "level": 0,
+          "step": 1,
+          "unit": "%",
+          "min": 0,
+          "max": 100
+        },
+        {
           "key": "wake_autocatchup_enabled",
           "label": "自然醒后主动补答",
           "section": "night",
           "value": true,
           "type": "boolean",
           "advanced": false,
+          "subsection": "catchup",
+          "subsection_label": "醒后补课",
           "help": "自然醒后是否主动爬楼补答。",
           "details": "只对这一段睡眠期确有未读的会话生效；没有未读就不读不发，也不会重复补答。",
           "example": "希望它醒来自己看看群里的消息：开启；只想被动等消息：关闭。",
@@ -3556,6 +4678,8 @@ export const nativeDTO = {
           "value": true,
           "type": "boolean",
           "advanced": false,
+          "subsection": "catchup",
+          "subsection_label": "醒后补课",
           "help": "爬楼前是否先发一句刚醒的招呼。",
           "details": "招呼只是一句话，用来交代「刚醒」；关闭后直接进入补答或继续安静。",
           "example": "不想它冒头时关闭。",
@@ -3569,6 +4693,8 @@ export const nativeDTO = {
           "value": "刚醒，我看看之前你们说了什么。|我醒了，先把这几小时翻一翻。|醒了…看看都说了什么。",
           "type": "string",
           "advanced": false,
+          "subsection": "catchup",
+          "subsection_label": "醒后补课",
           "help": "刚醒招呼的候选句子。",
           "details": "用竖线 | 分隔，每次随机取一条；留空则使用默认一句。",
           "example": "刚醒，我看看之前你们说了什么。|我醒了，先把这几小时翻一翻。",
@@ -3626,7 +4752,18 @@ export const nativeDTO = {
             "emotion_intensity",
             "model_input_tokens",
             "model_output_tokens",
-            "model_timeout_seconds"
+            "model_timeout_seconds",
+            "weather_factor_enabled",
+            "weather_poll_seconds",
+            "weather_transition_seconds",
+            "weather_weight_scale",
+            "weather_stale_seconds",
+            "weather_forecast_days",
+            "weather_forecast_refresh_seconds",
+            "weather_window_start_hour",
+            "weather_window_end_hour",
+            "weather_degrade_after_failures",
+            "weather_recover_after_successes"
           ]
         },
         {
@@ -3636,6 +4773,11 @@ export const nativeDTO = {
             "relationship_stage_names",
             "relationship_stage_descriptions",
             "relationship_special_description",
+            "relationship_image_refusal_averse",
+            "relationship_image_refusal_unfamiliar",
+            "relationship_image_refusal_friendly",
+            "relationship_image_refusal_close",
+            "relationship_image_refusal_unique",
             "relationship_edit_enabled"
           ]
         },
@@ -3645,6 +4787,7 @@ export const nativeDTO = {
           "field_keys": [
             "autonomy_enabled",
             "group_autonomy_enabled",
+            "proactive_native_yield",
             "autonomy_qq_ids",
             "autonomy_qq_group_ids",
             "muted_scopes",
@@ -3662,6 +4805,19 @@ export const nativeDTO = {
             "behavior_style",
             "behavior_emotional_share",
             "behavior_provider_id"
+          ]
+        },
+        {
+          "id": "promise",
+          "label": "承诺代办",
+          "field_keys": [
+            "promise_enabled",
+            "promise_max_active",
+            "promise_max_depth",
+            "promise_advance_limit",
+            "promise_tick_seconds",
+            "promise_trace_ttl_hours",
+            "promise_recall_limit"
           ]
         },
         {
@@ -3685,6 +4841,9 @@ export const nativeDTO = {
             "energy_reply_cost",
             "energy_fatigue_per_minute",
             "energy_recovery_per_minute",
+            "energy_daytime_recovery_enabled",
+            "recovery_follow_wake_at",
+            "recovery_max_minutes",
             "catchup_enabled",
             "catchup_reply_enabled",
             "closing_enabled",
@@ -3733,8 +4892,39 @@ export const nativeDTO = {
             "livingmemory_enabled",
             "memory_write"
           ]
+        },
+        {
+          "id": "coupling",
+          "label": "功能耦合",
+          "field_keys": [
+            "coupling_promise_actions"
+          ]
         }
       ],
+      "subsections": {
+        "night": [
+          {
+            "id": "schedule",
+            "label": "作息时间"
+          },
+          {
+            "id": "energy",
+            "label": "精力与清醒"
+          },
+          {
+            "id": "wake",
+            "label": "聊天唤醒"
+          },
+          {
+            "id": "catchup",
+            "label": "醒后补课"
+          },
+          {
+            "id": "closing",
+            "label": "睡前晚安"
+          }
+        ]
+      },
       "readonly": [
         {
           "key": "energy_max",
@@ -3745,6 +4935,8 @@ export const nativeDTO = {
           "unit": "点",
           "readonly": true,
           "section": "night",
+          "subsection": "energy",
+          "subsection_label": "精力与清醒",
           "parent": "night_schedule_enabled",
           "level": 1,
           "help": "总精力固定为100点。",
@@ -3793,11 +4985,6 @@ export const nativeDTO = {
         "reason": "native"
       },
       {
-        "name": "ownership",
-        "status": "ok",
-        "reason": "exclusive"
-      },
-      {
         "name": "background",
         "status": "ok",
         "reason": "idle"
@@ -3838,6 +5025,48 @@ export const nativeDTO = {
         "available": false,
         "reason": "",
         "provider": ""
+      }
+    },
+    "coupling": {
+      "mode": "auto",
+      "items": [
+        {
+          "kind": "livinghello",
+          "name": "LivingHello",
+          "connected": false,
+          "enabled": false,
+          "effective": false,
+          "reason": "未检测到 LivingHello 插件"
+        },
+        {
+          "kind": "livingmemory",
+          "name": "LivingMemory",
+          "connected": false,
+          "enabled": false,
+          "effective": false,
+          "reason": "未检测到 LivingMemory 插件"
+        },
+        {
+          "kind": "native_chat",
+          "name": "宿主主动聊天",
+          "connected": false,
+          "enabled": false,
+          "effective": false,
+          "reason": ""
+        }
+      ],
+      "native_proactive": {
+        "present": false,
+        "count": 0,
+        "jobs": [],
+        "yield": true,
+        "reason": "not_probed_yet"
+      },
+      "promise_actions": {
+        "mode": "auto",
+        "active": false,
+        "available": false,
+        "reason": "未检测到可协作的 LivingHello"
       }
     },
     "experience": {
@@ -4004,6 +5233,10 @@ export const nativeDTO = {
       "cycle_kind": null,
       "lie_in_minutes": null,
       "reason": "",
+      "comfort_percent": 20.0,
+      "rested": true,
+      "wake_replies_used": 0,
+      "wake_reply_limit": 0,
       "schedule": {
         "schedule_enabled": false,
         "sleep_enabled": true,
@@ -4018,7 +5251,7 @@ export const nativeDTO = {
         "lie_in_min": 0,
         "lie_in_max": 90,
         "wake_mode": "chat",
-        "wake_reply_limit": 3,
+        "wake_reply_limit": 10,
         "wake_window_minutes": 10,
         "catchup_enabled": true,
         "catchup_reply_enabled": true,
@@ -4095,7 +5328,25 @@ export const nativeDTO = {
         "轻松闲聊",
         "分享心情",
         "久别问候"
-      ]
+      ],
+      "send_statistics": {
+        "global": {
+          "consumed": 0,
+          "confirmed": 0,
+          "unknown": 0,
+          "cancelled": 0,
+          "failed": 0,
+          "in_progress": 0
+        },
+        "scope": {
+          "consumed": 0,
+          "confirmed": 0,
+          "unknown": 0,
+          "cancelled": 0,
+          "failed": 0,
+          "in_progress": 0
+        }
+      }
     },
     "representative_context_id": "fda756877b9e09334637756f7557078936706da40bd77d6ad73ad00dee0f2cb2",
     "emotion_curve": {
@@ -4104,8 +5355,8 @@ export const nativeDTO = {
           "at": 1799913900,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0471,
-            "sadness": 0.5498,
+            "anger": 0.047134336270987176,
+            "sadness": 0.5498010544277738,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4116,8 +5367,8 @@ export const nativeDTO = {
           "at": 1799914200,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0446,
-            "sadness": 0.4857,
+            "anger": 0.04459605369087785,
+            "sadness": 0.485724844165731,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4128,8 +5379,8 @@ export const nativeDTO = {
           "at": 1799914500,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0417,
-            "sadness": 0.4297,
+            "anger": 0.04168146321304525,
+            "sadness": 0.4296659470928845,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4140,8 +5391,8 @@ export const nativeDTO = {
           "at": 1799914800,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0386,
-            "sadness": 0.3805,
+            "anger": 0.038595482897410896,
+            "sadness": 0.38049216602822755,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4152,8 +5403,8 @@ export const nativeDTO = {
           "at": 1799915100,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0355,
-            "sadness": 0.3373,
+            "anger": 0.0354795696811951,
+            "sadness": 0.33725942042545654,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4164,8 +5415,8 @@ export const nativeDTO = {
           "at": 1799915400,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0324,
-            "sadness": 0.2992,
+            "anger": 0.032428953936883546,
+            "sadness": 0.2991750198142079,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4176,8 +5427,8 @@ export const nativeDTO = {
           "at": 1799915700,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0295,
-            "sadness": 0.2656,
+            "anger": 0.029505407273040907,
+            "sadness": 0.26556900856916965,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4188,8 +5439,8 @@ export const nativeDTO = {
           "at": 1799916000,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0267,
-            "sadness": 0.2359,
+            "anger": 0.02674667970742554,
+            "sadness": 0.23587168187117222,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4200,8 +5451,8 @@ export const nativeDTO = {
           "at": 1799916300,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0242,
-            "sadness": 0.2096,
+            "anger": 0.02417345563936375,
+            "sadness": 0.20959583578054913,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4212,8 +5463,8 @@ export const nativeDTO = {
           "at": 1799916600,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0218,
-            "sadness": 0.1863,
+            "anger": 0.021794463450546874,
+            "sadness": 0.18632266272550585,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4224,8 +5475,8 @@ export const nativeDTO = {
           "at": 1799916900,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0196,
-            "sadness": 0.1657,
+            "anger": 0.01961021296277391,
+            "sadness": 0.16569046602073687,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4236,8 +5487,8 @@ export const nativeDTO = {
           "at": 1799917200,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0176,
-            "sadness": 0.1474,
+            "anger": 0.01761571481456477,
+            "sadness": 0.14738556472033926,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4248,8 +5499,8 @@ export const nativeDTO = {
           "at": 1799917500,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0158,
-            "sadness": 0.1311,
+            "anger": 0.015802445927137216,
+            "sadness": 0.13113490925647273,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4260,8 +5511,8 @@ export const nativeDTO = {
           "at": 1799917800,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0142,
-            "sadness": 0.1167,
+            "anger": 0.014159758005176685,
+            "sadness": 0.11670004098328568,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4272,8 +5523,8 @@ export const nativeDTO = {
           "at": 1799918100,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0127,
-            "sadness": 0.1039,
+            "anger": 0.01267587576054321,
+            "sadness": 0.10387211398320675,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4284,8 +5535,8 @@ export const nativeDTO = {
           "at": 1799918400,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0113,
-            "sadness": 0.0925,
+            "anger": 0.011338593989833364,
+            "sadness": 0.09246776208987302,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4296,8 +5547,8 @@ export const nativeDTO = {
           "at": 1799918700,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0101,
-            "sadness": 0.0823,
+            "anger": 0.010135754583615188,
+            "sadness": 0.08232564313543834,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4308,8 +5559,8 @@ export const nativeDTO = {
           "at": 1799919000,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0091,
-            "sadness": 0.0733,
+            "anger": 0.009055563603044589,
+            "sadness": 0.07330352976682902,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4320,8 +5571,8 @@ export const nativeDTO = {
           "at": 1799919300,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0081,
-            "sadness": 0.0653,
+            "anger": 0.008086792936616963,
+            "sadness": 0.06527584467058896,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4332,8 +5583,8 @@ export const nativeDTO = {
           "at": 1799919600,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0072,
-            "sadness": 0.0581,
+            "anger": 0.007218899404525426,
+            "sadness": 0.058131559860027424,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4344,8 +5595,8 @@ export const nativeDTO = {
           "at": 1799919900,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0064,
-            "sadness": 0.0518,
+            "anger": 0.006442085506297891,
+            "sadness": 0.05177239643641921,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4356,8 +5607,8 @@ export const nativeDTO = {
           "at": 1799920200,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0057,
-            "sadness": 0.0461,
+            "anger": 0.005747319557474226,
+            "sadness": 0.04611127416091751,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4368,8 +5619,8 @@ export const nativeDTO = {
           "at": 1799920500,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0051,
-            "sadness": 0.0411,
+            "anger": 0.005126328170625604,
+            "sadness": 0.041070970186719444,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4380,8 +5631,8 @@ export const nativeDTO = {
           "at": 1799920800,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0046,
-            "sadness": 0.0366,
+            "anger": 0.0045715704842136376,
+            "sadness": 0.03658295409632811,
             "fear": 0.0,
             "surprise": 0.0,
             "affection": 0.105
@@ -4392,11 +5643,11 @@ export const nativeDTO = {
           "at": 1799921100,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0562,
-            "sadness": 0.2302,
-            "fear": 0.11,
-            "surprise": 0.0413,
-            "affection": 0.1432
+            "anger": 0.056227757381207936,
+            "sadness": 0.23023301721785847,
+            "fear": 0.11001537214803528,
+            "surprise": 0.04129696661839189,
+            "affection": 0.14322088062540259
           },
           "basis": "recorded_decay"
         },
@@ -4404,11 +5655,11 @@ export const nativeDTO = {
           "at": 1799921400,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0473,
-            "sadness": 0.2082,
-            "fear": 0.0994,
-            "surprise": 0.0356,
-            "affection": 0.1416
+            "anger": 0.047327857221943735,
+            "sadness": 0.20820800037969817,
+            "fear": 0.0994207314213782,
+            "surprise": 0.03556921850112449,
+            "affection": 0.141567659142395
           },
           "basis": "recorded_decay"
         },
@@ -4416,11 +5667,11 @@ export const nativeDTO = {
           "at": 1799921700,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0401,
-            "sadness": 0.1879,
-            "fear": 0.09,
-            "surprise": 0.0305,
-            "affection": 0.14
+            "anger": 0.040076369157457666,
+            "sadness": 0.1879054959615945,
+            "fear": 0.09004046114514455,
+            "surprise": 0.030541375460916675,
+            "affection": 0.13995173200603864
           },
           "basis": "recorded_decay"
         },
@@ -4428,11 +5679,11 @@ export const nativeDTO = {
           "at": 1799922000,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0341,
-            "sadness": 0.1693,
-            "fear": 0.0817,
-            "surprise": 0.0262,
-            "affection": 0.1384
+            "anger": 0.03412133969172342,
+            "sadness": 0.16928923679635768,
+            "fear": 0.08169708049491017,
+            "surprise": 0.026155109078383743,
+            "affection": 0.13837758356095708
           },
           "basis": "recorded_decay"
         },
@@ -4440,11 +5691,11 @@ export const nativeDTO = {
           "at": 1799922300,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0292,
-            "sadness": 0.1523,
-            "fear": 0.0742,
-            "surprise": 0.0223,
-            "affection": 0.1368
+            "anger": 0.02919440070275167,
+            "sadness": 0.15229282957996634,
+            "fear": 0.07424539344669175,
+            "surprise": 0.022348069060918935,
+            "affection": 0.1368486354292847
           },
           "basis": "recorded_decay"
         },
@@ -4452,11 +5703,11 @@ export const nativeDTO = {
           "at": 1799922600,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0251,
-            "sadness": 0.1368,
-            "fear": 0.0676,
-            "surprise": 0.0191,
-            "affection": 0.1354
+            "anger": 0.025089441246099606,
+            "sadness": 0.13683071660199228,
+            "fear": 0.06756579111392363,
+            "surprise": 0.019057859930344912,
+            "affection": 0.1353674091194426
           },
           "basis": "recorded_decay"
         },
@@ -4464,11 +5715,11 @@ export const nativeDTO = {
           "at": 1799922900,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0216,
-            "sadness": 0.1228,
-            "fear": 0.0616,
-            "surprise": 0.0162,
-            "affection": 0.1339
+            "anger": 0.02164698702913664,
+            "sadness": 0.12280622325703722,
+            "fear": 0.06155902969734355,
+            "surprise": 0.01622454798253652,
+            "affection": 0.13393566616926264
           },
           "basis": "recorded_decay"
         },
@@ -4476,11 +5727,11 @@ export const nativeDTO = {
           "at": 1799923200,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0187,
-            "sadness": 0.1101,
-            "fear": 0.0561,
-            "surprise": 0.0138,
-            "affection": 0.1326
+            "anger": 0.018742709037808676,
+            "sadness": 0.1101173877609773,
+            "fear": 0.05614215105575737,
+            "surprise": 0.013792142322211957,
+            "affection": 0.13255452883601998
           },
           "basis": "recorded_decay"
         },
@@ -4488,11 +5739,11 @@ export const nativeDTO = {
           "at": 1799923500,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0163,
-            "sadness": 0.0987,
-            "fear": 0.0512,
-            "surprise": 0.0117,
-            "affection": 0.1312
+            "anger": 0.016278930001040255,
+            "sadness": 0.09866111278369626,
+            "fear": 0.05124528873001966,
+            "surprise": 0.011709370496633764,
+            "affection": 0.1312245839448034
           },
           "basis": "recorded_decay"
         },
@@ -4500,11 +5751,11 @@ export const nativeDTO = {
           "at": 1799923800,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0142,
-            "sadness": 0.0883,
-            "fear": 0.0468,
-            "surprise": 0.0099,
-            "affection": 0.1299
+            "anger": 0.014178315512096126,
+            "sadness": 0.08833605530879941,
+            "fear": 0.046809160753989214,
+            "surprise": 0.00992997879848522,
+            "affection": 0.1299459721589437
           },
           "basis": "recorded_decay"
         },
@@ -4512,11 +5763,11 @@ export const nativeDTO = {
           "at": 1799924100,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0124,
-            "sadness": 0.079,
-            "fear": 0.0428,
-            "surprise": 0.0084,
-            "affection": 0.1287
+            "anger": 0.01237916349758754,
+            "sadness": 0.07904457442807775,
+            "fear": 0.04278309572709741,
+            "surprise": 0.008412721143831112,
+            "affection": 0.12871846463481199
           },
           "basis": "recorded_decay"
         },
@@ -4524,11 +5775,11 @@ export const nativeDTO = {
           "at": 1799924400,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0108,
-            "sadness": 0.0707,
-            "fear": 0.0391,
-            "surprise": 0.0071,
-            "affection": 0.1275
+            "anger": 0.010831867931725097,
+            "sadness": 0.07069398153584484,
+            "fear": 0.03912347345916076,
+            "surprise": 0.007121152208562152,
+            "affection": 0.1275415287620059
           },
           "basis": "recorded_decay"
         },
@@ -4536,11 +5787,11 @@ export const nativeDTO = {
           "at": 1799924700,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0095,
-            "sadness": 0.0632,
-            "fear": 0.0358,
-            "surprise": 0.006,
-            "affection": 0.1264
+            "anger": 0.009496248981894401,
+            "sadness": 0.06319727904272164,
+            "fear": 0.03579248838561625,
+            "surprise": 0.006023305511454065,
+            "affection": 0.12641438446341896
           },
           "basis": "recorded_decay"
         },
@@ -4548,11 +5799,11 @@ export const nativeDTO = {
           "at": 1799925000,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0083,
-            "sadness": 0.0565,
-            "fear": 0.0328,
-            "surprise": 0.0051,
-            "affection": 0.1253
+            "anger": 0.00833952537807863,
+            "sadness": 0.05647352866593233,
+            "fear": 0.03275716470771456,
+            "surprise": 0.005091311866024264,
+            "affection": 0.12533605233329312
           },
           "basis": "recorded_decay"
         },
@@ -4560,11 +5811,11 @@ export const nativeDTO = {
           "at": 1799925300,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0073,
-            "sadness": 0.0504,
-            "fear": 0.03,
-            "surprise": 0.0043,
-            "affection": 0.1243
+            "anger": 0.007334765087594083,
+            "sadness": 0.05044795567761049,
+            "fear": 0.029988568238839778,
+            "surprise": 0.004300995494889265,
+            "affection": 0.1243053947210779
           },
           "basis": "recorded_decay"
         },
@@ -4572,11 +5823,11 @@ export const nativeDTO = {
           "at": 1799925600,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0065,
-            "sadness": 0.0451,
-            "fear": 0.0275,
-            "surprise": 0.0036,
-            "affection": 0.1233
+            "anger": 0.0064596939869979485,
+            "sadness": 0.045051868902685366,
+            "fear": 0.027461172315877375,
+            "surprise": 0.0036314721916866815,
+            "affection": 0.12332115072127584
           },
           "basis": "recorded_decay"
         },
@@ -4584,11 +5835,11 @@ export const nativeDTO = {
           "at": 1799925900,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0057,
-            "sadness": 0.0402,
-            "fear": 0.0252,
-            "surprise": 0.0031,
-            "affection": 0.1224
+            "anger": 0.005695773871812576,
+            "sadness": 0.040222455937479314,
+            "fear": 0.025152344697010085,
+            "surprise": 0.0030647648104683758,
+            "affection": 0.12238196590143399
           },
           "basis": "recorded_decay"
         },
@@ -4596,11 +5847,11 @@ export const nativeDTO = {
           "at": 1799926200,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.005,
-            "sadness": 0.0359,
-            "fear": 0.023,
-            "surprise": 0.0026,
-            "affection": 0.1215
+            "anger": 0.005027484190920093,
+            "sadness": 0.035902497584094153,
+            "fear": 0.02304192975740712,
+            "surprise": 0.00258544501675534,
+            "affection": 0.12148641748942603
           },
           "basis": "recorded_decay"
         },
@@ -4608,11 +5859,11 @@ export const nativeDTO = {
           "at": 1799926500,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0044,
-            "sadness": 0.032,
-            "fear": 0.0211,
-            "surprise": 0.0022,
-            "affection": 0.1206
+            "anger": 0.004441758733892387,
+            "sadness": 0.032040033751096986,
+            "fear": 0.021111906007864344,
+            "surprise": 0.002180305880322076,
+            "affection": 0.1206330356449041
           },
           "basis": "recorded_decay"
         },
@@ -4620,11 +5871,11 @@ export const nativeDTO = {
           "at": 1799926800,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0039,
-            "sadness": 0.0286,
-            "fear": 0.0193,
-            "surprise": 0.0018,
-            "affection": 0.1198
+            "anger": 0.003927540852034532,
+            "sadness": 0.028588004192375824,
+            "fear": 0.019346103381043582,
+            "surprise": 0.0018380669640627016,
+            "affection": 0.11982032135631371
           },
           "basis": "recorded_decay"
         },
@@ -4632,11 +5883,11 @@ export const nativeDTO = {
           "at": 1799927100,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0035,
-            "sadness": 0.0255,
-            "fear": 0.0177,
-            "surprise": 0.0015,
-            "affection": 0.119
+            "anger": 0.0034754298886862474,
+            "sadness": 0.025503880772515915,
+            "fear": 0.017729968150591927,
+            "surprise": 0.0015491116541771345,
+            "affection": 0.11904676143246537
           },
           "basis": "recorded_decay"
         },
@@ -4644,11 +5895,11 @@ export const nativeDTO = {
           "at": 1799927400,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0031,
-            "sadness": 0.0227,
-            "fear": 0.0163,
-            "surprise": 0.0013,
-            "affection": 0.1183
+            "anger": 0.003077398217102699,
+            "sadness": 0.022749302940357513,
+            "fear": 0.016250365997701372,
+            "surprise": 0.0013052552844186782,
+            "affection": 0.11831084099486726
           },
           "basis": "recorded_decay"
         },
@@ -4656,11 +5907,11 @@ export const nativeDTO = {
           "at": 1799927700,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0027,
-            "sadness": 0.0203,
-            "fear": 0.0149,
-            "surprise": 0.0011,
-            "affection": 0.1176
+            "anger": 0.0027265632740929935,
+            "sadness": 0.02028972436318439,
+            "fear": 0.01489541579319089,
+            "surprise": 0.001099541913678643,
+            "affection": 0.11761105382256731
           },
           "basis": "recorded_decay"
         },
@@ -4668,11 +5919,11 @@ export const nativeDTO = {
           "at": 1799928000,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0024,
-            "sadness": 0.0181,
-            "fear": 0.0137,
-            "surprise": 0.0009,
-            "affection": 0.1169
+            "anger": 0.0024170026969771215,
+            "sadness": 0.018094075915306655,
+            "fear": 0.013654348256438525,
+            "surprise": 0.0009260672647643726,
+            "affection": 0.1169459108540242
           },
           "basis": "recorded_decay"
         },
@@ -4682,9 +5933,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.2602,
-            "surprise": 0.1514,
-            "affection": 0.1742
+            "fear": 0.260162982632049,
+            "surprise": 0.1514488097481386,
+            "affection": 0.17416775362127335
           },
           "basis": "recorded_decay"
         },
@@ -4694,9 +5945,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.2298,
-            "surprise": 0.1274,
-            "affection": 0.1718
+            "fear": 0.22978764904755514,
+            "surprise": 0.1273527612116516,
+            "affection": 0.17183939873639248
           },
           "basis": "recorded_decay"
         },
@@ -4706,9 +5957,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.2039,
-            "surprise": 0.1071,
-            "affection": 0.1695
+            "fear": 0.20394369397535436,
+            "surprise": 0.1070904803755401,
+            "affection": 0.16945411545778596
           },
           "basis": "recorded_decay"
         },
@@ -4718,9 +5969,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.1818,
-            "surprise": 0.0901,
-            "affection": 0.167
+            "fear": 0.1817948733982932,
+            "surprise": 0.09005200105558997,
+            "affection": 0.1670385567145091
           },
           "basis": "recorded_decay"
         },
@@ -4730,9 +5981,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.1627,
-            "surprise": 0.0757,
-            "affection": 0.1646
+            "fear": 0.16267967582916604,
+            "surprise": 0.07572440487406931,
+            "affection": 0.16461487210693818
           },
           "basis": "recorded_decay"
         },
@@ -4742,9 +5993,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.1461,
-            "surprise": 0.0637,
-            "affection": 0.1622
+            "fear": 0.1460727112864846,
+            "surprise": 0.06367638060582577,
+            "affection": 0.1622013528627426
           },
           "basis": "recorded_decay"
         },
@@ -4754,9 +6005,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.1316,
-            "surprise": 0.0535,
-            "affection": 0.1598
+            "fear": 0.1315548232328951,
+            "surprise": 0.05354524018777007,
+            "affection": 0.1598129888684245
           },
           "basis": "recorded_decay"
         },
@@ -4766,9 +6017,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.1188,
-            "surprise": 0.045,
-            "affection": 0.1575
+            "fear": 0.11878993637286206,
+            "surprise": 0.045026000527794985,
+            "affection": 0.15746194958255338
           },
           "basis": "recorded_decay"
         },
@@ -4778,9 +6029,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.1075,
-            "surprise": 0.0379,
-            "affection": 0.1552
+            "fear": 0.10750710725203663,
+            "surprise": 0.03786220243703468,
+            "affection": 0.15515799905722105
           },
           "basis": "recorded_decay"
         },
@@ -4790,9 +6041,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0975,
-            "surprise": 0.0318,
-            "affection": 0.1529
+            "fear": 0.09748659478357827,
+            "surprise": 0.031838190302912905,
+            "affection": 0.15290885392601983
           },
           "basis": "recorded_decay"
         },
@@ -4802,9 +6053,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0885,
-            "surprise": 0.0268,
-            "affection": 0.1507
+            "fear": 0.08854903791482797,
+            "surprise": 0.026772620093885036,
+            "affection": 0.1507204920316825
           },
           "basis": "recorded_decay"
         },
@@ -4814,9 +6065,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0805,
-            "surprise": 0.0225,
-            "affection": 0.1486
+            "fear": 0.0805470359693806,
+            "surprise": 0.022513000263897475,
+            "affection": 0.14859741833990106
           },
           "basis": "recorded_decay"
         },
@@ -4826,9 +6077,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0734,
-            "surprise": 0.0189,
-            "affection": 0.1465
+            "fear": 0.07335858788820532,
+            "surprise": 0.01893110121851732,
+            "affection": 0.14654289389652675
           },
           "basis": "recorded_decay"
         },
@@ -4838,9 +6089,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0669,
-            "surprise": 0.0159,
-            "affection": 0.1446
+            "fear": 0.0668819705477588,
+            "surprise": 0.015919095151456453,
+            "affection": 0.14455913281496707
           },
           "basis": "recorded_decay"
         },
@@ -4850,9 +6101,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.061,
-            "surprise": 0.0134,
-            "affection": 0.1426
+            "fear": 0.06103173195745556,
+            "surprise": 0.013386310046942518,
+            "affection": 0.14264747161320868
           },
           "basis": "recorded_decay"
         },
@@ -4862,9 +6113,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0557,
-            "surprise": 0.0113,
-            "affection": 0.1408
+            "fear": 0.055735548914423165,
+            "surprise": 0.011256500131948755,
+            "affection": 0.14080851464172892
           },
           "basis": "recorded_decay"
         },
@@ -4874,9 +6125,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0509,
-            "surprise": 0.0095,
-            "affection": 0.139
+            "fear": 0.05093175561801984,
+            "surprise": 0.009465550609258676,
+            "affection": 0.13904225884267155
           },
           "basis": "recorded_decay"
         },
@@ -4886,9 +6137,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0466,
-            "surprise": 0.008,
-            "affection": 0.1373
+            "fear": 0.046567393674264226,
+            "surprise": 0.007959547575728209,
+            "affection": 0.13734820064671246
           },
           "basis": "recorded_decay"
         },
@@ -4898,9 +6149,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0426,
-            "surprise": 0.0067,
-            "affection": 0.1357
+            "fear": 0.042596667823307836,
+            "surprise": 0.006693155023471275,
+            "affection": 0.13572542743808175
           },
           "basis": "recorded_decay"
         },
@@ -4910,9 +6161,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.039,
-            "surprise": 0.0056,
-            "affection": 0.1342
+            "fear": 0.03897971789346956,
+            "surprise": 0.00562825006597436,
+            "affection": 0.134172695692475
           },
           "basis": "recorded_decay"
         },
@@ -4922,9 +6173,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0357,
-            "surprise": 0.0047,
-            "affection": 0.1327
+            "fear": 0.03568163769080545,
+            "surprise": 0.004732775304629322,
+            "affection": 0.13268849761037493
           },
           "basis": "recorded_decay"
         },
@@ -4934,9 +6185,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0327,
-            "surprise": 0.004,
-            "affection": 0.1313
+            "fear": 0.032671687136943954,
+            "surprise": 0.0039797737878641045,
+            "affection": 0.13127111782378564
           },
           "basis": "recorded_decay"
         },
@@ -4946,9 +6197,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0299,
-            "surprise": 0.0033,
-            "affection": 0.1299
+            "fear": 0.02992265602135378,
+            "surprise": 0.0033465775117356377,
+            "affection": 0.12991868154252725
           },
           "basis": "recorded_decay"
         },
@@ -4958,585 +6209,585 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0274,
-            "surprise": 0.0028,
-            "affection": 0.1286
+            "fear": 0.0274103470482106,
+            "surprise": 0.00281412503298718,
+            "affection": 0.12862919532267808
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799935500,
           "emotions": {
-            "joy": 0.3119,
+            "joy": 0.3119346485696625,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.2065,
-            "affection": 0.4564
+            "surprise": 0.20648483309195942,
+            "affection": 0.45644635174045456
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799935800,
           "emotions": {
-            "joy": 0.2779,
+            "joy": 0.2779021785542695,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1778,
-            "affection": 0.426
+            "surprise": 0.17784609250562242,
+            "affection": 0.4259799834405932
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799936100,
           "emotions": {
-            "joy": 0.2476,
+            "joy": 0.2475826946424064,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1527,
-            "affection": 0.3984
+            "surprise": 0.15270687730458327,
+            "affection": 0.39839543971795877
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799936400,
           "emotions": {
-            "joy": 0.2206,
+            "joy": 0.22057110529065094,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1308,
-            "affection": 0.3734
+            "surprise": 0.1307755453919187,
+            "affection": 0.3734031227172907
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799936700,
           "emotions": {
-            "joy": 0.1965,
+            "joy": 0.19650651496223873,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.1117,
-            "affection": 0.3507
+            "surprise": 0.11174034530459459,
+            "affection": 0.35074363743948267
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799937000,
           "emotions": {
-            "joy": 0.1751,
+            "joy": 0.1750674022860839,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0953,
-            "affection": 0.3302
+            "surprise": 0.09528929965172445,
+            "affection": 0.3301845747341979
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799937300,
           "emotions": {
-            "joy": 0.156,
+            "joy": 0.15596732428483126,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0811,
-            "affection": 0.3115
+            "surprise": 0.08112273991268261,
+            "affection": 0.3115176408851652
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799937600,
           "emotions": {
-            "joy": 0.139,
+            "joy": 0.13895108927713476,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.069,
-            "affection": 0.2946
+            "surprise": 0.0689607116110597,
+            "affection": 0.2945560962206716
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799937900,
           "emotions": {
-            "joy": 0.1238,
+            "joy": 0.12379134732120323,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0585,
-            "affection": 0.2791
+            "surprise": 0.058546852483168786,
+            "affection": 0.2791324692666051
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799938200,
           "emotions": {
-            "joy": 0.1103,
+            "joy": 0.11028555264532547,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0496,
-            "affection": 0.2651
+            "surprise": 0.049649893992426135,
+            "affection": 0.2650965165993626
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799938500,
           "emotions": {
-            "joy": 0.0983,
+            "joy": 0.09825325748111936,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0421,
-            "affection": 0.2523
+            "surprise": 0.042063605719155496,
+            "affection": 0.2523134017994966
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799938800,
           "emotions": {
-            "joy": 0.0875,
+            "joy": 0.08753370114304194,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0356,
-            "affection": 0.2407
+            "surprise": 0.035605761042810734,
+            "affection": 0.24066206979735535
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799939100,
           "emotions": {
-            "joy": 0.078,
+            "joy": 0.07798366214241562,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0301,
-            "affection": 0.23
+            "surprise": 0.03011652755727039,
+            "affection": 0.23003379547765712
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799939400,
           "emotions": {
-            "joy": 0.0695,
+            "joy": 0.06947554463856738,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0255,
-            "affection": 0.2203
+            "surprise": 0.025456559330121257,
+            "affection": 0.22033088770522774
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799939700,
           "emotions": {
-            "joy": 0.0619,
+            "joy": 0.06189567366060161,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0215,
-            "affection": 0.2115
+            "surprise": 0.02150497747444636,
+            "affection": 0.21146553197958834
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799940000,
           "emotions": {
-            "joy": 0.0551,
+            "joy": 0.05514277632266272,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0182,
-            "affection": 0.2034
+            "surprise": 0.018157360958433375,
+            "affection": 0.20335875674891457
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799940300,
           "emotions": {
-            "joy": 0.0491,
+            "joy": 0.04912662874055968,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0153,
-            "affection": 0.1959
+            "surprise": 0.015323824052341912,
+            "affection": 0.19593951003837756
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799940600,
           "emotions": {
-            "joy": 0.0438,
+            "joy": 0.04376685057152097,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0129,
-            "affection": 0.1891
+            "surprise": 0.012927225083776668,
+            "affection": 0.18914383449561029
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799940900,
           "emotions": {
-            "joy": 0.039,
+            "joy": 0.03899183107120781,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0109,
-            "affection": 0.1829
+            "surprise": 0.010901529401610412,
+            "affection": 0.18291413024629752
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799941200,
           "emotions": {
-            "joy": 0.0347,
+            "joy": 0.03473777231928369,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0092,
-            "affection": 0.1772
+            "surprise": 0.009190334820313574,
+            "affection": 0.1771984961028014
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799941500,
           "emotions": {
-            "joy": 0.0309,
+            "joy": 0.030947836830300807,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0077,
-            "affection": 0.172
+            "surprise": 0.007745558270885673,
+            "affection": 0.171950140693607
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799941800,
           "emotions": {
-            "joy": 0.0276,
+            "joy": 0.02757138816133136,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0065,
-            "affection": 0.1671
+            "surprise": 0.006526276422093457,
+            "affection": 0.1671268559948159
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799942100,
           "emotions": {
-            "joy": 0.0246,
+            "joy": 0.02456331437027984,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0055,
-            "affection": 0.1627
+            "surprise": 0.00549770956839315,
+            "affection": 0.1626905465590664
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799942400,
           "emotions": {
-            "joy": 0.0219,
+            "joy": 0.021883425285760486,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0046,
-            "affection": 0.1586
+            "surprise": 0.00463033632382183,
+            "affection": 0.15860680846293335
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799942700,
           "emotions": {
-            "joy": 0.5838,
+            "joy": 0.5838113828769538,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0899,
+            "fear": 0.08994925298004607,
             "surprise": 0.0,
-            "affection": 0.4731
+            "affection": 0.4730526764529104
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799943000,
           "emotions": {
-            "joy": 0.5231,
+            "joy": 0.5230787345395913,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0839,
+            "fear": 0.0839476383189788,
             "surprise": 0.0,
-            "affection": 0.4349
+            "affection": 0.4348967994305818
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799943300,
           "emotions": {
-            "joy": 0.4684,
+            "joy": 0.4684299390686431,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0781,
+            "fear": 0.07810907530261192,
             "surprise": 0.0,
-            "affection": 0.4005
+            "affection": 0.4005177264242646
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799943600,
           "emotions": {
-            "joy": 0.4193,
+            "joy": 0.419300477952523,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0725,
+            "fear": 0.07249672429067373,
             "surprise": 0.0,
-            "affection": 0.3696
+            "affection": 0.36957573712071906
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799943900,
           "emotions": {
-            "joy": 0.3752,
+            "joy": 0.3751692576906164,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0672,
+            "fear": 0.06715094897880047,
             "surprise": 0.0,
-            "affection": 0.3418
+            "affection": 0.3417547963585618
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799944200,
           "emotions": {
-            "joy": 0.3356,
+            "joy": 0.3355571969736577,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0621,
+            "fear": 0.06209522658460492,
             "surprise": 0.0,
-            "affection": 0.3168
+            "affection": 0.31676243043302016
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799944500,
           "emotions": {
-            "joy": 0.3,
+            "joy": 0.30002535940641734,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0573,
+            "fear": 0.057340647778239565,
             "surprise": 0.0,
-            "affection": 0.2943
+            "affection": 0.29432916558665084
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799944800,
           "emotions": {
-            "joy": 0.2682,
+            "joy": 0.26817279275379796,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0529,
+            "fear": 0.05288933392508372,
             "surprise": 0.0,
-            "affection": 0.2742
+            "affection": 0.27420765914003403
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799945100,
           "emotions": {
-            "joy": 0.2396,
+            "joy": 0.23963419773743894,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0487,
+            "fear": 0.04873702383402101,
             "surprise": 0.0,
-            "affection": 0.2562
+            "affection": 0.2561716243417865
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799945400,
           "emotions": {
-            "joy": 0.2141,
+            "joy": 0.2140775193291182,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0449,
+            "fear": 0.044875024116189294,
             "surprise": 0.0,
-            "affection": 0.24
+            "affection": 0.24001462661955222
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799945700,
           "emotions": {
-            "joy": 0.1912,
+            "joy": 0.19120152973748983,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0413,
+            "fear": 0.041291672496780826,
             "surprise": 0.0,
-            "affection": 0.2255
+            "affection": 0.22554881033335855
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799946000,
           "emotions": {
-            "joy": 0.1707,
+            "joy": 0.17073345361711742,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.038,
+            "fear": 0.037973428933631204,
             "surprise": 0.0,
-            "affection": 0.2126
+            "affection": 0.21260360042970516
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799946300,
           "emotions": {
-            "joy": 0.1524,
+            "joy": 0.15242667143294222,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0349,
+            "fear": 0.03490568282712985,
             "surprise": 0.0,
-            "affection": 0.201
+            "affection": 0.2010244118072826
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799946600,
           "emotions": {
-            "joy": 0.1361,
+            "joy": 0.13605852557250295,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0321,
+            "fear": 0.03207334414154972,
             "surprise": 0.0,
-            "affection": 0.1907
+            "affection": 0.19067139011669895
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799946900,
           "emotions": {
-            "joy": 0.1214,
+            "joy": 0.12142824505296211,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0295,
+            "fear": 0.02946127049895178,
             "surprise": 0.0,
-            "affection": 0.1814
+            "affection": 0.18141820062833633
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799947200,
           "emotions": {
-            "joy": 0.1084,
+            "joy": 0.10835499798849131,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0271,
+            "fear": 0.027054570174543168,
             "surprise": 0.0,
-            "affection": 0.1732
+            "affection": 0.17315087631158216
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799947500,
           "emotions": {
-            "joy": 0.0967,
+            "joy": 0.09667607593755544,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0248,
+            "fear": 0.02483881158501025,
             "surprise": 0.0,
-            "affection": 0.1658
+            "affection": 0.1657667320500363
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799947800,
           "emotions": {
-            "joy": 0.0862,
+            "joy": 0.08624521049474407,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0228,
+            "fear": 0.022800162677682128,
             "surprise": 0.0,
-            "affection": 0.1592
+            "affection": 0.15917334870883984
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799948100,
           "emotions": {
-            "joy": 0.0769,
+            "joy": 0.07693101975161035,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0209,
+            "fear": 0.02092547810407477,
             "surprise": 0.0,
-            "affection": 0.1533
+            "affection": 0.1532876283611161
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799948400,
           "emotions": {
-            "joy": 0.0686,
+            "joy": 0.06861558030403068,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0192,
+            "fear": 0.019202347815352388,
             "surprise": 0.0,
-            "affection": 0.148
+            "affection": 0.1480349202011901
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799948700,
           "emotions": {
-            "joy": 0.0612,
+            "joy": 0.061193119152883765,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0176,
+            "fear": 0.017619117455781125,
             "surprise": 0.0,
-            "affection": 0.1433
+            "affection": 0.14334821538685913
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799949000,
           "emotions": {
-            "joy": 0.0546,
+            "joy": 0.054568818989210524,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0162,
+            "fear": 0.01616488842693077,
             "surprise": 0.0,
-            "affection": 0.1392
+            "affection": 0.13916740815273876
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799949300,
           "emotions": {
-            "joy": 0.0487,
+            "joy": 0.04865772986224538,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0148,
+            "fear": 0.014829503575704889,
             "surprise": 0.0,
-            "affection": 0.1354
+            "affection": 0.13543861993473985
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799949600,
           "emotions": {
-            "joy": 0.0434,
+            "joy": 0.0433837800098784,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0136,
+            "fear": 0.013603522988771747,
             "surprise": 0.0,
-            "affection": 0.1321
+            "affection": 0.13211358287286715
           },
           "basis": "recorded_decay"
         },
@@ -5544,11 +6795,11 @@ export const nativeDTO = {
           "at": 1799949900,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.141,
-            "sadness": 0.4289,
-            "fear": 0.22,
-            "surprise": 0.0321,
-            "affection": 0.1319
+            "anger": 0.14103281339656068,
+            "sadness": 0.42887139707653466,
+            "fear": 0.22003074429607056,
+            "surprise": 0.03211099665407092,
+            "affection": 0.13187881786074726
           },
           "basis": "recorded_decay"
         },
@@ -5556,11 +6807,11 @@ export const nativeDTO = {
           "at": 1799950200,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.1172,
-            "sadness": 0.3904,
-            "fear": 0.1988,
-            "surprise": 0.0287,
-            "affection": 0.1314
+            "anger": 0.11718856758585959,
+            "sadness": 0.39036356931326344,
+            "fear": 0.1988414628427564,
+            "surprise": 0.02868751659836511,
+            "affection": 0.13135412915801734
           },
           "basis": "recorded_decay"
         },
@@ -5568,11 +6819,11 @@ export const nativeDTO = {
           "at": 1799950500,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.098,
-            "sadness": 0.3544,
-            "fear": 0.1801,
-            "surprise": 0.0254,
-            "affection": 0.1307
+            "anger": 0.09800220809306522,
+            "sadness": 0.3543617308336253,
+            "fear": 0.1800809222902891,
+            "surprise": 0.025385924129986623,
+            "affection": 0.13074790127861247
           },
           "basis": "recorded_decay"
         },
@@ -5580,11 +6831,11 @@ export const nativeDTO = {
           "at": 1799950800,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0824,
-            "sadness": 0.3209,
-            "fear": 0.1634,
-            "surprise": 0.0223,
-            "affection": 0.1301
+            "anger": 0.08244097744223122,
+            "sadness": 0.32094162154288414,
+            "fear": 0.16339416098982035,
+            "surprise": 0.022292884471570847,
+            "affection": 0.13007786569579166
           },
           "basis": "recorded_decay"
         },
@@ -5592,11 +6843,11 @@ export const nativeDTO = {
           "at": 1799951100,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0697,
-            "sadness": 0.2901,
-            "fear": 0.1485,
-            "surprise": 0.0195,
-            "affection": 0.1294
+            "anger": 0.06972443620806154,
+            "sadness": 0.29009897877144464,
+            "fear": 0.1484907868933835,
+            "surprise": 0.01945466983048142,
+            "affection": 0.1293591366205602
           },
           "basis": "recorded_decay"
         },
@@ -5604,11 +6855,11 @@ export const nativeDTO = {
           "at": 1799951400,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0593,
-            "sadness": 0.2618,
-            "fear": 0.1351,
-            "surprise": 0.0169,
-            "affection": 0.1286
+            "anger": 0.05925840996112674,
+            "sadness": 0.26177276258665694,
+            "fear": 0.13513158222784727,
+            "surprise": 0.016890259658747877,
+            "affection": 0.1286045638228041
           },
           "basis": "recorded_decay"
         },
@@ -5616,11 +6867,11 @@ export const nativeDTO = {
           "at": 1799951700,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0506,
-            "sadness": 0.2359,
-            "fear": 0.1231,
-            "surprise": 0.0146,
-            "affection": 0.1278
+            "anger": 0.05058707918995835,
+            "sadness": 0.23586303848598208,
+            "fear": 0.1231180593946871,
+            "surprise": 0.014600682569149693,
+            "affection": 0.12782503897185032
           },
           "basis": "recorded_decay"
         },
@@ -5628,11 +6879,11 @@ export const nativeDTO = {
           "at": 1799952000,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0434,
-            "sadness": 0.2122,
-            "fear": 0.1123,
-            "surprise": 0.0126,
-            "affection": 0.127
+            "anger": 0.043358058362263655,
+            "sadness": 0.2122445947294514,
+            "fear": 0.11228430211151474,
+            "surprise": 0.012575617801825575,
+            "affection": 0.12702976160852866
           },
           "basis": "recorded_decay"
         },
@@ -5640,11 +6891,11 @@ export const nativeDTO = {
           "at": 1799952300,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0373,
-            "sadness": 0.1908,
-            "fear": 0.1025,
-            "surprise": 0.0108,
-            "affection": 0.1262
+            "anger": 0.03729680976861941,
+            "sadness": 0.19077718686251538,
+            "fear": 0.10249057746003933,
+            "surprise": 0.0107980068475893,
+            "affection": 0.1262264700536658
           },
           "basis": "recorded_decay"
         },
@@ -5652,11 +6903,11 @@ export const nativeDTO = {
           "at": 1799952600,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0322,
-            "sadness": 0.1713,
-            "fear": 0.0936,
-            "surprise": 0.0092,
-            "affection": 0.1254
+            "anger": 0.03218779338789468,
+            "sadness": 0.17131313812531643,
+            "fear": 0.09361832150797843,
+            "surprise": 0.009247227495999483,
+            "affection": 0.12542164185792043
           },
           "basis": "recorded_decay"
         },
@@ -5664,11 +6915,11 @@ export const nativeDTO = {
           "at": 1799952900,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0279,
-            "sadness": 0.1537,
-            "fear": 0.0856,
-            "surprise": 0.0079,
-            "affection": 0.1246
+            "anger": 0.02786049881105394,
+            "sadness": 0.15370288374610916,
+            "fear": 0.08556619145419482,
+            "surprise": 0.007901235589700536,
+            "affection": 0.12462066779070098
           },
           "basis": "recorded_decay"
         },
@@ -5676,11 +6927,11 @@ export const nativeDTO = {
           "at": 1799953200,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0242,
-            "sadness": 0.1378,
-            "fear": 0.0782,
-            "surprise": 0.0067,
-            "affection": 0.1238
+            "anger": 0.024179032061387547,
+            "sadness": 0.1377989290459585,
+            "fear": 0.07824694691832151,
+            "surprise": 0.006737970995825137,
+            "affection": 0.12382800283921908
           },
           "basis": "recorded_decay"
         },
@@ -5688,11 +6939,11 @@ export const nativeDTO = {
           "at": 1799953500,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.021,
-            "sadness": 0.1235,
-            "fear": 0.0716,
-            "surprise": 0.0057,
-            "affection": 0.123
+            "anger": 0.021034303754900265,
+            "sadness": 0.12345859387169113,
+            "fear": 0.0715849767712325,
+            "surprise": 0.005736243950069037,
+            "affection": 0.12304729723180893
           },
           "basis": "recorded_decay"
         },
@@ -5700,11 +6951,11 @@ export const nativeDTO = {
           "at": 1799953800,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0183,
-            "sadness": 0.1105,
-            "fear": 0.0655,
-            "surprise": 0.0049,
-            "affection": 0.1223
+            "anger": 0.018338130769292905,
+            "sadness": 0.11054583655419994,
+            "fear": 0.06551432941542912,
+            "surprise": 0.004876258681563033,
+            "affection": 0.12228151010319994
           },
           "basis": "recorded_decay"
         },
@@ -5712,11 +6963,11 @@ export const nativeDTO = {
           "at": 1799954100,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.016,
-            "sadness": 0.0989,
-            "fear": 0.06,
-            "surprise": 0.0041,
-            "affection": 0.1215
+            "anger": 0.016018753173466866,
+            "sadness": 0.09893238666723933,
+            "fear": 0.059977136477679556,
+            "surprise": 0.0041398876407977014,
+            "affection": 0.12153300807542339
           },
           "basis": "recorded_decay"
         },
@@ -5724,11 +6975,11 @@ export const nativeDTO = {
           "at": 1799954400,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.014,
-            "sadness": 0.0885,
-            "fear": 0.0549,
-            "surprise": 0.0035,
-            "affection": 0.1208
+            "anger": 0.014017403882306817,
+            "sadness": 0.08849836478292099,
+            "fear": 0.05492234463175475,
+            "surprise": 0.0035107776727237782,
+            "affection": 0.12080365072949044
           },
           "basis": "recorded_decay"
         },
@@ -5736,11 +6987,11 @@ export const nativeDTO = {
           "at": 1799954700,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0123,
-            "sadness": 0.0791,
-            "fear": 0.0503,
-            "surprise": 0.003,
-            "affection": 0.1201
+            "anger": 0.012285665999830426,
+            "sadness": 0.07913252689188625,
+            "fear": 0.05030468939402017,
+            "surprise": 0.0029743460845172032,
+            "affection": 0.12009486468386342
           },
           "basis": "recorded_decay"
         },
@@ -5748,11 +6999,11 @@ export const nativeDTO = {
           "at": 1799955000,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0108,
-            "sadness": 0.0707,
-            "fear": 0.0461,
-            "surprise": 0.0025,
-            "affection": 0.1194
+            "anger": 0.010783423126686151,
+            "sadness": 0.07073223919432559,
+            "fear": 0.04608385951481424,
+            "surprise": 0.0025177075082679326,
+            "affection": 0.1194077077708115
           },
           "basis": "recorded_decay"
         },
@@ -5760,11 +7011,11 @@ export const nativeDTO = {
           "at": 1799955300,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0095,
-            "sadness": 0.0632,
-            "fear": 0.0422,
-            "surprise": 0.0021,
-            "affection": 0.1187
+            "anger": 0.009477258822279231,
+            "sadness": 0.06320326389714283,
+            "fear": 0.04222381201572869,
+            "surprise": 0.0021295600861537373,
+            "affection": 0.11874292460647073
           },
           "basis": "recorded_decay"
         },
@@ -5772,11 +7023,11 @@ export const nativeDTO = {
           "at": 1799955600,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0083,
-            "sadness": 0.0565,
-            "fear": 0.0387,
-            "surprise": 0.0018,
-            "affection": 0.1181
+            "anger": 0.008339198438564403,
+            "sadness": 0.05645941708312319,
+            "fear": 0.038692206762087164,
+            "surprise": 0.0018000505728006275,
+            "affection": 0.11810099468087178
           },
           "basis": "recorded_decay"
         },
@@ -5784,11 +7035,11 @@ export const nativeDTO = {
           "at": 1799955900,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0073,
-            "sadness": 0.0504,
-            "fear": 0.0355,
-            "surprise": 0.0015,
-            "affection": 0.1175
+            "anger": 0.0073457135923165415,
+            "sadness": 0.05042214451327818,
+            "fear": 0.03545993630118385,
+            "surprise": 0.0015206315401444955,
+            "affection": 0.11748217394696024
           },
           "basis": "recorded_decay"
         },
@@ -5796,11 +7047,11 @@ export const nativeDTO = {
           "at": 1799956200,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0065,
-            "sadness": 0.045,
-            "fear": 0.0325,
-            "surprise": 0.0013,
-            "affection": 0.1169
+            "anger": 0.006476929398125854,
+            "sadness": 0.045020049463500814,
+            "fear": 0.032500731995402744,
+            "surprise": 0.001283919306215999,
+            "affection": 0.11688653075975103
           },
           "basis": "recorded_decay"
         },
@@ -5808,11 +7059,11 @@ export const nativeDTO = {
           "at": 1799956500,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0057,
-            "sadness": 0.0402,
-            "fear": 0.0298,
-            "surprise": 0.0011,
-            "affection": 0.1163
+            "anger": 0.005715989231480047,
+            "sadness": 0.04018839764272235,
+            "fear": 0.02979083158638178,
+            "surprise": 0.0010835579901120624,
+            "affection": 0.11631397690567315
           },
           "basis": "recorded_decay"
         },
@@ -5820,11 +7071,11 @@ export const nativeDTO = {
           "at": 1799956800,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.005,
-            "sadness": 0.0359,
-            "fear": 0.0273,
-            "surprise": 0.0009,
-            "affection": 0.1158
+            "anger": 0.005048542652102721,
+            "sadness": 0.035868617303114705,
+            "fear": 0.02730869651287705,
+            "surprise": 0.0009140928518663408,
+            "affection": 0.11576429436565205
           },
           "basis": "recorded_decay"
         },
@@ -5832,11 +7083,11 @@ export const nativeDTO = {
           "at": 1799957100,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0603,
-            "sadness": 0.2172,
+            "anger": 0.060311047992777485,
+            "sadness": 0.21716014458101218,
             "fear": 0.0,
-            "surprise": 0.1239,
-            "affection": 0.2041
+            "surprise": 0.12389089985517568,
+            "affection": 0.20412588678011598
           },
           "basis": "recorded_decay"
         },
@@ -5844,11 +7095,11 @@ export const nativeDTO = {
           "at": 1799957400,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0498,
-            "sadness": 0.1996,
+            "anger": 0.049824834456476425,
+            "sadness": 0.1996060101226637,
             "fear": 0.0,
-            "surprise": 0.1067,
-            "affection": 0.1986
+            "surprise": 0.10670765550337345,
+            "affection": 0.1985623782535453
           },
           "basis": "recorded_decay"
         },
@@ -5856,11 +7107,11 @@ export const nativeDTO = {
           "at": 1799957700,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0415,
-            "sadness": 0.1824,
+            "anger": 0.041462536930242815,
+            "sadness": 0.18242727946631054,
             "fear": 0.0,
-            "surprise": 0.0916,
-            "affection": 0.1933
+            "surprise": 0.09162412638274997,
+            "affection": 0.1933111254669297
           },
           "basis": "recorded_decay"
         },
@@ -5868,11 +7119,11 @@ export const nativeDTO = {
           "at": 1799958000,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0347,
-            "sadness": 0.166,
+            "anger": 0.034746639875957046,
+            "sadness": 0.1659692426284327,
             "fear": 0.0,
-            "surprise": 0.0785,
-            "affection": 0.1884
+            "surprise": 0.07846532723515126,
+            "affection": 0.18835460285224506
           },
           "basis": "recorded_decay"
         },
@@ -5880,11 +7131,11 @@ export const nativeDTO = {
           "at": 1799958300,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0293,
-            "sadness": 0.1504,
+            "anger": 0.029313381762347605,
+            "sadness": 0.15044262933569247,
             "fear": 0.0,
-            "surprise": 0.067,
-            "affection": 0.1837
+            "surprise": 0.06704420718275678,
+            "affection": 0.18367626847601837
           },
           "basis": "recorded_decay"
         },
@@ -5892,11 +7143,11 @@ export const nativeDTO = {
           "at": 1799958600,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0249,
-            "sadness": 0.136,
+            "anger": 0.02488487805482991,
+            "sadness": 0.1359625939142083,
             "fear": 0.0,
-            "surprise": 0.0572,
-            "affection": 0.1793
+            "surprise": 0.05717357979103468,
+            "affection": 0.1792605088321622
           },
           "basis": "recorded_decay"
         },
@@ -5904,11 +7155,11 @@ export const nativeDTO = {
           "at": 1799958900,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0212,
-            "sadness": 0.1226,
+            "anger": 0.021248165290067764,
+            "sadness": 0.12257735025758192,
             "fear": 0.0,
-            "surprise": 0.0487,
-            "affection": 0.1751
+            "surprise": 0.04867364394760959,
+            "affection": 0.1750925867333499
           },
           "basis": "recorded_decay"
         },
@@ -5916,11 +7167,11 @@ export const nativeDTO = {
           "at": 1799959200,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0182,
-            "sadness": 0.1103,
+            "anger": 0.01823943793525829,
+            "sadness": 0.11028911537887172,
             "fear": 0.0,
-            "surprise": 0.0414,
-            "affection": 0.1712
+            "surprise": 0.04137642696663584,
+            "affection": 0.17115859212702264
           },
           "basis": "recorded_decay"
         },
@@ -5928,11 +7179,11 @@ export const nativeDTO = {
           "at": 1799959500,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0157,
-            "sadness": 0.0991,
+            "anger": 0.015732182415859726,
+            "sadness": 0.09906934638199508,
             "fear": 0.0,
-            "surprise": 0.0351,
-            "affection": 0.1674
+            "surprise": 0.03512811148990129,
+            "affection": 0.16744539567188202
           },
           "basis": "recorded_decay"
         },
@@ -5940,11 +7191,11 @@ export const nativeDTO = {
           "at": 1799959800,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0136,
-            "sadness": 0.0889,
+            "anger": 0.013628236935216385,
+            "sadness": 0.0888697517471283,
             "fear": 0.0,
-            "surprise": 0.0298,
-            "affection": 0.1639
+            "surprise": 0.029789936395455692,
+            "affection": 0.16394060491993404
           },
           "basis": "recorded_decay"
         },
@@ -5952,11 +7203,11 @@ export const nativeDTO = {
           "at": 1799960100,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0119,
-            "sadness": 0.0796,
+            "anger": 0.01185104869790926,
+            "sadness": 0.07963018095583338,
             "fear": 0.0,
-            "surprise": 0.0252,
-            "affection": 0.1606
+            "surprise": 0.025238163431493304,
+            "affection": 0.16063252295784597
           },
           "basis": "recorded_decay"
         },
@@ -5964,11 +7215,11 @@ export const nativeDTO = {
           "at": 1799960400,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0103,
-            "sadness": 0.0713,
+            "anger": 0.010340582258230452,
+            "sadness": 0.07128421473725123,
             "fear": 0.0,
-            "surprise": 0.0214,
-            "affection": 0.1575
+            "surprise": 0.021363456625686426,
+            "affection": 0.1575101093695854
           },
           "basis": "recorded_decay"
         },
@@ -5976,11 +7227,11 @@ export const nativeDTO = {
           "at": 1799960700,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.009,
-            "sadness": 0.0638,
+            "anger": 0.00904946920910873,
+            "sadness": 0.06376306767095903,
             "fear": 0.0,
-            "surprise": 0.0181,
-            "affection": 0.1546
+            "surprise": 0.01806991653436223,
+            "affection": 0.15456294339005797
           },
           "basis": "recorded_decay"
         },
@@ -5988,11 +7239,11 @@ export const nativeDTO = {
           "at": 1799961000,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0079,
-            "sadness": 0.057,
+            "anger": 0.007940091740433267,
+            "sadness": 0.05699825761788653,
             "fear": 0.0,
-            "surprise": 0.0153,
-            "affection": 0.1518
+            "surprise": 0.01527393559807276,
+            "affection": 0.15178118912677263
           },
           "basis": "recorded_decay"
         },
@@ -6000,11 +7251,11 @@ export const nativeDTO = {
           "at": 1799961300,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.007,
-            "sadness": 0.0509,
+            "anger": 0.006982369296637861,
+            "sadness": 0.05092337905159926,
             "fear": 0.0,
-            "surprise": 0.0129,
-            "affection": 0.1492
+            "surprise": 0.012902986484667827,
+            "affection": 0.14915556273346484
           },
           "basis": "recorded_decay"
         },
@@ -6012,11 +7263,11 @@ export const nativeDTO = {
           "at": 1799961600,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0062,
-            "sadness": 0.0455,
+            "anger": 0.006152075070768294,
+            "sadness": 0.04547522978288397,
             "fear": 0.0,
-            "surprise": 0.0109,
-            "affection": 0.1467
+            "surprise": 0.010894416575060044,
+            "affection": 0.1466773014261225
           },
           "basis": "recorded_decay"
         },
@@ -6024,11 +7275,11 @@ export const nativeDTO = {
           "at": 1799961900,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0054,
-            "sadness": 0.0406,
+            "anger": 0.005429552195612283,
+            "sadness": 0.04059447529031181,
             "fear": 0.0,
-            "surprise": 0.0092,
-            "affection": 0.1443
+            "surprise": 0.00919429443140516,
+            "affection": 0.14433813423800917
           },
           "basis": "recorded_decay"
         },
@@ -6036,11 +7287,11 @@ export const nativeDTO = {
           "at": 1799962200,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0048,
-            "sadness": 0.0362,
+            "anger": 0.004798731835471923,
+            "sadness": 0.03622598625863652,
             "fear": 0.0,
-            "surprise": 0.0078,
-            "affection": 0.1421
+            "surprise": 0.007756335050265988,
+            "affection": 0.1421302544160811
           },
           "basis": "recorded_decay"
         },
@@ -6048,11 +7299,11 @@ export const nativeDTO = {
           "at": 1799962500,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0042,
-            "sadness": 0.0323,
+            "anger": 0.004246379644981835,
+            "sadness": 0.03231894877195064,
             "fear": 0.0,
-            "surprise": 0.0065,
-            "affection": 0.14
+            "surprise": 0.00654091764096626,
+            "affection": 0.14004629336667496
           },
           "basis": "recorded_decay"
         },
@@ -6060,11 +7311,11 @@ export const nativeDTO = {
           "at": 1799962800,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0038,
-            "sadness": 0.0288,
+            "anger": 0.0037615152673110097,
+            "sadness": 0.028826819756366386,
             "fear": 0.0,
-            "surprise": 0.0055,
-            "affection": 0.1381
+            "surprise": 0.005514200892188137,
+            "affection": 0.13807929606351133
           },
           "basis": "recorded_decay"
         },
@@ -6072,11 +7323,11 @@ export const nativeDTO = {
           "at": 1799963100,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0033,
-            "sadness": 0.0257,
+            "anger": 0.003334963209279503,
+            "sadness": 0.02570718035857587,
             "fear": 0.0,
-            "surprise": 0.0046,
-            "affection": 0.1362
+            "surprise": 0.004647334962531404,
+            "affection": 0.136222697835941
           },
           "basis": "recorded_decay"
         },
@@ -6084,11 +7335,11 @@ export const nativeDTO = {
           "at": 1799963400,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.003,
-            "sadness": 0.0229,
+            "anger": 0.0029590036915478303,
+            "sadness": 0.022921525217470484,
             "fear": 0.0,
-            "surprise": 0.0039,
-            "affection": 0.1345
+            "surprise": 0.003915765853256067,
+            "affection": 0.134470302459967
           },
           "basis": "recorded_decay"
         },
@@ -6096,11 +7347,11 @@ export const nativeDTO = {
           "at": 1799963700,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0026,
-            "sadness": 0.0204,
+            "anger": 0.0026270997795791247,
+            "sadness": 0.0204350147166555,
             "fear": 0.0,
-            "surprise": 0.0033,
-            "affection": 0.1328
+            "surprise": 0.0032986257410358966,
+            "affection": 0.13281626147892298
           },
           "basis": "recorded_decay"
         },
@@ -6108,11 +7359,11 @@ export const nativeDTO = {
           "at": 1799964000,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0023,
-            "sadness": 0.0182,
+            "anger": 0.002333682893698946,
+            "sadness": 0.018216209309947856,
             "fear": 0.0,
-            "surprise": 0.0028,
-            "affection": 0.1313
+            "surprise": 0.002778201794293085,
+            "affection": 0.13125505468479268
           },
           "basis": "recorded_decay"
         },
@@ -6122,9 +7373,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.1501,
-            "surprise": 0.2524,
-            "affection": 0.2351
+            "fear": 0.15014761048401368,
+            "surprise": 0.2524146829135643,
+            "affection": 0.23507275977598663
           },
           "basis": "recorded_decay"
         },
@@ -6134,9 +7385,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.1304,
-            "surprise": 0.2123,
-            "affection": 0.2288
+            "fear": 0.13036691762617694,
+            "surprise": 0.21225460201941931,
+            "affection": 0.22883411784754282
           },
           "basis": "recorded_decay"
         },
@@ -6146,9 +7397,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.1139,
-            "surprise": 0.1785,
-            "affection": 0.2228
+            "fear": 0.11390323283020981,
+            "surprise": 0.1784841339592335,
+            "affection": 0.22281350891867702
           },
           "basis": "recorded_decay"
         },
@@ -6158,9 +7409,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.1001,
-            "surprise": 0.1501,
-            "affection": 0.217
+            "fear": 0.10009779290338304,
+            "surprise": 0.15008666842598323,
+            "affection": 0.21701557600579707
           },
           "basis": "recorded_decay"
         },
@@ -6170,9 +7421,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0884,
-            "surprise": 0.1262,
-            "affection": 0.2114
+            "fear": 0.08843428238247428,
+            "surprise": 0.12620734145678214,
+            "affection": 0.21144250515367186
           },
           "basis": "recorded_decay"
         },
@@ -6182,9 +7433,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0785,
-            "surprise": 0.1061,
-            "affection": 0.2061
+            "fear": 0.078506920172561,
+            "surprise": 0.1061273010097096,
+            "affection": 0.2060944525754622
           },
           "basis": "recorded_decay"
         },
@@ -6194,9 +7445,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.07,
-            "surprise": 0.0892,
-            "affection": 0.201
+            "fear": 0.06999579353555153,
+            "surprise": 0.08924206697961673,
+            "affection": 0.2009699094325118
           },
           "basis": "recorded_decay"
         },
@@ -6206,9 +7457,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0626,
-            "surprise": 0.075,
-            "affection": 0.1961
+            "fear": 0.06264778531710467,
+            "surprise": 0.0750433342129916,
+            "affection": 0.19606601287355604
           },
           "basis": "recorded_decay"
         },
@@ -6218,9 +7469,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0563,
-            "surprise": 0.0631,
-            "affection": 0.1914
+            "fear": 0.05626181852201697,
+            "surprise": 0.06310367072839108,
+            "affection": 0.19137881078429964
           },
           "basis": "recorded_decay"
         },
@@ -6230,9 +7481,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0507,
-            "surprise": 0.0531,
-            "affection": 0.1869
+            "fear": 0.05067743402958906,
+            "surprise": 0.05306365050485482,
+            "affection": 0.1869034866870101
           },
           "basis": "recorded_decay"
         },
@@ -6242,9 +7493,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0458,
-            "surprise": 0.0446,
-            "affection": 0.1826
+            "fear": 0.04576594218773057,
+            "surprise": 0.04462103348980838,
+            "affection": 0.1826345503547165
           },
           "basis": "recorded_decay"
         },
@@ -6254,9 +7505,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0414,
-            "surprise": 0.0375,
-            "affection": 0.1786
+            "fear": 0.04142356251021986,
+            "surprise": 0.037521667106495814,
+            "affection": 0.17856599894748057
           },
           "basis": "recorded_decay"
         },
@@ -6266,9 +7517,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0376,
-            "surprise": 0.0316,
-            "affection": 0.1747
+            "fear": 0.03756609950258907,
+            "surprise": 0.03155183536419554,
+            "affection": 0.17469145282316578
           },
           "basis": "recorded_decay"
         },
@@ -6278,9 +7529,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0341,
-            "surprise": 0.0265,
-            "affection": 0.171
+            "fear": 0.03412480584004424,
+            "surprise": 0.02653182525242741,
+            "affection": 0.17100426960844656
           },
           "basis": "recorded_decay"
         },
@@ -6290,9 +7541,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.031,
-            "surprise": 0.0223,
-            "affection": 0.1675
+            "fear": 0.03104316371861578,
+            "surprise": 0.022310516744904172,
+            "affection": 0.16749763962559563
           },
           "basis": "recorded_decay"
         },
@@ -6302,9 +7553,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0283,
-            "surprise": 0.0188,
-            "affection": 0.1642
+            "fear": 0.028274376598545786,
+            "surprise": 0.01876083355324789,
+            "affection": 0.1641646653465756
           },
           "basis": "recorded_decay"
         },
@@ -6314,9 +7565,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0258,
-            "surprise": 0.0158,
-            "affection": 0.161
+            "fear": 0.025779410921009747,
+            "surprise": 0.01577591768209777,
+            "affection": 0.1609984271792467
           },
           "basis": "recorded_decay"
         },
@@ -6326,9 +7577,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0235,
-            "surprise": 0.0133,
-            "affection": 0.158
+            "fear": 0.0235254639168571,
+            "surprise": 0.013265912626213705,
+            "affection": 0.15799203757336755
           },
           "basis": "recorded_decay"
         },
@@ -6338,9 +7589,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0215,
-            "surprise": 0.0112,
-            "affection": 0.1551
+            "fear": 0.02148476181544349,
+            "surprise": 0.011155258372452103,
+            "affection": 0.1551386851598526
           },
           "basis": "recorded_decay"
         },
@@ -6350,9 +7601,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0196,
-            "surprise": 0.0094,
-            "affection": 0.1524
+            "fear": 0.019633614512425974,
+            "surprise": 0.009380416776623945,
+            "affection": 0.15243167039967262
           },
           "basis": "recorded_decay"
         },
@@ -6362,9 +7613,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.018,
-            "surprise": 0.0079,
-            "affection": 0.1499
+            "fear": 0.01795166954021353,
+            "surprise": 0.00788795884104887,
+            "affection": 0.14986443401385055
           },
           "basis": "recorded_decay"
         },
@@ -6374,9 +7625,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0164,
-            "surprise": 0.0066,
-            "affection": 0.1474
+            "fear": 0.016421321139242582,
+            "surprise": 0.006632956313106853,
+            "affection": 0.1474305792888854
           },
           "basis": "recorded_decay"
         },
@@ -6386,9 +7637,9 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.015,
-            "surprise": 0.0056,
-            "affection": 0.1451
+            "fear": 0.015027240228162889,
+            "surprise": 0.005577629186226052,
+            "affection": 0.14512388919888294
           },
           "basis": "recorded_decay"
         },
@@ -6398,585 +7649,585 @@ export const nativeDTO = {
             "joy": 0.0,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0138,
-            "surprise": 0.0047,
-            "affection": 0.1429
+            "fear": 0.013755998791772075,
+            "surprise": 0.004690208388311989,
+            "affection": 0.14293833915344661
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799971500,
           "emotions": {
-            "joy": 0.2719,
+            "joy": 0.27187673430729126,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.1799,
+            "fear": 0.17989850596009213,
             "surprise": 0.0,
-            "affection": 0.2626
+            "affection": 0.26259009593274035
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799971800,
           "emotions": {
-            "joy": 0.2452,
+            "joy": 0.24517655598532181,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.1679,
+            "fear": 0.1678952766379576,
             "surprise": 0.0,
-            "affection": 0.2472
+            "affection": 0.24719481316012765
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799972100,
           "emotions": {
-            "joy": 0.2208,
+            "joy": 0.2208472444262367,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.1562,
+            "fear": 0.15621815060522384,
             "surprise": 0.0,
-            "affection": 0.2331
+            "affection": 0.23310981845641993
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799972400,
           "emotions": {
-            "joy": 0.1987,
+            "joy": 0.19872937266187207,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.145,
+            "fear": 0.14499344858134747,
             "surprise": 0.0,
-            "affection": 0.2203
+            "affection": 0.22026310602033308
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799972700,
           "emotions": {
-            "joy": 0.1787,
+            "joy": 0.17866274272837765,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.1343,
+            "fear": 0.13430189795760095,
             "surprise": 0.0,
-            "affection": 0.2086
+            "affection": 0.20857726220019773
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799973000,
           "emotions": {
-            "joy": 0.1605,
+            "joy": 0.16048979468757385,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.1242,
+            "fear": 0.12419045316920985,
             "surprise": 0.0,
-            "affection": 0.198
+            "affection": 0.19797250633849847
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799973300,
           "emotions": {
-            "joy": 0.1441,
+            "joy": 0.14405803512158605,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.1147,
+            "fear": 0.11468129555647913,
             "surprise": 0.0,
-            "affection": 0.1884
+            "affection": 0.1883689493391486
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799973600,
           "emotions": {
-            "joy": 0.1292,
+            "joy": 0.1292217034766632,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.1058,
+            "fear": 0.10577866785016744,
             "surprise": 0.0,
-            "affection": 0.1797
+            "affection": 0.17968823792714844
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799973900,
           "emotions": {
-            "joy": 0.1158,
+            "joy": 0.11584285041623572,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0975,
+            "fear": 0.09747404766804202,
             "surprise": 0.0,
-            "affection": 0.1719
+            "affection": 0.17185471910805972
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799974200,
           "emotions": {
-            "joy": 0.1038,
+            "joy": 0.10379196668379274,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0898,
+            "fear": 0.08975004823237859,
             "surprise": 0.0,
-            "affection": 0.1648
+            "affection": 0.1647962322950012
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799974500,
           "emotions": {
-            "joy": 0.0929,
+            "joy": 0.09294827225637046,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0826,
+            "fear": 0.08258334499356165,
             "surprise": 0.0,
-            "affection": 0.1584
+            "affection": 0.1584446147454907
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799974800,
           "emotions": {
-            "joy": 0.0832,
+            "joy": 0.08319975247407549,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0759,
+            "fear": 0.07594685786726241,
             "surprise": 0.0,
-            "affection": 0.1527
+            "affection": 0.15273598835599647
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799975100,
           "emotions": {
-            "joy": 0.0744,
+            "joy": 0.07444300929052661,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0698,
+            "fear": 0.0698113656542597,
             "surprise": 0.0,
-            "affection": 0.1476
+            "affection": 0.147610881698258
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799975400,
           "emotions": {
-            "joy": 0.0666,
+            "joy": 0.06658298093393557,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0641,
+            "fear": 0.06414668828309944,
             "surprise": 0.0,
-            "affection": 0.143
+            "affection": 0.14301422979734657
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799975700,
           "emotions": {
-            "joy": 0.0595,
+            "joy": 0.0595325713923605,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0589,
+            "fear": 0.05892254099790356,
             "surprise": 0.0,
-            "affection": 0.1389
+            "affection": 0.1388952850177643
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799976000,
           "emotions": {
-            "joy": 0.0532,
+            "joy": 0.05321222166582859,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0541,
+            "fear": 0.054109140349086336,
             "surprise": 0.0,
-            "affection": 0.1352
+            "affection": 0.1352074651104774
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799976300,
           "emotions": {
-            "joy": 0.0475,
+            "joy": 0.047549447196995755,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0497,
+            "fear": 0.0496776231700205,
             "surprise": 0.0,
-            "affection": 0.1319
+            "affection": 0.1319081586312002
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799976600,
           "emotions": {
-            "joy": 0.0425,
+            "joy": 0.0424783599232231,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0456,
+            "fear": 0.045600325355364256,
             "surprise": 0.0,
-            "affection": 0.129
+            "affection": 0.12895850328480646
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799976900,
           "emotions": {
-            "joy": 0.0379,
+            "joy": 0.03793918868040254,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0419,
+            "fear": 0.04185095620814954,
             "surprise": 0.0,
-            "affection": 0.1263
+            "affection": 0.1263231490522609
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799977200,
           "emotions": {
-            "joy": 0.0339,
+            "joy": 0.033877807984746995,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0384,
+            "fear": 0.038404695630704776,
             "surprise": 0.0,
-            "affection": 0.124
+            "affection": 0.12397001502829
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799977500,
           "emotions": {
-            "joy": 0.0302,
+            "joy": 0.030245282322582955,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0352,
+            "fear": 0.03523823491156225,
             "surprise": 0.0,
-            "affection": 0.1219
+            "affection": 0.12187004658893641
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799977800,
           "emotions": {
-            "joy": 0.027,
+            "joy": 0.026997430827879167,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0323,
+            "fear": 0.03232977685386154,
             "surprise": 0.0,
-            "affection": 0.12
+            "affection": 0.1199969776957316
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799978100,
           "emotions": {
-            "joy": 0.0241,
+            "joy": 0.024094415491965542,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0297,
+            "fear": 0.029659007151409778,
             "surprise": 0.0,
-            "affection": 0.1183
+            "affection": 0.11832710172846746
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799978400,
           "emotions": {
-            "joy": 0.0215,
+            "joy": 0.02150035472411791,
             "anger": 0.0,
             "sadness": 0.0,
-            "fear": 0.0272,
+            "fear": 0.027207045977543493,
             "surprise": 0.0,
-            "affection": 0.1168
+            "affection": 0.11683905314143582
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799978700,
           "emotions": {
-            "joy": 0.6239,
+            "joy": 0.623869297139325,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0321,
-            "affection": 0.5601
+            "surprise": 0.03211099665407092,
+            "affection": 0.5600779865306192
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799979000,
           "emotions": {
-            "joy": 0.5558,
+            "joy": 0.555804357108539,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0287,
-            "affection": 0.5131
+            "surprise": 0.02868751659836511,
+            "affection": 0.513054021247323
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799979300,
           "emotions": {
-            "joy": 0.4952,
+            "joy": 0.4951653892848128,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0254,
-            "affection": 0.471
+            "surprise": 0.025385924129986623,
+            "affection": 0.47101306576859314
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799979600,
           "emotions": {
-            "joy": 0.4411,
+            "joy": 0.4411422105813019,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0223,
-            "affection": 0.4334
+            "surprise": 0.022292884471570847,
+            "affection": 0.43341973830396874
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799979900,
           "emotions": {
-            "joy": 0.393,
+            "joy": 0.39301302992447745,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0195,
-            "affection": 0.3998
+            "surprise": 0.01945466983048142,
+            "affection": 0.3997966036889195
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799980200,
           "emotions": {
-            "joy": 0.3501,
+            "joy": 0.3501348045721678,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0169,
-            "affection": 0.3697
+            "surprise": 0.016890259658747877,
+            "affection": 0.3697178773879901
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799980500,
           "emotions": {
-            "joy": 0.3119,
+            "joy": 0.3119346485696625,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0146,
-            "affection": 0.3428
+            "surprise": 0.014600682569149693,
+            "affection": 0.3428038149369556
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799980800,
           "emotions": {
-            "joy": 0.2779,
+            "joy": 0.2779021785542695,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0126,
-            "affection": 0.3187
+            "surprise": 0.012575617801825575,
+            "affection": 0.31871571212378647
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799981100,
           "emotions": {
-            "joy": 0.2476,
+            "joy": 0.24758269464240645,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0108,
-            "affection": 0.2972
+            "surprise": 0.0107980068475893,
+            "affection": 0.2971514493535052
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799981400,
           "emotions": {
-            "joy": 0.2206,
+            "joy": 0.22057110529065094,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0092,
-            "affection": 0.2778
+            "surprise": 0.009247227495999483,
+            "affection": 0.27784152089889014
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799981700,
           "emotions": {
-            "joy": 0.1965,
+            "joy": 0.19650651496223873,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0079,
-            "affection": 0.2605
+            "surprise": 0.007901235589700536,
+            "affection": 0.26054549620437817
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799982000,
           "emotions": {
-            "joy": 0.1751,
+            "joy": 0.1750674022860839,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0067,
-            "affection": 0.245
+            "surprise": 0.006737970995825137,
+            "affection": 0.24504886617074723
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799982300,
           "emotions": {
-            "joy": 0.156,
+            "joy": 0.15596732428483123,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0057,
-            "affection": 0.2312
+            "surprise": 0.005736243950069037,
+            "affection": 0.2311602324801693
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799982600,
           "emotions": {
-            "joy": 0.139,
+            "joy": 0.13895108927713476,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0049,
-            "affection": 0.2187
+            "surprise": 0.004876258681563033,
+            "affection": 0.2187088025935239
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799982900,
           "emotions": {
-            "joy": 0.1238,
+            "joy": 0.12379134732120323,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0041,
-            "affection": 0.2075
+            "surprise": 0.0041398876407977014,
+            "affection": 0.20754215712551452
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799983200,
           "emotions": {
-            "joy": 0.1103,
+            "joy": 0.11028555264532544,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0035,
-            "affection": 0.1975
+            "surprise": 0.0035107776727237782,
+            "affection": 0.1975242599325228
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799983500,
           "emotions": {
-            "joy": 0.0983,
+            "joy": 0.09825325748111936,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.003,
-            "affection": 0.1885
+            "surprise": 0.0029743460845172032,
+            "affection": 0.18853368448173216
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799983800,
           "emotions": {
-            "joy": 0.0875,
+            "joy": 0.08753370114304194,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0025,
-            "affection": 0.1805
+            "surprise": 0.0025177075082679326,
+            "affection": 0.18046203295101781
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799984100,
           "emotions": {
-            "joy": 0.078,
+            "joy": 0.07798366214241562,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0021,
-            "affection": 0.1732
+            "surprise": 0.0021295600861537373,
+            "affection": 0.17321252707590762
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799984400,
           "emotions": {
-            "joy": 0.0695,
+            "joy": 0.06947554463856738,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0018,
-            "affection": 0.1667
+            "surprise": 0.0018000505728006275,
+            "affection": 0.16669875204682444
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799984700,
           "emotions": {
-            "joy": 0.0619,
+            "joy": 0.06189567366060161,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0015,
-            "affection": 0.1608
+            "surprise": 0.0015206315401444955,
+            "affection": 0.16084353679736155
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799985000,
           "emotions": {
-            "joy": 0.0551,
+            "joy": 0.05514277632266272,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0013,
-            "affection": 0.1556
+            "surprise": 0.001283919306215999,
+            "affection": 0.15557795583971426
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799985300,
           "emotions": {
-            "joy": 0.0491,
+            "joy": 0.04912662874055968,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0011,
-            "affection": 0.1508
+            "surprise": 0.0010835579901120624,
+            "affection": 0.15084043942082526
           },
           "basis": "recorded_decay"
         },
         {
           "at": 1799985600,
           "emotions": {
-            "joy": 0.0438,
+            "joy": 0.04376685057152097,
             "anger": 0.0,
             "sadness": 0.0,
             "fear": 0.0,
-            "surprise": 0.0009,
-            "affection": 0.1466
+            "surprise": 0.0009140928518663408,
+            "affection": 0.146575980213885
           },
           "basis": "recorded_decay"
         },
@@ -6984,11 +8235,11 @@ export const nativeDTO = {
           "at": 1799985900,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.1617,
-            "sadness": 0.4064,
-            "fear": 0.1301,
-            "surprise": 0.0963,
-            "affection": 0.1891
+            "anger": 0.16171803028134715,
+            "sadness": 0.40643309390263777,
+            "fear": 0.1300814913160245,
+            "surprise": 0.09633298996221276,
+            "affection": 0.18914682020069468
           },
           "basis": "recorded_decay"
         },
@@ -6996,11 +8247,11 @@ export const nativeDTO = {
           "at": 1799986200,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.1308,
-            "sadness": 0.3757,
-            "fear": 0.1149,
-            "surprise": 0.0861,
-            "affection": 0.1852
+            "anger": 0.13078253461918463,
+            "sadness": 0.37570651559707147,
+            "fear": 0.11489382452377757,
+            "surprise": 0.08606254979509532,
+            "affection": 0.1852008884949689
           },
           "basis": "recorded_decay"
         },
@@ -7008,11 +8259,11 @@ export const nativeDTO = {
           "at": 1799986500,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.1067,
-            "sadness": 0.3452,
-            "fear": 0.102,
-            "surprise": 0.0762,
-            "affection": 0.1814
+            "anger": 0.1066825529540605,
+            "sadness": 0.3451549775249332,
+            "fear": 0.10197184698767718,
+            "surprise": 0.07615777238995981,
+            "affection": 0.1813826204623578
           },
           "basis": "recorded_decay"
         },
@@ -7020,11 +8271,11 @@ export const nativeDTO = {
           "at": 1799986800,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0878,
-            "sadness": 0.3155,
-            "fear": 0.0909,
-            "surprise": 0.0669,
-            "affection": 0.1777
+            "anger": 0.0877502432847707,
+            "sadness": 0.3155036225974326,
+            "fear": 0.0908974366991466,
+            "surprise": 0.06687865341471257,
+            "affection": 0.17769657978337708
           },
           "basis": "recorded_decay"
         },
@@ -7032,11 +8283,11 @@ export const nativeDTO = {
           "at": 1799987100,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0728,
-            "sadness": 0.2872,
-            "fear": 0.0813,
-            "surprise": 0.0584,
-            "affection": 0.1741
+            "anger": 0.07275060744321028,
+            "sadness": 0.2872243171364687,
+            "fear": 0.08133983791458302,
+            "surprise": 0.05836400949144424,
+            "affection": 0.17414557029147829
           },
           "basis": "recorded_decay"
         },
@@ -7044,11 +8295,11 @@ export const nativeDTO = {
           "at": 1799987400,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0608,
-            "sadness": 0.2606,
-            "fear": 0.073,
-            "surprise": 0.0507,
-            "affection": 0.1707
+            "anger": 0.060764718620959786,
+            "sadness": 0.2606037806659454,
+            "fear": 0.0730363556432423,
+            "surprise": 0.05067077897624357,
+            "affection": 0.17073093084745242
           },
           "basis": "recorded_decay"
         },
@@ -7056,11 +8307,11 @@ export const nativeDTO = {
           "at": 1799987700,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0511,
-            "sadness": 0.2358,
-            "fear": 0.0658,
-            "surprise": 0.0438,
-            "affection": 0.1675
+            "anger": 0.051105295193288915,
+            "sadness": 0.23579498933350637,
+            "fear": 0.06577741161644755,
+            "surprise": 0.0438020477074491,
+            "affection": 0.1674527878008872
           },
           "basis": "recorded_decay"
         },
@@ -7068,11 +8319,11 @@ export const nativeDTO = {
           "at": 1799988000,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0433,
-            "sadness": 0.2129,
-            "fear": 0.0594,
-            "surprise": 0.0377,
-            "affection": 0.1643
+            "anger": 0.04325548112421573,
+            "sadness": 0.21285576266702122,
+            "fear": 0.05939496818643103,
+            "surprise": 0.0377268534054767,
+            "affection": 0.164310270854788
           },
           "basis": "recorded_decay"
         },
@@ -7080,11 +8331,11 @@ export const nativeDTO = {
           "at": 1799988300,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0368,
-            "sadness": 0.1918,
-            "fear": 0.0538,
-            "surprise": 0.0324,
-            "affection": 0.1613
+            "anger": 0.03682431758008666,
+            "sadness": 0.19177756648065447,
+            "fear": 0.053753553626018316,
+            "surprise": 0.0323940205427679,
+            "affection": 0.16130169736455155
           },
           "basis": "recorded_decay"
         },
@@ -7092,11 +8343,11 @@ export const nativeDTO = {
           "at": 1799988600,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0315,
-            "sadness": 0.1725,
-            "fear": 0.0487,
-            "surprise": 0.0277,
-            "affection": 0.1584
+            "anger": 0.031514250890117876,
+            "sadness": 0.17250687457316907,
+            "fear": 0.048743297391789134,
+            "surprise": 0.02774168248799848,
+            "affection": 0.15842472942297692
           },
           "basis": "recorded_decay"
         },
@@ -7104,11 +8355,11 @@ export const nativeDTO = {
           "at": 1799988900,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0271,
-            "sadness": 0.155,
-            "fear": 0.0443,
-            "surprise": 0.0237,
-            "affection": 0.1557
+            "anger": 0.02709734359302061,
+            "sadness": 0.1549608919068585,
+            "fear": 0.04427451895741399,
+            "surprise": 0.02370370676910158,
+            "affection": 0.15567650749476425
           },
           "basis": "recorded_decay"
         },
@@ -7116,11 +8367,11 @@ export const nativeDTO = {
           "at": 1799989200,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0234,
-            "sadness": 0.139,
-            "fear": 0.0403,
-            "surprise": 0.0202,
-            "affection": 0.1531
+            "anger": 0.02339779602199605,
+            "sadness": 0.13903902167448295,
+            "fear": 0.0402735179846903,
+            "surprise": 0.02021391298747538,
+            "affection": 0.15305376385474323
           },
           "basis": "recorded_decay"
         },
@@ -7128,11 +8379,11 @@ export const nativeDTO = {
           "at": 1799989500,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0203,
-            "sadness": 0.1246,
-            "fear": 0.0367,
-            "surprise": 0.0172,
-            "affection": 0.1506
+            "anger": 0.020279056899446965,
+            "sadness": 0.12463113296331625,
+            "fear": 0.03667929394410266,
+            "surprise": 0.01720873185020714,
+            "affection": 0.15055291864329234
           },
           "basis": "recorded_decay"
         },
@@ -7140,11 +8391,11 @@ export const nativeDTO = {
           "at": 1799989800,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0176,
-            "sadness": 0.1116,
-            "fear": 0.0334,
-            "surprise": 0.0146,
-            "affection": 0.1482
+            "anger": 0.017634281106540892,
+            "sadness": 0.11162343428951405,
+            "fear": 0.0334409852738794,
+            "surprise": 0.014628776044689068,
+            "affection": 0.14817016097086982
           },
           "basis": "recorded_decay"
         },
@@ -7152,11 +8403,11 @@ export const nativeDTO = {
           "at": 1799990100,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0154,
-            "sadness": 0.0999,
-            "fear": 0.0305,
-            "surprise": 0.0124,
-            "affection": 0.1459
+            "anger": 0.015379236489214586,
+            "sadness": 0.09990256482721621,
+            "fear": 0.03051586597872778,
+            "surprise": 0.012419662922393134,
+            "affection": 0.14590151717333674
           },
           "basis": "recorded_decay"
         },
@@ -7164,11 +8415,11 @@ export const nativeDTO = {
           "at": 1799990400,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0134,
-            "sadness": 0.0894,
-            "fear": 0.0279,
-            "surprise": 0.0105,
-            "affection": 0.1437
+            "anger": 0.013447008391711326,
+            "sadness": 0.08935836677533172,
+            "fear": 0.027867774457211583,
+            "surprise": 0.010532333018171334,
+            "affection": 0.1437429080339257
           },
           "basis": "recorded_decay"
         },
@@ -7176,11 +8427,11 @@ export const nativeDTO = {
           "at": 1799990700,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0118,
-            "sadness": 0.0799,
-            "fear": 0.0255,
-            "surprise": 0.0089,
-            "affection": 0.1417
+            "anger": 0.011784028297012018,
+            "sadness": 0.07988568880915828,
+            "fear": 0.02546587780900992,
+            "surprise": 0.008923038253551641,
+            "affection": 0.14169019654034035
           },
           "basis": "recorded_decay"
         },
@@ -7188,11 +8439,11 @@ export const nativeDTO = {
           "at": 1799991000,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0103,
-            "sadness": 0.0714,
-            "fear": 0.0233,
-            "surprise": 0.0076,
-            "affection": 0.1397
+            "anger": 0.010347081183092686,
+            "sadness": 0.07138548397834231,
+            "fear": 0.023283696837132113,
+            "surprise": 0.007553122524803766,
+            "affection": 0.13973922753139678
           },
           "basis": "recorded_decay"
         },
@@ -7200,11 +8451,11 @@ export const nativeDTO = {
           "at": 1799991300,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0091,
-            "sadness": 0.0638,
-            "fear": 0.0213,
-            "surprise": 0.0064,
-            "affection": 0.1379
+            "anger": 0.009101038975121174,
+            "sadness": 0.06376539952139267,
+            "fear": 0.021298333911653918,
+            "surprise": 0.0063886802584612445,
+            "affection": 0.13788586040237835
           },
           "basis": "recorded_decay"
         },
@@ -7212,11 +8463,11 @@ export const nativeDTO = {
           "at": 1799991600,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.008,
-            "sadness": 0.0569,
-            "fear": 0.0195,
-            "surprise": 0.0054,
-            "affection": 0.1361
+            "anger": 0.008017134765338581,
+            "sadness": 0.056940006046523675,
+            "fear": 0.01948985894673478,
+            "surprise": 0.005400151718401915,
+            "affection": 0.13612599587799315
           },
           "basis": "recorded_decay"
         },
@@ -7224,11 +8475,11 @@ export const nativeDTO = {
           "at": 1799991900,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0071,
-            "sadness": 0.0508,
-            "fear": 0.0178,
-            "surprise": 0.0046,
-            "affection": 0.1345
+            "anger": 0.007071641411934113,
+            "sadness": 0.05083077564977959,
+            "fear": 0.017840818845402725,
+            "surprise": 0.004561894620433486,
+            "affection": 0.13445559772315796
           },
           "basis": "recorded_decay"
         },
@@ -7236,11 +8487,11 @@ export const nativeDTO = {
           "at": 1799992200,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0062,
-            "sadness": 0.0454,
-            "fear": 0.0163,
-            "surprise": 0.0039,
-            "affection": 0.1329
+            "anger": 0.0062448538175817235,
+            "sadness": 0.04536588993016349,
+            "fear": 0.016335843568471977,
+            "surprise": 0.003851757918648029,
+            "affection": 0.13287071014187632
           },
           "basis": "recorded_decay"
         },
@@ -7248,11 +8499,11 @@ export const nativeDTO = {
           "at": 1799992500,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0055,
-            "sadness": 0.0405,
-            "fear": 0.015,
-            "surprise": 0.0033,
-            "affection": 0.1314
+            "anger": 0.00552030028749021,
+            "sadness": 0.04047993730915655,
+            "fear": 0.01496132801067689,
+            "surprise": 0.0032506739703361547,
+            "affection": 0.13136747151072511
           },
           "basis": "recorded_decay"
         },
@@ -7260,11 +8511,11 @@ export const nativeDTO = {
           "at": 1799992800,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0049,
-            "sadness": 0.0361,
-            "fear": 0.0137,
-            "surprise": 0.0027,
-            "affection": 0.1299
+            "anger": 0.004884127507441599,
+            "sadness": 0.036113542875343005,
+            "fear": 0.0137051735241053,
+            "surprise": 0.00274227855559899,
+            "affection": 0.1299421250037354
           },
           "basis": "recorded_decay"
         },
@@ -7272,11 +8523,11 @@ export const nativeDTO = {
           "at": 1799993100,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.1323,
-            "sadness": 0.1641,
-            "fear": 0.3003,
-            "surprise": 0.2065,
-            "affection": 0.2165
+            "anger": 0.13229755787885897,
+            "sadness": 0.16411020010498378,
+            "fear": 0.30029522096802735,
+            "surprise": 0.20648483309195942,
+            "affection": 0.21645668938179935
           },
           "basis": "recorded_decay"
         },
@@ -7284,11 +8535,11 @@ export const nativeDTO = {
           "at": 1799993400,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.1033,
-            "sadness": 0.157,
-            "fear": 0.2607,
-            "surprise": 0.1778,
-            "affection": 0.2123
+            "anger": 0.10332111653248661,
+            "sadness": 0.15701922629218368,
+            "fear": 0.2607338352523539,
+            "surprise": 0.17784609250562242,
+            "affection": 0.21232466831476762
           },
           "basis": "recorded_decay"
         },
@@ -7296,11 +8547,11 @@ export const nativeDTO = {
           "at": 1799993700,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0814,
-            "sadness": 0.1483,
-            "fear": 0.2278,
-            "surprise": 0.1527,
-            "affection": 0.2082
+            "anger": 0.08143892800110274,
+            "sadness": 0.14827453070043264,
+            "fear": 0.22780646566041962,
+            "surprise": 0.15270687730458327,
+            "affection": 0.20816032963695952
           },
           "basis": "recorded_decay"
         },
@@ -7308,11 +8559,11 @@ export const nativeDTO = {
           "at": 1799994000,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0648,
-            "sadness": 0.1386,
-            "fear": 0.2002,
-            "surprise": 0.1308,
-            "affection": 0.204
+            "anger": 0.06478671809651172,
+            "sadness": 0.13859794916655763,
+            "fear": 0.20019558580676608,
+            "surprise": 0.1307755453919187,
+            "affection": 0.2039992477332265
           },
           "basis": "recorded_decay"
         },
@@ -7320,11 +8571,11 @@ export const nativeDTO = {
           "at": 1799994300,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.052,
-            "sadness": 0.1285,
-            "fear": 0.1769,
-            "surprise": 0.1117,
-            "affection": 0.1999
+            "anger": 0.05201223325769461,
+            "sadness": 0.12851388621583024,
+            "fear": 0.17686856476494855,
+            "surprise": 0.11174034530459459,
+            "affection": 0.19987060759331615
           },
           "basis": "recorded_decay"
         },
@@ -7332,11 +8583,11 @@ export const nativeDTO = {
           "at": 1799994600,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0421,
-            "sadness": 0.1184,
-            "fear": 0.157,
-            "surprise": 0.0953,
-            "affection": 0.1958
+            "anger": 0.04213047615169637,
+            "sadness": 0.11839599221014575,
+            "fear": 0.157013840345122,
+            "surprise": 0.09528929965172445,
+            "affection": 0.19579814190268108
           },
           "basis": "recorded_decay"
         },
@@ -7344,11 +8595,11 @@ export const nativeDTO = {
           "at": 1799994900,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0344,
-            "sadness": 0.1085,
-            "fear": 0.14,
-            "surprise": 0.0811,
-            "affection": 0.1918
+            "anger": 0.03442072021146313,
+            "sadness": 0.10850375890885783,
+            "fear": 0.13999158707110307,
+            "surprise": 0.08112273991268261,
+            "affection": 0.1918009387649987
           },
           "basis": "recorded_decay"
         },
@@ -7356,11 +8607,11 @@ export const nativeDTO = {
           "at": 1799995200,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0284,
-            "sadness": 0.099,
-            "fear": 0.1253,
-            "surprise": 0.069,
-            "affection": 0.1879
+            "anger": 0.028353057196783056,
+            "sadness": 0.09901099721157337,
+            "fear": 0.12529557063420935,
+            "surprise": 0.0689607116110597,
+            "affection": 0.1878941375565781
           },
           "basis": "recorded_decay"
         },
@@ -7368,11 +8619,11 @@ export const nativeDTO = {
           "at": 1799995500,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0235,
-            "sadness": 0.09,
-            "fear": 0.1125,
-            "surprise": 0.0585,
-            "affection": 0.1841
+            "anger": 0.023535865444144155,
+            "sadness": 0.09002784676606113,
+            "fear": 0.11252363704403394,
+            "surprise": 0.058546852483168786,
+            "affection": 0.18408952806077625
           },
           "basis": "recorded_decay"
         },
@@ -7380,11 +8631,11 @@ export const nativeDTO = {
           "at": 1799995800,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0197,
-            "sadness": 0.0816,
-            "fear": 0.1014,
-            "surprise": 0.0496,
-            "affection": 0.1804
+            "anger": 0.019678131215855633,
+            "sadness": 0.08161767658942332,
+            "fear": 0.10135486805917812,
+            "surprise": 0.049649893992426135,
+            "affection": 0.18039606599411917
           },
           "basis": "recorded_decay"
         },
@@ -7392,11 +8643,11 @@ export const nativeDTO = {
           "at": 1799996100,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0166,
-            "sadness": 0.0738,
-            "fear": 0.0915,
-            "surprise": 0.0421,
-            "affection": 0.1768
+            "anger": 0.016562340384695746,
+            "sadness": 0.07380998002899561,
+            "fear": 0.09153188437546114,
+            "surprise": 0.042063605719155496,
+            "affection": 0.17682031627266404
           },
           "basis": "recorded_decay"
         },
@@ -7404,11 +8655,11 @@ export const nativeDTO = {
           "at": 1799996400,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.014,
-            "sadness": 0.0666,
-            "fear": 0.0828,
-            "surprise": 0.0356,
-            "affection": 0.1734
+            "anger": 0.014024911496837421,
+            "sadness": 0.06661014935148418,
+            "fear": 0.08284712502043973,
+            "surprise": 0.035605761042810734,
+            "affection": 0.17336683384058302
           },
           "basis": "recorded_decay"
         },
@@ -7416,11 +8667,11 @@ export const nativeDTO = {
           "at": 1799996700,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0119,
-            "sadness": 0.06,
-            "fear": 0.0751,
-            "surprise": 0.0301,
-            "affection": 0.17
+            "anger": 0.011942023503226335,
+            "sadness": 0.06000683364886891,
+            "fear": 0.07513219900517815,
+            "surprise": 0.03011652755727039,
+            "affection": 0.17003849056124457
           },
           "basis": "recorded_decay"
         },
@@ -7428,11 +8679,11 @@ export const nativeDTO = {
           "at": 1799997000,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0102,
-            "sadness": 0.054,
-            "fear": 0.0682,
-            "surprise": 0.0255,
-            "affection": 0.1668
+            "anger": 0.010219313347568797,
+            "sadness": 0.05397743506615506,
+            "fear": 0.06824961168008847,
+            "surprise": 0.025456559330121257,
+            "affection": 0.1668367555267342
           },
           "basis": "recorded_decay"
         },
@@ -7440,11 +8691,11 @@ export const nativeDTO = {
           "at": 1799997300,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0088,
-            "sadness": 0.0485,
-            "fear": 0.0621,
-            "surprise": 0.0215,
-            "affection": 0.1638
+            "anger": 0.008784357798420012,
+            "sadness": 0.04849217821761426,
+            "fear": 0.06208632743723156,
+            "surprise": 0.02150497747444636,
+            "affection": 0.163761935150994
           },
           "basis": "recorded_decay"
         },
@@ -7452,11 +8703,11 @@ export const nativeDTO = {
           "at": 1799997600,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0076,
-            "sadness": 0.0435,
-            "fear": 0.0565,
-            "surprise": 0.0182,
-            "affection": 0.1608
+            "anger": 0.007581164700732653,
+            "sadness": 0.043517091593434996,
+            "fear": 0.05654875319709157,
+            "surprise": 0.018157360958433375,
+            "affection": 0.1608133785539674
           },
           "basis": "recorded_decay"
         },
@@ -7464,11 +8715,11 @@ export const nativeDTO = {
           "at": 1799997900,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0066,
-            "sadness": 0.039,
-            "fear": 0.0516,
-            "surprise": 0.0153,
-            "affection": 0.158
+            "anger": 0.006566119202884254,
+            "sadness": 0.039016163591749815,
+            "fear": 0.051558821842019494,
+            "surprise": 0.015323824052341912,
+            "affection": 0.15798965300147966
           },
           "basis": "recorded_decay"
         },
@@ -7476,11 +8727,11 @@ export const nativeDTO = {
           "at": 1799998200,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0057,
-            "sadness": 0.035,
-            "fear": 0.0471,
-            "surprise": 0.0129,
-            "affection": 0.1553
+            "anger": 0.005704987131898451,
+            "sadness": 0.034952875842248814,
+            "fear": 0.0470509278337142,
+            "surprise": 0.012927225083776668,
+            "affection": 0.15528869352261343
           },
           "basis": "recorded_decay"
         },
@@ -7488,11 +8739,11 @@ export const nativeDTO = {
           "at": 1799998500,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.005,
-            "sadness": 0.0313,
-            "fear": 0.043,
-            "surprise": 0.0109,
-            "affection": 0.1527
+            "anger": 0.004970689249139059,
+            "sadness": 0.031291269550312605,
+            "fear": 0.04296952363088698,
+            "surprise": 0.010901529401610412,
+            "affection": 0.1527079302696928
           },
           "basis": "recorded_decay"
         },
@@ -7500,11 +8751,11 @@ export const nativeDTO = {
           "at": 1799998800,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0043,
-            "sadness": 0.028,
-            "fear": 0.0393,
-            "surprise": 0.0092,
-            "affection": 0.1502
+            "anger": 0.00434163977677294,
+            "sadness": 0.02799666403875299,
+            "fear": 0.03926722902485195,
+            "surprise": 0.009190334820313574,
+            "affection": 0.15024439670407824
           },
           "basis": "recorded_decay"
         },
@@ -7512,11 +8763,11 @@ export const nativeDTO = {
           "at": 1799999100,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0038,
-            "sadness": 0.025,
-            "fear": 0.0359,
-            "surprise": 0.0077,
-            "affection": 0.1479
+            "anger": 0.003800499609150949,
+            "sadness": 0.025036118325768367,
+            "fear": 0.03590333908042706,
+            "surprise": 0.007745558270885673,
+            "affection": 0.1478948212737896
           },
           "basis": "recorded_decay"
         },
@@ -7524,11 +8775,11 @@ export const nativeDTO = {
           "at": 1799999400,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0033,
-            "sadness": 0.0224,
-            "fear": 0.0328,
-            "surprise": 0.0065,
-            "affection": 0.1457
+            "anger": 0.0033332355530048606,
+            "sadness": 0.02237870469363561,
+            "fear": 0.032842642278485164,
+            "surprise": 0.006526276422093457,
+            "affection": 0.1456557048878203
           },
           "basis": "recorded_decay"
         },
@@ -7536,11 +8787,11 @@ export const nativeDTO = {
           "at": 1799999700,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0029,
-            "sadness": 0.02,
-            "fear": 0.0301,
-            "surprise": 0.0055,
-            "affection": 0.1435
+            "anger": 0.002928406400082149,
+            "sadness": 0.019995646363640936,
+            "fear": 0.030054480456325777,
+            "surprise": 0.00549770956839315,
+            "affection": 0.1435233861793814
           },
           "basis": "recorded_decay"
         },
@@ -7548,11 +8799,11 @@ export const nativeDTO = {
           "at": 1800000000,
           "emotions": {
             "joy": 0.0,
-            "anger": 0.0026,
-            "sadness": 0.0179,
-            "fear": 0.0275,
-            "surprise": 0.0046,
-            "affection": 0.1415
+            "anger": 0.002576617901433947,
+            "sadness": 0.01786035847923294,
+            "fear": 0.02751199758354415,
+            "surprise": 0.00463033632382183,
+            "affection": 0.14149409627970416
           },
           "basis": "recorded_decay"
         }
@@ -7561,7 +8812,7 @@ export const nativeDTO = {
       "window_start": 1799913601.0,
       "window_end": 1800000001.0,
       "timezone": "Asia/Shanghai",
-      "basis": "recorded_state_decay_with_daily_weather",
+      "basis": "recorded_state_decay",
       "collected": true
     }
   },
@@ -7622,7 +8873,18 @@ export const nativeDTO = {
           "emotion_intensity",
           "model_input_tokens",
           "model_output_tokens",
-          "model_timeout_seconds"
+          "model_timeout_seconds",
+          "weather_factor_enabled",
+          "weather_poll_seconds",
+          "weather_transition_seconds",
+          "weather_weight_scale",
+          "weather_stale_seconds",
+          "weather_forecast_days",
+          "weather_forecast_refresh_seconds",
+          "weather_window_start_hour",
+          "weather_window_end_hour",
+          "weather_degrade_after_failures",
+          "weather_recover_after_successes"
         ]
       },
       {
@@ -7632,6 +8894,11 @@ export const nativeDTO = {
           "relationship_stage_names",
           "relationship_stage_descriptions",
           "relationship_special_description",
+          "relationship_image_refusal_averse",
+          "relationship_image_refusal_unfamiliar",
+          "relationship_image_refusal_friendly",
+          "relationship_image_refusal_close",
+          "relationship_image_refusal_unique",
           "relationship_edit_enabled"
         ]
       },
@@ -7641,6 +8908,7 @@ export const nativeDTO = {
         "field_keys": [
           "autonomy_enabled",
           "group_autonomy_enabled",
+          "proactive_native_yield",
           "autonomy_qq_ids",
           "autonomy_qq_group_ids",
           "muted_scopes",
@@ -7658,6 +8926,19 @@ export const nativeDTO = {
           "behavior_style",
           "behavior_emotional_share",
           "behavior_provider_id"
+        ]
+      },
+      {
+        "id": "promise",
+        "label": "承诺代办",
+        "field_keys": [
+          "promise_enabled",
+          "promise_max_active",
+          "promise_max_depth",
+          "promise_advance_limit",
+          "promise_tick_seconds",
+          "promise_trace_ttl_hours",
+          "promise_recall_limit"
         ]
       },
       {
@@ -7681,6 +8962,9 @@ export const nativeDTO = {
           "energy_reply_cost",
           "energy_fatigue_per_minute",
           "energy_recovery_per_minute",
+          "energy_daytime_recovery_enabled",
+          "recovery_follow_wake_at",
+          "recovery_max_minutes",
           "catchup_enabled",
           "catchup_reply_enabled",
           "closing_enabled",
@@ -7728,6 +9012,13 @@ export const nativeDTO = {
           "embedding_provider_id",
           "livingmemory_enabled",
           "memory_write"
+        ]
+      },
+      {
+        "id": "coupling",
+        "label": "功能耦合",
+        "field_keys": [
+          "coupling_promise_actions"
         ]
       }
     ],
@@ -9302,17 +10593,17 @@ export const nativeDTO = {
   }
 };
 export const nativeDTOEvidence = {
-  "captured_at": "2026-11-12T15:20:46.823073+00:00",
-  "field_count": 95,
+  "captured_at": "2026-11-17T11:07:49.797439+00:00",
+  "field_count": 123,
   "scope": "real Console DTO / synthetic host / temporary database",
   "sources_sha256": {
-    "config.py": "eac5dcb07b7c593194c2a27003e313cc17ea34afdbd50c17e3e5c5dee946d52a",
-    "contracts.py": "5a7dc9148951b8eae2814c44734c2e24091cb80f894a5abcd76780d13ffc9535",
-    "runtime/console.py": "93c97bd9c3ac12450c6faf0c54faaf262a6fc063f265602492787701f5e4be81",
-    "runtime/config_help.py": "e2a56b87c9d2c3788555cedb2cb99fb830c66d60aaa4cd828359e424d8bd3800",
-    "storage/schema.py": "4f539b52a668d1cfc40b8e7df3a549d6de6c0399458153be0bc3762a4d93bb17",
-    "storage/sqlite.py": "0a98b16c9065dbe8bb491982cd896e106867f6def083d9023330e28c333a2199",
-    "storage/state_scope.py": "5810f7f4209e23b3395ecdb65a384f4d4c4fb4f4d98bd01faecf7b7ac0a14a1f",
+    "config.py": "345dd4520ef65f8e5ab3d5d1a33920027e6b2f23cbc029aaaae7563ac1734e9d",
+    "contracts.py": "e6c4babe398c89c1c5816fca3e88e275fd9609d290e955d4b2ca74e037dc542f",
+    "runtime/console.py": "361263c90c5c466035c794799cc5d007e2d760efba9404a627788e48d40dfed9",
+    "runtime/config_help.py": "6cdabe910d9bfee1f192c0e1a4769fb8ced6feaef3c811e3f042a35e298578a6",
+    "storage/schema.py": "174a775f57e7fe8c9eb39192fe1278fc89439595e43e486abd106ce1ef715616",
+    "storage/sqlite.py": "e9d3203d14177408d5a792affeabf00c264de37ff1faa006d88979cb17dc594a",
+    "storage/state_scope.py": "c34ab212acdc989579c3b69dee8a314fbf1fef29cfe6a24928c8c34ca67987d5",
     "storage/console_data.py": "8abde8a6dc52e94c7d03f28041981672588798b5f65e4736577b6d51fba0ad01",
     "domain/relationship_inference.py": "73f329394e7094180b7824a0d329826bc7cda3a524c4f5f64a839284b5ec01e9",
     "domain/proactivity.py": "e300cdb9e4130f1312060a9a6865ecaa8bfd9ec6fc7fc51c1c7701e36dcde326",

@@ -83,7 +83,8 @@ const bridge = {
     }
     if (path === "console/state") {
       if (scenario === "loading") await new Promise(resolve => setTimeout(resolve, 500));
-      if (scenario === "refresh-error" && calls.filter(call => call.path === path).length > 1) return fail("unavailable", "合成刷新失败");
+      // 首次发现人格后会再读全局视图；故障从用户下一次刷新开始。
+      if (scenario === "refresh-error" && calls.filter(call => call.path === path).length > 2) return fail("unavailable", "合成刷新失败");
       if (scenario === "save-read-error" && calls.filter(call => call.path === path).length > 1) return fail("timeout", "合成预读超时");
       if (params.persona_id && scenario !== "native-dto" && !scenario.startsWith("save-")) {
         data.selection = { ...params }; data.persona.id = params.persona_id;
@@ -93,7 +94,9 @@ const bridge = {
       return { status: "ok", data: clone(data) };
     }
     if (path === "console/configuration") {
-      if (!fastScenario) return fail("not_found", "旧宿主未开放配置读取");
+      // 新原生 DTO 已声明独立配置读取能力，合成桥必须兑现该能力。
+      if (!fastScenario && !data.capabilities.includes("configuration.read")) return fail("not_found", "旧宿主未开放配置读取");
+      if (scenario === "save-read-error") return fail("timeout", "合成预读超时");
       if (scenario === "save-fast-read-error") return fail("timeout", "合成预读超时");
       return { status: "ok", data: { api_version: 1, config: clone(data.config) } };
     }
@@ -161,6 +164,8 @@ const bridge = {
       let items = scenario === "empty" ? [] : makeRecords(params.kind);
       if (scenario === "model-diagnostics" && params.kind === "behavior") {
         items[0].purpose = "behavior"; items[0].transport_status = "unknown";
+        Object.assign(items[0], { emotion_snapshot: "happy,excited", target_label: "QQ号",
+          target_id: "10001", content: "合成历史发送", replied: true });
         items[1].purpose = "catchup"; items[1].transport_status = "confirmed"; items[1].receipt_id = "-123456";
       }
       if (dailyScenario && ["diary", "dream"].includes(params.kind)) {
@@ -196,7 +201,8 @@ const bridge = {
       return { status: "ok", data: clone(job) };
     }
     if (path === "console/config") {
-      if (Object.keys(payload).some(key => !["context_id", "expected_revision", "patch", "reason", ...(fastScenario ? ["receipt"] : [])].includes(key))) {
+      const compact = fastScenario || data.capabilities.includes("config.receipt");
+      if (Object.keys(payload).some(key => !["context_id", "expected_revision", "patch", "reason", ...(compact ? ["receipt"] : [])].includes(key))) {
         return fail("validation_error", "配置不能携带 ScopeSelection 额外字段");
       }
       if (scenario === "conflict" && !rejectedSave) {

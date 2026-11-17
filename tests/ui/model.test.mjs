@@ -8,6 +8,7 @@ import { graphData, NODE_CAP, spreadPeople, separatePeople, projectPoint, CENTER
 import { createForce3D, MAX_RADIUS } from "../../pages/livingemotion/charts/force3d.mjs";
 import { energyPoints } from "../../pages/livingemotion/charts/energy.mjs";
 import { settingsGroups, schedulePreview } from "../../pages/livingemotion/settings.mjs";
+import { startServer } from "./server.mjs";
 
 test("Bot 状态不会从对方观察补值", () => {
   const raw = makeState(); delete raw.bot_state;
@@ -69,8 +70,16 @@ test("关系真实DTO、平台同号隔离与200裁剪；能量不补缺失点",
   assert.notEqual(nodes[0].id, nodes[1].id);
   const capped = graphData({ api_version: 1, nodes, edges: [], items: nodes.slice(0, 10), total: nodes.length, page_size: 10 });
   assert.equal(capped.nodes.length, NODE_CAP);
-  const empty = energyPoints(nativeDTO.energy);
+  // 原生 DTO 已采集配置事件；空历史用独立响应验证，不清空已有时点。
+  const collected = energyPoints(nativeDTO.energy);
+  assert.equal(collected.collected, true);
+  assert.deepEqual(collected.points, nativeDTO.energy.points);
+  assert.deepEqual(collected.items, nativeDTO.energy.items);
+  const empty = energyPoints({ ...nativeDTO.energy, collected: false, points: [], items: [], total: 0, series_total: 0 });
   assert.equal(empty.collected, false); assert.deepEqual(empty.points, []);
+  assert.deepEqual(energyPoints({ ...nativeDTO.energy, points: [
+    ...nativeDTO.energy.points, { at: "invalid", energy: 50 }, { at: 1800000001, energy: null },
+  ] }).points, nativeDTO.energy.points);
   assert.equal(energyValue(null), null); assert.equal(energyValue(100), 100);
   assert.throws(() => energyPoints({ ...nativeDTO.energy, page_size: 11 }));
 });
@@ -148,6 +157,25 @@ test("生产页面无注入 sink、外部资源、fixture 或直接网络调用�
   const scripts = (await Promise.all(["app.mjs", "model.mjs", "api.mjs", "theme.js"].map(name => readFile(new URL(name, base), "utf8")))).join("\n");
   assert.doesNotMatch(scripts, /\.innerHTML|\.outerHTML|insertAdjacentHTML|document\.write|\beval\(|\bfetch\(|XMLHttpRequest|postMessage\(/);
   assert.equal(/https?:\/\/|fixture-bridge|fixtures\.mjs/.test((html + scripts).replaceAll("http://www.w3.org/2000/svg", "")), false);
-  assert.ok(html.indexOf('src="./theme.js"') < html.indexOf('href="./style.css"'));
+  // 缓存版本参数不改变资源身份；同时验证存在性，避免 -1 造成顺序误判。
+  const themeIndex = html.search(/<script\b[^>]*\bsrc=["']\.\/theme\.js(?:\?[^"']*)?["']/);
+  const styleIndex = html.search(/<link\b[^>]*\bhref=["']\.\/style\.css(?:\?[^"']*)?["']/);
+  assert.notEqual(themeIndex, -1); assert.notEqual(styleIndex, -1);
+  assert.ok(themeIndex < styleIndex);
   assert.ok(html.includes('src="/api/plugin/page/bridge-sdk.js"'));
+});
+test("合成页面在带缓存版本的应用入口前注入桥，生产入口保持隔离", async () => {
+  const { server, url } = await startServer();
+  try {
+    const fixture = await (await fetch(url)).text();
+    const app = /<script type="module" src="\/pages\/livingemotion\/app\.mjs(?:\?[^"]*)?">/;
+    assert.notEqual(fixture.search(app), -1);
+    assert.equal(fixture.match(/src="\/tests\/ui\/fixture-bridge\.mjs"/g)?.length, 1);
+    assert.ok(fixture.indexOf('src="/tests/ui/fixture-bridge.mjs"') < fixture.search(app));
+    const production = await (await fetch(url.replace("/tests/ui/fixture.html", "/pages/livingemotion/index.html"))).text();
+    assert.doesNotMatch(production, /fixture-bridge/);
+    assert.match(production, /src="\.\/app\.mjs(?:\?[^"]*)?"/);
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
 });
