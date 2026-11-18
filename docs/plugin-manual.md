@@ -2,7 +2,7 @@
 
 开发者：[AKIhunter](https://github.com/AKIhunter)。
 插件仓库：[AKIhunter/astrbot_plugin_livingemotion](https://github.com/AKIhunter/astrbot_plugin_livingemotion)。
-版本：0.4.0；适用 AstrBot 4.29.1–4.29.4，Python 3.12 及以上。
+版本：0.4.1；适用 AstrBot 4.29.1–4.29.4，Python 3.12 及以上。
 这是 LivingEmotion 插件的使用手册，宿主安装与账号管理请查 AstrBot 自身文档。
 
 ## 第一次使用
@@ -211,6 +211,11 @@ flowchart TD
 模型不可用、素材不足或额度耗尽时，按页面提示处理；不要用反复点击生成解决超时。
 
 ## 命令与协作接口
+
+拍照、自拍或画图被内容规则拒绝时，会问你换人物、场景、风格再试，还是这次就算了。
+具体改过画面后仍失败，会说明按新想法又试过，再由你选择。纯“好的 / 继续 / 再试一次”
+不会重新生图；多张等待图片需先明确是哪张。完整即时交接需 LivingHello 2.7.8，
+见[主动调整与升级](promise-adjustment-20261118.md)。
 
 `le_wake` 供已认证管理员手动叫醒，实际命令前缀以 AstrBot 配置为准。
 没有 `/livingemotion ...` 命令族。

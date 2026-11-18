@@ -3,7 +3,7 @@
 ![livingEmotion banner](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-%E2%89%A54.29.1-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.4.0-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.1-3a8060)](CHANGELOG.md)
 
 [简体中文](README.md) · **English**
 
@@ -30,7 +30,16 @@ inside the plugin; it reuses the persona you already configured in AstrBot.
 | 📓 Diary and dreams | First-person diary with weather; dreams reviewed separately |
 | 🎛️ Own console | Nine sections, scope filtering, two themes, no external CDN |
 
-## 🆕 What's new in 0.4.0
+## 🆕 What's new in 0.4.1
+
+- Content-rejected photos, selfies and drawings ask what to change or whether to cancel.
+  A repeated rejection explains that the revised idea also failed and offers the choice again.
+- Only a concrete new description resumes the original image; “OK” or “try again” does not.
+  Unknown generation or delivery outcomes still require verification.
+- Existing waiting images gain persistent notice tracking automatically. Upgrade LivingHello
+  to **2.7.8** for the complete handoff. [Behavior and migration (Chinese)](docs/promise-adjustment-20261118.md).
+
+### Retained from 0.4.0
 
 - Rolling 300-second joy budget: event-driven rises are limited to 5 percentage
   points and falls to 10, with independent budgets. Neutral or unclear interactions
@@ -121,8 +130,8 @@ else as unknown. Unknown is never auto-resent.
 
 ## 📦 Changelog
 
-Current version **0.4.0** — bounded joy, relationship scoring V2, per-stage image
-refusal, sleep/energy switches and coordinated deferred tasks.
+Current version **0.4.1** — natural adjustment questions, persistent notice deduplication,
+and user-controlled resumption or cancellation of content-rejected images.
 See [CHANGELOG.md](CHANGELOG.md).
 
 MIT for original content. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

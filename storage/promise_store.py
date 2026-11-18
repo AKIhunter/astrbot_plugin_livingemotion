@@ -67,6 +67,9 @@ MIGRATIONS = (
     "ALTER TABLE promises ADD COLUMN action_result_json TEXT NOT NULL DEFAULT '{}'",
     "ALTER TABLE promises ADD COLUMN handoff_key TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE promises ADD COLUMN handoff_account_key TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE promises ADD COLUMN adjustment_notice_state TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE promises ADD COLUMN adjustment_notice_attempt INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE promises ADD COLUMN adjustment_notice_retry_at REAL NOT NULL DEFAULT 0",
 )
 
 # 允许的状态转换；越界的写入一律拒绝，避免状态机被绕过。
@@ -106,6 +109,19 @@ def normalize(description: str) -> str:
 
 def fingerprint(scope_key: str, description: str) -> str:
     return stable_key("promise", scope_key, normalize(description))
+
+
+def is_adjustment(text: str) -> bool:
+    """只挡住纯确认/重试口令；不能把“嗯”当成用户已改变画面。"""
+    value = normalize(text).replace(" ", "")
+    return bool(value) and not re.fullmatch(
+        r"(?:(?:嗯+|哦+|好+|好的|行|可以|知道了|收到|ok|yes|继续|"
+        r"再试(?:一次|试)?|重试(?:一次)?|再来(?:一次)?|试试|retry|tryagain|"
+        r"算了(?:吧)?|不用(?:拍|画)?了|别(?:拍|画)了|"
+        r"取消(?:这张(?:照片|图片|图)?|这次)?(?:吧)?|"
+        r"(?:这张(?:照片|图片|图)?|这次)?(?:就)?(?:先)?(?:不(?:拍|画)了|不要了)))+",
+        value,
+    )
 
 
 class PromiseStore:
@@ -221,6 +237,7 @@ class PromiseStore:
         generation = await self.store.get_generation(context)
         pid = stable_key("image-followup", context.scope_key, request_id)
         payload = json.dumps({**failure, "source_context": to_dict(context)}, ensure_ascii=False)
+        notice = "sent" if failure.get("adjustment_asked") is True else ""
         ready = failure["kind"] == "rate_limited" and not failure.get("use_reference")
         status, action = ("scheduled", "retry_ready") if ready else ("waiting", "held")
         bucket = "等待重试" if ready else "等待调整" if failure["kind"] == "content_rejected" else "等待核对"
@@ -234,6 +251,11 @@ class PromiseStore:
                     "SELECT promise_id,status FROM promises WHERE scope_key=? AND handoff_key=?",
                     (context.scope_key, request_id)).fetchone()
                 if row:
+                    if notice == "sent":
+                        db.execute(
+                            """UPDATE promises SET adjustment_notice_state='sent'
+                               WHERE promise_id=? AND status='waiting'
+                               AND last_error='content_rejected'""", (row["promise_id"],))
                     return {"status": "duplicate", "promise_id": row["promise_id"],
                             "task_status": row["status"]}
                 # 原回复已经登记过图片承诺时，复用唯一尚未执行的那条；不抢宿主/执行中任务。
@@ -254,11 +276,13 @@ class PromiseStore:
                         """UPDATE promises SET status=?,bucket=?,fingerprint=?,description=?,note=?,
                            due_at=?,original_due_at=?,original_bucket=?,updated_at=?,context_summary=?,
                            action_state=?,action_result_json=?,handoff_key=?,last_error=?,
-                           handoff_account_key=? WHERE promise_id=? AND status='scheduled'""",
+                           handoff_account_key=?,adjustment_notice_state=?,
+                           adjustment_notice_attempt=0,adjustment_notice_retry_at=0
+                           WHERE promise_id=? AND status='scheduled'""",
                         (status, bucket, fingerprint(context.scope_key, description), description,
                          failure["prompt"], now + 300, now + 300, bucket, now, failure["reason"],
                          action, payload, request_id, failure["kind"], context.account_key,
-                         original["promise_id"]))
+                         notice, original["promise_id"]))
                     return {"status": "accepted", "promise_id": original["promise_id"],
                             "task_status": status}
                 db.execute(
@@ -266,13 +290,13 @@ class PromiseStore:
                        (promise_id,scope_key,generation,status,bucket,fingerprint,description,note,
                         due_at,original_due_at,original_bucket,depth,created_at,updated_at,
                         context_summary,source_event_id,action_state,action_result_json,handoff_key,
-                        last_error,handoff_account_key)
-                       VALUES(?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?)""",
+                        last_error,handoff_account_key,adjustment_notice_state)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?)""",
                     (pid, context.scope_key, generation, status, bucket,
                      fingerprint(context.scope_key, description), description, failure["prompt"],
                      now + 300, now + 300, bucket, now, now,
                      failure["reason"], source_event_id, action, payload, request_id, failure["kind"],
-                     context.account_key))
+                     context.account_key, notice))
                 return {"status": "accepted", "promise_id": pid, "task_status": status}
             return self.store._transaction(db, mutate)
         return await self.store._run(write)
@@ -298,18 +322,23 @@ class PromiseStore:
                     return {"status": "conflict"}
                 failure = json.loads(row["action_result_json"])
                 if (failure.get("kind") != "content_rejected" or failure.get("use_reference")
+                        or not source_event_id or not is_adjustment(prompt)
                         or source_event_id == row["source_event_id"]
                         or normalize(prompt) == normalize(failure["prompt"])):
                     return {"status": "rejected", "reason": "adjustment_required"}
-                failure.update(prompt=prompt, kind="adjusted_request", reason="用户已调整画面需求")
+                failure.update(prompt=prompt, kind="adjusted_request", reason="用户已调整画面需求",
+                               adjustment_round=int(failure.get("adjustment_round") or 0) + 1)
                 description = "生图：" + prompt[:490]
                 db.execute(
                     """UPDATE promises SET status='scheduled',action_state='retry_ready',
                        action_result_json=?,description=?,note=?,fingerprint=?,due_at=?,
-                       bucket='马上',updated_at=?,generation=?,last_error=''
+                       bucket='马上',updated_at=?,generation=?,last_error='',source_event_id=?,
+                       adjustment_notice_state='',adjustment_notice_attempt=0,
+                       adjustment_notice_retry_at=0
                        WHERE promise_id=? AND status='waiting'""",
                     (json.dumps(failure, ensure_ascii=False), description, prompt,
-                     fingerprint(context.scope_key, description), now + 20, now, generation, promise_id))
+                     fingerprint(context.scope_key, description), now + 20, now, generation,
+                     source_event_id, promise_id))
                 return {"status": "resumed", "promise_id": promise_id}
             return self.store._transaction(db, mutate)
         return await self.store._run(write)
@@ -550,6 +579,90 @@ class PromiseStore:
 
         return await self.store._run(read)
 
+    async def hold_image_request(self, context: Context, promise_id: str, failure: dict) -> bool:
+        """到期生图的内容拒绝也建立原任务恢复入口，不另建一条待办。"""
+        await self.ensure()
+        request_id = str(failure.get("request_id") or stable_key(
+            "image-rejection", promise_id, failure.get("prompt")))
+        payload = json.dumps({**failure, "request_id": request_id,
+                              "source_context": to_dict(context)}, ensure_ascii=False)
+
+        def write(db):
+            changed = db.execute(
+                """UPDATE promises SET status='waiting',bucket='等待调整',
+                   last_error='content_rejected',action_state='held',action_result_json=?,
+                   handoff_key=?,handoff_account_key=?,adjustment_notice_state=?,
+                   adjustment_notice_attempt=0,adjustment_notice_retry_at=0,updated_at=?
+                   WHERE promise_id=? AND scope_key=? AND status='running'""",
+                (payload, request_id, context.account_key,
+                 "sent" if failure.get("adjustment_asked") is True else "",
+                 self.store.clock(), promise_id, context.scope_key))
+            return changed.rowcount == 1
+        return await self.store._run(write)
+
+    async def pending_adjustment_notices(self, *, now: float, limit: int = 12) -> list[dict]:
+        await self.ensure()
+
+        def read(db):
+            rows = db.execute(
+                """SELECT * FROM promises WHERE status='waiting' AND action_state='held'
+                   AND last_error='content_rejected'
+                   AND adjustment_notice_state IN ('','rejected')
+                   AND adjustment_notice_attempt<3 AND adjustment_notice_retry_at<=?
+                   ORDER BY updated_at,promise_id LIMIT ?""",
+                (now, max(1, min(100, limit)))).fetchall()
+            return [dict(row) for row in rows]
+        return await self.store._run(read)
+
+    async def claim_adjustment_notice(self, context: Context, promise_id: str) -> dict | None:
+        """发送前原子占位；崩溃留下 sending，重启不盲目重复追问。"""
+        await self.ensure()
+        now = self.store.clock()
+
+        def write(db):
+            def mutate():
+                row = db.execute("SELECT * FROM promises WHERE promise_id=?", (promise_id,)).fetchone()
+                if (not row or row["scope_key"] != context.scope_key
+                        or row["handoff_account_key"] not in ("", context.account_key)
+                        or row["generation"] != self.store._generation(db, context)
+                        or row["status"] != "waiting" or row["action_state"] != "held"
+                        or row["last_error"] != "content_rejected"
+                        or row["adjustment_notice_state"] not in ("", "rejected")
+                        or row["adjustment_notice_attempt"] >= 3
+                        or row["adjustment_notice_retry_at"] > now):
+                    return None
+                db.execute(
+                    """UPDATE promises SET adjustment_notice_state='sending',
+                       adjustment_notice_attempt=adjustment_notice_attempt+1
+                       WHERE promise_id=?""", (promise_id,))
+                return {**dict(row), "adjustment_notice_attempt": row["adjustment_notice_attempt"] + 1}
+            return self.store._transaction(db, mutate)
+        return await self.store._run(write)
+
+    async def defer_adjustment_notice(self, promise_id: str, retry_at: float) -> None:
+        """暂时不能通知时让出扫描位置，不消耗发送次数，也不阻塞其它会话。"""
+        await self.ensure()
+        await self.store._run(lambda db: db.execute(
+            """UPDATE promises SET adjustment_notice_retry_at=?
+               WHERE promise_id=? AND status='waiting'
+               AND adjustment_notice_state IN ('','rejected')""", (retry_at, promise_id)))
+
+    async def finish_adjustment_notice(self, promise_id: str, attempt: int, *,
+                                       payload: str, state: str, retry_at: float = 0) -> bool:
+        await self.ensure()
+        if state not in ("sent", "rejected", "unknown"):
+            raise ValueError("invalid_adjustment_notice_state")
+
+        def write(db):
+            changed = db.execute(
+                """UPDATE promises SET adjustment_notice_state=?,adjustment_notice_retry_at=?
+                   WHERE promise_id=? AND status='waiting'
+                   AND adjustment_notice_state='sending' AND adjustment_notice_attempt=?
+                   AND action_result_json=?""",
+                (state, retry_at, promise_id, attempt, payload))
+            return changed.rowcount == 1
+        return await self.store._run(write)
+
     async def delegate(self, promise_id: str, job_id: str) -> bool:
         """宿主接管是独立终态，不能冒充本插件已发送。"""
         await self.ensure()
@@ -565,7 +678,12 @@ class PromiseStore:
         return await self.store._run(write)
 
     async def cancel(self, promise_id: str) -> dict[str, Any]:
-        return await self.move(promise_id, status="cancelled", expect=("scheduled",))
+        row = await self.get(promise_id)
+        # 用户可以放弃明确被拒、尚未交付的图片；未知结果仍沿用原有保护。
+        waiting = bool(row and row["status"] == "waiting"
+                       and row["last_error"] == "content_rejected")
+        return await self.move(promise_id, status="cancelled",
+                               expect=("waiting",) if waiting else ("scheduled",))
 
     async def recent_exchanges(self, scope_key: str, *,
                                limit: int = 8) -> list[dict[str, Any]]:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
@@ -369,7 +371,8 @@ class LivingEmotionAPI:
             result = await app._promises().promises.accept_image_handoff(
                 scope, request_id=failure["request_id"], source_event_id=source_id,
                 failure={k: failure[k] for k in
-                         ("request_id", "prompt", "kind", "reason", "use_reference")})
+                         ("request_id", "prompt", "kind", "reason", "use_reference")}
+                | {"adjustment_asked": failure.get("adjustment_asked") is True})
             return self._result("ok", "image_failure_handoff",
                                 contract="livingemotion.image-followup.v1", data=result)
         except Exception:
@@ -384,6 +387,33 @@ class LivingEmotionAPI:
             if (not isinstance(promise_id, str) or not 1 <= len(promise_id) <= 128
                     or not isinstance(prompt, str) or not 1 <= len(prompt.strip()) <= 4000):
                 return self._result("rejected", "invalid_image_adjustment")
+            from .storage.promise_store import is_adjustment
+            getter = getattr(event, "get_message_str", None)
+            user_text = getter() if callable(getter) else getattr(event, "message_str", "")
+            if (event.get_extra("cron_job") or event.get_extra("livingemotion:promise_id")
+                    or not is_adjustment(user_text)):
+                return self._result("rejected", "user_adjustment_required")
+            rows = await app._promises().active(scope)
+            waiting = [r for r in rows if r["status"] == "waiting"]
+            adjustment_text = str(user_text)
+            for row in waiting:
+                adjustment_text = adjustment_text.replace(row["promise_id"], "")
+                adjustment_text = adjustment_text.replace(row["promise_id"][:8], "")
+            adjustment_text = re.sub(r"第[一二三123](?:条|张|个|件)", "", adjustment_text)
+            if not is_adjustment(adjustment_text):
+                return self._result("rejected", "user_adjustment_required")
+            if len(waiting) > 1:
+                # 多任务须有明确的 ID、编号或原画面；不能让模型任意挑一个。
+                mentioned = [r for r in waiting if r["promise_id"][:8] in user_text
+                             or r["description"].removeprefix("生图：") in user_text]
+                numbered = re.search(r"第([一二三123])(?:条|张|个|件)", user_text)
+                if numbered:
+                    number = (int(numbered[1]) if numbered[1].isdigit()
+                              else "一二三".find(numbered[1]) + 1)
+                    if number <= len(rows):
+                        mentioned.append(rows[number - 1])
+                if {r["promise_id"] for r in mentioned} != {promise_id}:
+                    return self._result("rejected", "ambiguous_image_adjustment")
             result = await app._promises().promises.resume_image_handoff(
                 scope, promise_id, prompt=prompt.strip(), source_event_id=str(event.message_obj.message_id))
             return self._result("ok", "image_followup_resume",

@@ -14,7 +14,7 @@ import time
 
 from dataclasses import replace
 
-from ..contracts import Context, rebuild_route
+from ..contracts import Context, rebuild_route, stable_key
 from ..storage.promise_store import (
     PromiseStore, bucket_label, fingerprint, parse_bucket,
 )
@@ -296,6 +296,9 @@ class PromiseService:
         for row in rows:
             if await self._deliver(row):
                 sent += 1
+        # waiting 不执行生图；只补一次调整追问，包含升级前已有的暂停任务。
+        for row in await self.promises.pending_adjustment_notices(now=moment, limit=limit):
+            await self._ask_adjustment(row)
         if sent:
             await self.promises.purge(keep=200)
         # 片段缓存到期即释放：追问回到正常向量检索，不长期占着语境。
@@ -413,8 +416,13 @@ class PromiseService:
                                          error="image_action_unknown")
                 return False
             if status == "waiting":
-                await self.promises.move(promise_id, status="waiting", expect=("running",),
-                                         error=str(outcome.get("reason") or "image_result_unknown"))
+                await self.promises.move(
+                    promise_id, status="waiting", expect=("running",),
+                    error=str(outcome.get("reason") or "image_result_unknown"))
+                if outcome.get("reason") == "content_rejected":
+                    current = await self.promises.get(promise_id)
+                    if current and current["status"] == "waiting":
+                        await self._ask_adjustment(current)
                 return False
             await self.promises.defer(
                 promise_id, retry_at=self.store.clock() + RETRY_BACKOFF,
@@ -498,6 +506,57 @@ class PromiseService:
         except Exception:
             # 查不动就别误杀，按“还在”处理。
             return True
+
+    async def _ask_adjustment(self, row: dict) -> None:
+        context = await self._live_context(row)
+        if context is None or not await self.app._preparation_guard(
+                context, int(row.get("generation") or 0), self.app.revision, delivery=True):
+            await self.promises.defer_adjustment_notice(
+                row["promise_id"], self.store.clock() + CONTEXT_WAIT)
+            return
+        claimed = await self.promises.claim_adjustment_notice(context, row["promise_id"])
+        if claimed is None:
+            await self.promises.defer_adjustment_notice(
+                row["promise_id"], self.store.clock() + CONTEXT_WAIT)
+            return
+        attempt = claimed["adjustment_notice_attempt"]
+        pid = claimed["promise_id"]
+        payload = claimed.get("action_result_json") or "{}"
+        artifact = json.loads(payload)
+        key = stable_key("promise-adjustment", pid, artifact.get("request_id"), artifact.get("prompt"))
+
+        async def still_waiting():
+            current = await self.promises.get(pid) or {}
+            return (current.get("status") == "waiting"
+                    and current.get("adjustment_notice_state") == "sending"
+                    and current.get("adjustment_notice_attempt") == attempt
+                    and current.get("action_result_json") == payload)
+
+        # 只说用户听得懂的情况；编号、执行状态和上游正文留在内部。
+        if int(artifact.get("adjustment_round") or 0) > 0:
+            text = ("按你刚才改的想法又试了一下，还是没能弄好，有些内容我暂时做不了。"
+                    "我先停在这里。你想再调整一下，还是这次就算了？")
+        else:
+            text = ("这张没能弄好，有些内容我暂时做不了。"
+                    "你想换个人物、场景或风格再试试，还是这次就算了？")
+        if context.scene_kind.value == "group":
+            text = f"@{context.account_id} " + text
+        try:
+            result = await self.app.send_promise_notice(
+                context, text, key + f":{attempt}", keep_stops=True, authorize=still_waiting)
+        except asyncio.CancelledError:
+            await asyncio.shield(self.promises.finish_adjustment_notice(
+                pid, attempt, payload=payload, state="unknown"))
+            raise
+        except Exception:
+            result = "unknown"
+        # failed 可能是回执落库异常；只有明确 rejected 才能换尝试 ID 重发。
+        state = "sent" if result in ("confirmed", "sent") else (
+            "rejected" if result == "rejected" else "unknown")
+        await self.promises.finish_adjustment_notice(
+            pid, attempt, payload=payload, state=state,
+            retry_at=self.store.clock() + RETRY_BACKOFF)
+        logger.warning("[LE-promise] 调整追问 %s result=%s", pid[:8], state)
 
     async def _live_context(self, row: dict) -> Context | None:
         """按 scope_key 从内存里找**带发送路由**的上下文。

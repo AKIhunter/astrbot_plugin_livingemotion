@@ -3,7 +3,7 @@
 ![livingEmotion 原创 LE 字标与四维状态线](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-%E2%89%A54.29.1-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.4.0-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.1-3a8060)](CHANGELOG.md)
 
 **简体中文** · [English](README.en.md)
 
@@ -328,9 +328,10 @@ npm --prefix tests/ui run test:browser
 
 ## 📦 更新日志与来源
 
-当前版本 **0.4.0**：开心 300 秒限幅、好感度 V2、分阶段生图婉拒概率、
-睡眠精力开关及延迟生图/宿主任务协作去重。已有配置和关系数据继续沿用，
-完整变化与兼容边界见 [CHANGELOG.md](CHANGELOG.md)。
+当前版本 **0.4.1**：拍照、自拍和画图被内容规则拒绝后，主动问怎样调整或是否取消；
+调整后再次失败也会说明情况，让对方继续选择。纯“好的 / 再试一次”不会恢复，
+结果未知仍先核对。[使用与迁移说明](docs/promise-adjustment-20261118.md)；
+完整变化见 [CHANGELOG.md](CHANGELOG.md)。完整交接需同时升级 LivingHello 至 **2.7.8**。
 
 版本与更新见 [metadata.yaml](metadata.yaml)、[CHANGELOG.md](CHANGELOG.md)。
 情绪、关系、作息、补课和额度由本插件实现。

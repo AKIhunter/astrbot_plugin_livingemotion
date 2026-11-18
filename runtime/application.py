@@ -413,7 +413,8 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
     # 只有“真正对外说一句话”的兑现内容才需要模型。
     PROMISE_NOTICE_PURPOSE = "promise_control"
 
-    async def send_promise_notice(self, context, text, key, *, keep_stops: bool = False):
+    async def send_promise_notice(self, context, text, key, *, keep_stops: bool = False,
+                                 authorize=None):
         """把一段文案直发出去，仍走配额 发送守卫 与回执落库。
 
         这里**不能**复用 record_host_submission：它开头就查 _reply_tickets，
@@ -434,9 +435,14 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         revision = self.revision
         notify_key = key
 
+        async def permitted(c, g, r):
+            return (await self._preparation_guard(c, g, r, delivery=True)
+                    and (authorize is None or await authorize()))
+
         async def submitted(target, intent, body_text):
             # 只认同一代际的上下文；承诺这条允许来源由会话表重建。
-            if not await self.validate_delivery(target, generation):
+            if (not await self.validate_delivery(target, generation)
+                    or (authorize is not None and not await authorize())):
                 logger.warning("[LE-promise] 提交校验未过 key=%s", str(notify_key)[:20])
                 return False
             event = Event(intent, "livingemotion.host", "bot_reply_submitted", target,
@@ -467,8 +473,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             return await self.behavior.execute_control(
                 context, intent_id=notify_key, purpose=self.PROMISE_NOTICE_PURPOSE,
                 generate=lambda: self._ready_text(body),
-                authorize=lambda c, g, r: self._preparation_guard(
-                    c, g, r, delivery=True),
+                authorize=permitted,
                 on_submit=submitted,
                 generation=generation, revision=revision,
             )
@@ -539,6 +544,14 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                                  "此项已暂停，不能自动重试或新建重复承诺。内容拒绝须先让用户调整需求，"
                                  "再调用生图工具的 followup_id 参数恢复同一待办；"
                                  "结果未知、发送未知及接口配置问题等待核对，不能用此参数强行恢复。")
+            lines.append("主动调整追问已由执行器处理，勿在无关回复中重复催问。"
+                         "只有用户给出新画面或具体修改才恢复；嗯、好的、再试一次不算调整。"
+                         "用户说算了、不拍了、不画了、不要了或取消时，取消对应图片，"
+                         "不把取消当作新画面。拍照、自拍、画图都适用。"
+                         "多条待办且用户未说明哪张图时，生活化地问清画面，不自行挑选。"
+                         "用户可见回应跟随正在聊的内容，说这张照片或这张图片，"
+                         "不要把拍照、自拍一律说成画图；询问再调整一下还是这次就算了，"
+                         "不得提任务、待办、接口、服务、状态、ID或内部编号。")
             lines.append("对方要取消其中一件时，末尾加 <!--promise-cancel:编号或关键词-->，"
                          "不要只在嘴上说取消。")
         request.extra_user_content_parts.append(self.bridge.text_part("\n".join(lines)))

@@ -105,6 +105,16 @@ authorization 是提供者复核凭据，不是字符串 admin 或永久访问�
 仍不能假定运行时返回恒为 ok。
 调用方发现 `unavailable` 应省略补充或停止自主，不以缓存的成功状态替代当前授权。
 
+## 图片失败交接
+
+LivingHello 2.7.8 调用 `handoff_image_failure(context, event=event)`，以及
+`resume_image_followup(context, event=event, promise_id=..., prompt=...)`；
+成功 envelope 带 `contract=livingemotion.image-followup.v1`。
+交接只读取同一真实请求中的受控失败信息，`adjustment_asked=true` 表示 LH 已确认发出
+调整问句，LE 持久记录，避免再问一次。登记接受不表示图片交付。
+恢复必须来自受信用户的新消息、具体新画面与明确的原等待图片；定时任务、
+纯确认/重试口令、图生图及未知结果不能用此接口绕过。详见[调整说明](promise-adjustment-20261118.md)。
+
 ## 页面接口
 
 生产页面经宿主 `/api/plugin/page/bridge-sdk.js` 的

@@ -9,7 +9,9 @@ from pathlib import Path
 from ..contracts import prompt_json, stable_key
 from ..livinghello_coupling import discover
 
-IMAGE = re.compile(r"自拍|照片|图片|生图|画图|发图|绘制|画[一个张幅]|拍[一个张]|生成.{0,8}图")
+IMAGE = re.compile(
+    r"自拍|照片|拍照|拍给(?:你|我|大家)(?:看)?|图片|生图|画图|发图|绘制|"
+    r"画[一个张幅]|拍[一个张]|生成.{0,8}图")
 DEADLINE_SECONDS = 600.0
 DELIVERY_CONTRACT = "livinghello.deferred-image-delivery.v1"
 
@@ -93,8 +95,16 @@ class ImagePromiseAction:
             artifact = await peer.generate_deferred_image(event, str(prompt).strip())
             failure = artifact.get("failure")
             if isinstance(failure, dict):
+                # 保留用户已修改的轮次，再次失败时才能说明“按你刚才的想法又试过”。
+                failure = {**failure, "adjustment_round": int(prior.get("adjustment_round") or 0)}
                 phase = "retry_ready" if failure.get("kind") == "rate_limited" else "held"
-                await store.checkpoint_action(pid, phase, failure)
+                if failure.get("kind") == "content_rejected":
+                    # 到期执行与即时交接一样，保留画面及原任务 ID 供用户调整后恢复。
+                    failure = {"prompt": str(prompt).strip(), "use_reference": False, **failure}
+                    if not await store.hold_image_request(context, pid, failure):
+                        return {"status": "unknown"}
+                else:
+                    await store.checkpoint_action(pid, phase, failure)
                 return {"status": "rejected" if phase == "retry_ready" else "waiting",
                         "reason": failure.get("kind", "result_unknown")}
             if artifact.get("status") == "unavailable":
