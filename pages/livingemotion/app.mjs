@@ -30,7 +30,7 @@ const state = {
   selection: {}, scopes: null, options: {}, dispose: null, expandedSettingsGroup: null,
   bootstrapped: false,
   experienceRequests: {}, expandedExperience: "",
-  expandedNight: {},
+  expandedNight: {}, expandedPromises: new Set(),
   behaviorLogSequence: 0, behaviorLogLoading: false,
 };
 try {
@@ -705,27 +705,25 @@ function renderPreview(root) {
   if (list(preview.candidates).length) root.append(clientList(list(preview.candidates), candidate, ""));
 }
 // 承诺列表：只读展示，不在这里提供写操作，避免和聊天里的取消指令抢语义。
-// 倒计时固定 时:分:秒，并且本地每秒递减——只靠 8 秒轮询会出现
-// 「先显示好几分钟、过一会儿才跳」的错觉，分钟取整更是看不出秒。
-function formatCountdown(seconds) {
-  const total = Math.max(0, Math.round(Number(seconds) || 0));
-  const pad = (value) => String(value).padStart(2, "0");
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  return `${pad(hours)}:${pad(minutes)}:${pad(total % 60)}`;
+function promiseStatus(item) {
+  if (item.status === "waiting") return t(
+    ["content_rejected", "prompt_too_long", "prompt_adjustment_required"].includes(item.reason)
+      ? "等待调整需求" : "等待核对结果");
+  if (item.status === "running") return t("执行中");
+  return t(item.reason ? "等待重试" : "待执行");
 }
-function tickPromiseCountdowns() {
-  for (const card of document.querySelectorAll(".promise-card")) {
-    const deadline = Number(card.dataset.deadline);
-    const eta = card.querySelector(".promise-eta");
-    if (!eta || !Number.isFinite(deadline)) continue;
-    eta.textContent = formatCountdown((deadline - Date.now()) / 1000);
-  }
+function promiseTime(value) {
+  return date(value, state.data?.config?.values?.timezone, { year: "numeric", second: "2-digit" });
 }
-window.setInterval(tickPromiseCountdowns, 1000);
 function renderPromisePanel(data) {
   const host = $("behavior-promises");
   if (!host) return;
+  const focused = host.contains(document.activeElement)
+    ? document.activeElement.closest(".promise-card")?.dataset.promiseId : "";
+  for (const card of host.querySelectorAll(".promise-card")) {
+    if (card.open) state.expandedPromises.add(card.dataset.promiseId);
+    else state.expandedPromises.delete(card.dataset.promiseId);
+  }
   const items = list(data && data.items);
   if (!data || data.enabled === false) {
     host.replaceChildren(node("p", t("承诺识别已关闭，不会新建也不会兑现。"), "hint"));
@@ -738,25 +736,53 @@ function renderPromisePanel(data) {
   }
   const cards = node("div", undefined, "promise-list");
   for (const item of items) {
-    const card = node("article", undefined, "promise-card");
-    const head = node("div", undefined, "promise-head");
-    head.append(node("span", controlled(String(item.bucket_label || t("待办"))), "promise-bucket"));
-    // 用绝对截止时刻驱动本地倒计时，轮询只负责校准。
-    const eta = Math.max(0, Number(item.eta_seconds) || 0);
-    if (item.status !== "waiting") card.dataset.deadline = String(Date.now() + eta * 1000);
-    head.append(node("span", item.status === "waiting" ? controlled(String(item.bucket_label)) : formatCountdown(eta), "promise-eta"));
-    card.append(head);
-    card.append(node("p", controlled(String(item.description || "")), "promise-desc"));
-    const label = item.status === "waiting" ? String(item.bucket_label || "") : item.status === "running" ? t("正在发送") : t("排队中");
-    const meta = node("p", t("状态 {0}", [label]), "hint");
-    if (Number(item.advance_count) > 0) {
-      meta.textContent += t(" · 已提前 {0} 次", [item.advance_count]);
+    const card = node("details", undefined, "promise-card");
+    card.dataset.promiseId = String(item.promise_id || "");
+    card.open = state.expandedPromises.has(card.dataset.promiseId);
+    const head = node("summary", undefined, "promise-head");
+    const meta = node("div", undefined, "promise-meta");
+    meta.append(node("span", t("状态 {0}", [promiseStatus(item)]), "promise-status"));
+    meta.append(node("span", t("创建 {0}", [promiseTime(item.created_at)]), "promise-created"));
+    meta.append(node("span", t("发送至 {0} {1}", [
+      controlled(String(item.target_label || t("用户 ID"))),
+      controlled(String(item.target_id || t("未记录"))),
+    ]), "promise-target"));
+    const when = node("div", undefined, "promise-when");
+    when.append(node("span", item.status === "waiting" ? t("原定时间") : t("执行时间")));
+    when.append(node("time", promiseTime(item.status === "waiting"
+      ? item.original_due_at : item.due_at), "promise-at"));
+    head.append(meta, when);
+    const brief = node("div", undefined, "promise-brief");
+    brief.append(node("span", controlled(String(item.description || "")), "promise-preview"),
+      node("span", t("展开"), "promise-expand"), node("span", t("收起"), "promise-collapse"));
+    head.append(brief); card.append(head);
+    const body = node("div", undefined, "promise-body");
+    body.append(node("p", controlled(String(item.description || "")), "promise-desc"));
+    if (item.reason) {
+      const reasons = {
+        content_rejected: "图片服务拒绝了这次画面请求，等待调整。",
+        prompt_too_long: "画面描述过长，等待简化。",
+        prompt_adjustment_required: "画面需要调整，等待确认。",
+        result_unknown: "生成结果不明，等待核对。",
+        delivery_unknown: "发送结果不明，等待核对。",
+        rate_limited: "图片服务限流，等待重试。",
+      };
+      body.append(node("p", controlled(t(reasons[item.reason] || String(item.reason))), "promise-reason"));
     }
-    card.append(meta);
-    card.dataset.promiseId = controlled(String(item.promise_id || ""));
+    if (Number(item.advance_count) > 0) {
+      body.append(node("p", t("已提前 {0} 次", [item.advance_count]), "hint"));
+    }
+    card.append(body);
+    card.addEventListener("toggle", () => {
+      if (!card.isConnected) return;
+      if (card.open) state.expandedPromises.add(card.dataset.promiseId);
+      else state.expandedPromises.delete(card.dataset.promiseId);
+    });
     cards.append(card);
   }
-  host.replaceChildren(cards);
+  host.replaceChildren(node("p", t("共 {0} 项", [data.total ?? items.length]), "hint"), cards);
+  if (focused) [...cards.children].find(card => card.dataset.promiseId === focused)
+    ?.querySelector("summary").focus({ preventScroll: true });
 }
 
 const SIMULATION_EMOTIONS = [["current", "当前情绪"], ["calm", "平静"], ["joy", "喜悦"],
@@ -869,7 +895,7 @@ function renderBehavior(container) {
   // 当前挂载的承诺；数据来自同一次 records 响应，日志为空也不影响显示。
   const promisePanel = node("div"); promisePanel.id = "behavior-promises";
   promisePanel.setAttribute("aria-live", "polite");
-  panel.append(block(t("当前承诺"), node("p", t("待兑现的约定按到期时间排列，最多三项。"), "hint"), promisePanel));
+  panel.append(block(t("当前承诺"), node("p", t("全部待兑现与暂停的约定按时间排列。"), "hint"), promisePanel));
   const query = node("input"); query.type = "search"; query.maxLength = 200;
   query.id = "behavior-log-query"; query.placeholder = t("查询 ID、号码或内容");
   query.setAttribute("aria-label", query.placeholder); query.value = state.filters.behavior.query;
@@ -907,21 +933,21 @@ async function submitNightAction(action) {
   }
   finally { state.writing = false; updateControls(); }
 }
-async function enableNightSchedule() {
+async function enableSleep() {
   if (!canWrite()) return;
   const generation = state.generation;
   state.writing = true; updateControls();
   try {
     const result = await api.save({
       context_id: state.contextId, expected_revision: state.baseRevision,
-      patch: { night_schedule_enabled: true }, reason: "长夜页面：启用作息时间表",
+      patch: { allow_sleep: true }, reason: "长夜页面：允许 TA 睡眠",
     });
     if (generation !== state.generation) return;
     const checked = normalizeState(result);
     state.data.config = checked.config; state.baseRevision = checked.config.revision;
     state.stale = true;
     applyData(await readStateConfig());
-    notify(t("作息时间表已启用，配置的入睡、深睡、午休与起床时间从现在开始生效。"));
+    notify(t("已允许 TA 睡眠，精力与自动作息从现在开始生效。"));
   } catch (error) { if (generation === state.generation) handleError(error); }
   finally { state.writing = false; updateControls(); }
 }
@@ -963,7 +989,7 @@ function renderNight(container) {
   const head = sectionHead("NIGHT CYCLE", t("长夜"),
     t("作息、精力与醒后补课。手动操作只改变作息状态，不会改动聊天内容。"), [
       [`${t("作息状态")} · ${NIGHT_STATES[value.display_state] || text(value.state)}`],
-      [`${t("作息时间表")} · ${plan.schedule_enabled ? t("已启用") : t("未启用")}`,
+      [`${t("允许 TA 睡眠")} · ${plan.schedule_enabled ? t("已启用") : t("未启用")}`,
         plan.schedule_enabled ? "on" : "off"],
       [`${t("聊天可用")} · ${plan.allow_sleep ? t("受作息影响") : t("不受作息影响")}`],
     ]);
@@ -983,13 +1009,12 @@ function renderNight(container) {
       [t("赖床范围"), t("{0}–{1} 分钟", [text(plan.lie_in_min), text(plan.lie_in_max)])],
       [t("聊天唤醒"), `${({ chat: t("仅私聊"), never: t("不可唤醒"), both: t("私聊或群原生 @") })[plan.wake_mode] || text(plan.wake_mode)} · ${t("{0} 轮 / {1} 分钟", [text(plan.wake_reply_limit), text(plan.wake_window_minutes)])}`],
       [t("清醒线"), t("{0}（线上算睡够，自主参与不占唤醒轮次）", [text(value.comfort_percent)])],
-      [t("允许睡眠影响聊天"), yesno(plan.allow_sleep)],
       [t("时区"), clockText(plan.timezone)],
     ]));
   if (!plan.schedule_enabled) {
-    schedule.append(node("p", t("注意：作息时间表未启用，设置里的入睡 / 午休 / 深睡 / 起床时间目前不会自动生效，只有手动操作会改变作息。"), "error-text"));
-    const enable = button(t("启用作息时间表"), enableNightSchedule, "primary");
-    enable.dataset.operation = "enable-night-schedule";
+    schedule.append(node("p", t("睡眠已关闭：TA 始终清醒、精力100%，不自动睡眠、补觉或发送睡前晚安。手动入睡需先开启。"), "hint"));
+    const enable = button(t("允许 TA 睡眠"), enableSleep, "primary");
+    enable.dataset.operation = "enable-sleep";
     schedule.append(enable);
   }
   container.append(nightDetails("schedule", t("作息计划 · 来自设置"), schedule));
@@ -1003,7 +1028,7 @@ function renderNight(container) {
 
   const manual = node("div");
   manual.append(
-    node("p", t("手动入睡会直接进入睡眠；手动叫醒立即醒来，且不会修改精力值。两项都只执行一次。"), "hint"));
+    node("p", t("开启「允许 TA 睡眠」后可手动入睡；手动叫醒立即醒来，两项都不修改精力值，只执行一次。"), "hint"));
   for (const action of ["night.sleep", "night.wake"]) {
     const allowed = state.data.actions.find(item => item.id === action);
     const row = node("div", undefined, "action-row");

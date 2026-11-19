@@ -38,8 +38,15 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: AKIhunter/astrbot_plugin_livinghello
-          ref: d0c611073db5a0ca28642fe5ca8ca9214583075f
+          ref: 4bd96a97b9b06bd1f80b890e68832193a9658e1a
           path: .image-prompt-peer
+          persist-credentials: false
+      - name: Pin isolated AstrBot image contract source
+        uses: actions/checkout@v4
+        with:
+          repository: AstrBotDevs/AstrBot
+          ref: 61335414433db721b3f7ecc93f90deafe0a59d78
+          path: .image-contract-host
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
@@ -104,13 +111,7 @@ jobs:
           assert "performance_f6.py" in options["python_files"]
           docs = [root / name for name in (
               "README.md", "README.en.md", "CHANGELOG.md", "THIRD_PARTY_NOTICES.md",
-              "docs/plugin-manual.md", "docs/promise.md", "docs/image-prompt-retry.md",
-              "docs/architecture.md", "docs/api.md", "docs/compatibility.md",
-              "docs/installation.md", "docs/delivery-notes.md", "docs/memory.md", "docs/local-runtime.md",
-              "docs/life-console.md", "docs/internal-state-contract.md",
-              "docs/internal-console-contract.md", "docs/internal-memory-contract.md",
-              "docs/internal-reply-contract.md", "docs/ui.md",
-          )]
+          )] + sorted((root / "docs").rglob("*.md"))
           links = 0
           for path in docs:
               text = path.read_text()
@@ -125,6 +126,7 @@ jobs:
                   links += 1
           print(f"Checked {len(docs)} documents, {links} local link targets, metadata and {len(defaults)} defaults")
           PY
+          python scripts/check_docs.py
       - name: Declare separate native-host acceptance tier
         run: |
           printf '%s\n' \
@@ -177,6 +179,11 @@ jobs:
         env:
           LIVINGHELLO_SOURCE: ${{ github.workspace }}/.image-prompt-peer
         run: python -m pytest -q -o addopts="-ra --strict-markers" tests/integration/test_image_prompt_mapping.py
+      - name: Explicit paired original image facade matrix
+        env:
+          ASTRBOT_NATIVE_SOURCE: ${{ github.workspace }}/.image-contract-host/astrbot
+          PYTHONPATH: ${{ github.workspace }}
+        run: python -B ../.image-prompt-peer/scripts/run_image_handoff_tests.py
       - name: Committed whitespace check
         run: git show --format= --check HEAD
 
@@ -233,7 +240,9 @@ jobs:
         run: node --input-type=module -e "import { rm } from 'node:fs/promises'; await rm('tests/ui/evidence', { recursive:true, force:true });"
       - name: Synthetic browser checks
         id: browser
-        run: npm --prefix tests/ui run test:browser
+        run: |
+          npm --prefix tests/ui run test:browser
+          node tests/ui/sleep-master-browser.test.mjs
       - name: Retain allowlisted synthetic evidence only
         if: always() && steps.browser.outcome != 'skipped' && steps.browser.outcome != ''
         uses: actions/upload-artifact@v4

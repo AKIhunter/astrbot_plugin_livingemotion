@@ -24,7 +24,7 @@ RELATIONSHIP_STAGE_NAMES_FIELD = "relationship_stage_names"
 
 LEGACY_FIELDS = frozenset({
     "memory_mode", "memory_export", "night_enabled", "night_block_chat",
-    "sleep_at", "night_policy_version", "autonomy_scopes",
+    "sleep_at", "night_policy_version", "autonomy_scopes", "night_schedule_enabled",
 })
 
 
@@ -69,6 +69,7 @@ class Config:
     autonomy_qq_ids: str = ""
     autonomy_qq_group_ids: str = ""
     muted_scopes: str = ""
+    # Saved legacy field only; allow_sleep is the sole runtime permission.
     night_schedule_enabled: bool = False
     sleep_at: str = "01:00"
     wake_at: str = "08:00"
@@ -227,6 +228,12 @@ class Config:
             "autonomy_qq_ids" in value or "autonomy_qq_group_ids" in value
         ) else 1)
         data.setdefault("livingmemory_enabled", value.get("memory_mode") == "external")
+        # Explicit permission wins; old-only configs inherit their saved permission.
+        if "allow_sleep" not in value and "night_schedule_enabled" in value:
+            data["allow_sleep"] = bool(value["night_schedule_enabled"] and
+                                      value.get("night_enabled", True))
+        elif "allow_sleep" not in value and "night_enabled" in value:
+            data["allow_sleep"] = value["night_enabled"]
         return cls(**data)
 
     def __post_init__(self) -> None:
@@ -334,8 +341,7 @@ class Config:
             raise ValueError("梦境主人QQ须为一个合法号码")
         if self.behavior_random_min_minutes > self.behavior_random_max_minutes:
             raise ValueError("invalid behavior random interval")
-        if self.night_policy_version == 2 and self.night_schedule_enabled and not self.timezone:
-            raise ValueError("timezone required for night policy 2")
+        # Without timezone automatic v2 scheduling remains pending.
         if self.timezone:
             ZoneInfo(self.timezone)
         for name in ("sleep_at", "wake_at", "diary_at", "dnd_start", "dnd_end",
@@ -356,6 +362,8 @@ class Config:
             minimum = 0 if name in (
                 "diary_retries", "lie_in_min_minutes", "lie_in_max_minutes",
                 "closing_lead_minutes", "emotion_quiet_start_hour", "emotion_quiet_end_hour",
+                # 天气0秒表示立即采用目标权重。
+                "weather_transition_seconds",
             ) or name in IMAGE_REFUSAL_FIELDS else 1
             if type(default) is int and (type(value) is not int or value < minimum):
                 raise ValueError(f"{name}: expected positive integer")
@@ -364,10 +372,12 @@ class Config:
             if isinstance(default, str) and (not isinstance(value, str) or len(value) > string_max):
                 raise ValueError(f"{name}: expected bounded string")
             if type(default) is float:
+                # 缓存允许一周；其余浮点参数保持原范围。
+                low, high = (1, 168) if name == "promise_trace_ttl_hours" else (0, 100)
                 if (type(value) not in (int, float) or not math.isfinite(value)
-                        or not 0 <= value <= 100
+                        or not low <= value <= high
                         or Decimal(str(value)) * 10 != (Decimal(str(value)) * 10).to_integral()):
-                    raise ValueError(f"{name}: expected 0..100 in steps of 0.1")
+                    raise ValueError(f"{name}: expected {low}..{high} in steps of 0.1")
         if self.lie_in_min_minutes > self.lie_in_max_minutes:
             raise ValueError("invalid lie-in interval")
         if self.nap_start == self.nap_end or self.fatigue_start == self.fatigue_end:

@@ -1,5 +1,21 @@
 # 更新日志
 
+## 0.6.0 — 2026-11-19
+
+- 新增原图片事项领取与结算，状态/交付trace同事务保存；共用宿主归属锁，
+  request_id、账号、人格修订和代次不一致拒绝，成功回执幂等且不降级。
+- 明确拒绝与新版映射许可允许原ID有限改词，准备候选可恢复；
+  生成或投递未知保持暂停，不因升级重复收费或补发。
+- allow_sleep成为唯一睡眠总开关；关闭清醒100%，重开不补扣关闭时间，
+  兼容旧idle和共享状态。退役night_schedule_enabled不再显示或授予许可。
+- 承诺页面展示全部事项和总数，自动刷新保持详情展开；
+  提示词编辑分为人物与通用说明，页眉紧凑显示版本。
+- 天气过渡允许0秒；交付片段缓存1–168小时、步进0.1并贯通回执TTL。
+- README仅介绍当前产品；全部133项配置用法由schema、Console与同源帮助生成，
+  技术判断、21项管理API、已知接口缺口与手册对齐；历史专题见下方索引。
+- 配套LH 2.9.0，存量配置和SQLite保留；未合入独立未提交的重试策略，
+  未知结果取消限制保持。验证为隔离离线与合成页面，不代表生产已升级。
+
 ## 0.5.0 — 2026-11-19
 
 ### 新增与修复
@@ -16,7 +32,7 @@
 - 可移植回归 2239 项与 197 个子测试通过；显式 LH / LE 生图矩阵 17 项通过。
   双插件矩阵使用固定 LH 源码和全打桩模型、图片及发送接口，付费 API 测试为 0 次。
 - 双插件矩阵在 CI 显式运行，独立默认 pytest 不依赖相邻插件，不用缺依赖跳过冒充通过。
-  [状态与复测入口](docs/image-prompt-retry.md)。
+  [状态与复测入口](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/image-prompt-retry.md)。
 
 ## 0.4.2 — 2026-11-19
 
@@ -26,7 +42,7 @@
 - 恢复消息提交接口的布尔返回值，内部保留拒绝详情，避免已拒绝的消息被调用方误判为成功。
 - 承诺重复交接保留重试计数；关闭注入时不泄漏承诺提示。高并发下压缩状态证据，避免状态体积越界丢消息。
 - SQLite 原数据保留；新增提示词字段缺失时采用默认值，不要求重置配置。
-- 离线 Python 回归 2193 通过，UI 单元 16 通过，合成浏览器 30 场景通过。详见[提示词与边界说明](docs/stability-0.4.2.md)。
+- 离线 Python 回归 2193 通过，UI 单元 16 通过，合成浏览器 30 场景通过。详见[提示词与边界说明](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/stability-0.4.2.md)。
 
 ## 0.4.1 — 2026-11-18
 
@@ -47,7 +63,7 @@
   限流继续按既有延期处理，生成或发送结果未知不自动重试，图生图不强行恢复。
 - 新增 LE 60 项、LH 8 项离线矩阵实测通过；LE 原有相关回归改前、改后均
   91 通过、11 失败，失败名称一致。该结果不代表全量 CI 通过，真实付费 API 测试为 0 次。
-  逻辑、迁移与复测命令见 [主动调整说明](docs/promise-adjustment-20261118.md)。
+  逻辑、迁移与复测命令见 [主动调整说明](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/promise-adjustment-20261118.md)。
 
 ## 0.4.0 — 2026-11-17
 
@@ -262,6 +278,72 @@
   performance_probe.py 和大样本 benchmark 仍是显式诊断/验收。
 - 目标仓库为 PRIVATE，通过正常认证访问；实际提交与 CI 结果以仓库记录为准。
   本地验收不代表远端 Actions 通过，不包含商店发布或生产部署。
-  本地执行的准确结果见 [delivery-notes.md](docs/delivery-notes.md)。
+  本地执行的准确结果见 [delivery-notes.md](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/delivery-notes.md)。
 - 仓库交付证据由交付者独立记录，本次不打tag或发release；
   BiliBot/LivingHello本地消费者改动不纳入新仓库提交。
+
+## 历史专题与验证原件
+
+旧专题的改动归入上面的版本记录，原文统一由以下固定Git来源追溯。
+当前使用说明只在docs索引维护。旧验证数量仅证明当时范围，不能用于宣称
+当前版本或生产通过；旧文内证据路径可能已撤下。原始文档也已本地独立归档。
+
+| 原始专题 | 内容与追溯 |
+| --- | --- |
+| [T1 冻结接口 v1](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/CONTRACTS.md) | 存储接点（T2 实现）；R9 门面；边界决定 |
+| [T3 情绪与关系领域交接](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/DOMAIN.md) | 集成必读；精确签名；冻结规则 V1；验证入口与边界 |
+| [T1/T2 基础阶段交接](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/FOUNDATION.md) | 已实现；实际测试；下一阶段接线顺序；尚未验收 |
+| [运行集成契约](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/INTEGRATION.md) | 生命周期与模式；消息与回复；模型与数据；接口与验收 |
+| [API v1](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/api.md) | 进程内门面；来源与事件；状态与重试；图片失败交接；页面接口 |
+| [架构与状态计算](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/architecture.md) | 架构与状态计算 |
+| [主动行为测试与发送日志](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/behavior-console.md) | 主动行为测试与发送日志 |
+| [T6 主动行为与唯一发送端](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/behavior.md) | 给父代理 / Foundation 的接点；公开调用方式；注入接口；默认规则与边界；执行与回执；并发、卸载与恢复 |
+| [F8 后台 Job 取消修复交接](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/cancellation-fix.md) | 范围与归属；状态边界与不变量；反例与实现映射；实际执行；结果不明与限制；源码锚点与核心交接 |
+| [兼容性与验证边界](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/compatibility.md) | 兼容性与验证边界 |
+| [管理后端 T9 / F1](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/console.md) | 给核心集成者：立即可接的冻结接口；路由与兼容；授权边界；配置与动作职责；验证进度；实际验证证据 |
+| [可选插件协作](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/consumers.md) | 可选插件协作 |
+| [LivingHello / LivingEmotion 双插件协作契约（LE 0.4.0）](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/cooperation-contract-20261116.md) | 接口与兼容；资源、回执与重试；验证与边界 |
+| [交付与检查](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/delivery-notes.md) | 当前实现；检查分层；文档与发布包；线上部署 |
+| [全局日记、梦境池与天气情绪](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/dream-paper.md) | 使用；情绪如何决定梦；天气加成；TA 的六维曲线；梦中惊醒消息；代码位置 |
+| [五维情绪：四维计算、五维展示](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/emotion-five-dimension.md) | 结论；计算逻辑；维度与回落速度；强度三档；配置与页面位置；测试材料 |
+| [私人日记与梦境（2026-11-09）](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/experience.md) | T7 原始实现与交接；能力边界；精确接口；Foundation 接线要求；日期、预算与模型；来源、清晰度与分享 |
+| [TA 的此刻心绪](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/feeling.md) | 生成与展示；授权与持久化；周期与失败处理；验证入口 |
+| [未来事件任务：两类来源的定义、边界与需求说明](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/future-tasks.md) | 0. 结论先行；1. 两类任务对照；2. A 类：用户发起的未来任务；3. B 类：Bot 承诺的未来任务；4. 判别规则；5. 交叉与冲突 |
+| [AstrBot 隔离宿主契约](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/host-contract.md) | 紧急接入警告；最小 Handler Guard；环境与边界；可立即接入的接口；环境一致性约束；已执行证据 |
+| [C15/C16 身份授权与关系投影修复](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/identity-fix.md) | SHA-256 冻结；身份与权限；接入交接；验证记录 |
+| [图片承诺的提示词调整](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/image-prompt-retry.md) | 离线复测 |
+| [LivingEmotion 安装与升级](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/installation.md) | 安装前确认；获取并加载插件；设置与升级后检查；旧版安装与开发验证参考；0.1 原生安装与 Provider 参考；安装 |
+| [P5 管理 API / DT0](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/internal-console-contract.md) | 范围；接口与 DTO；设置单一来源；认证、错误与重试；协调者挂接；实施检查 |
+| [P4 内部接入契约](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/internal-memory-contract.md) | 配置字段；接口与责任；派生数据决策；实测证据；接入与缺口 |
+| [P3 回复、收尾与完整补课接入](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/internal-reply-contract.md) | 回复票据；完整补课；睡前晚安；验证证据；最终整合验证 |
+| [P1/P2 状态集成契约](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/internal-state-contract.md) | 配置；状态模式；回复与睡眠；控制台与存储；冻结验证 |
+| [开心 5 分钟窗口（0.4.0）](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/joy-window.md) | 方向与口径；实现与成本；离线验证 |
+| [TA 的生活控制台](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/life-console.md) | 快速开始；页面与范围；情绪与关系；长夜计算；晚安与醒后补课；日记、梦境和记忆 |
+| [LivingHello 群聊回复复核](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/livinghello-reply-protection.md) | LivingHello 群聊回复复核 |
+| [独立运行与升级](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/local-runtime.md) | “本地化”包含什么；升级后怎么用；可选协作；验收与回滚 |
+| [身份、人格与记忆适配](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/memory.md) | 改版记忆入口；当前使用边界；给父代理的接点；原生人格；三种模式；已核实的 LivingMemory 契约 |
+| [T5 长夜与醒后补课交接](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/night.md) | 正确性边界；状态与规则；精确接口；补课窗口与来源；emotion_foundation 接线；验证证据 |
+| [F6 第四轮领域数值热路径修复](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/performance-domain-fix.md) | 范围与假设；验证口径；进度；修改与功能回归；唯一一次增长诊断；失败与限制 |
+| [F6 第三轮冻结交接（已实际修改，性能仍 FAIL）](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/performance-fix.md) | 第三轮修前 Profile；第二轮即时观测；第二轮根因与进度；文件归属；原失败；数据库变更计划 |
+| [AstrBot 插件帮助手册：LivingEmotion](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/plugin-manual.md) | 第一次使用；保存以后，怎么确认真的生效；五轴雷达怎么看；情绪强度该选哪档；常用功能；承诺任务 |
+| [主动聊天：想起你时，自然开口](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/proactive-life.md) | 快速开始；TA 会怎样找话题；运行和故障边界 |
+| [延迟生图与跨系统任务去重：0.4.0 实现说明](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/promise-actions-20261116.md) | 1. 承诺生图；2. 宿主 cron 生图；3. 跨系统归属；4. 中断与重试；5. 数据迁移与交付；6. 离线验证入口 |
+| [承诺内容拒绝后的主动反问](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/promise-adjustment-20261118.md) | 执行逻辑；代码位置；升级与使用；发布验证 |
+| [承诺取消修复（LE issue #1）](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/promise-cancellation-20261119.md) | 承诺取消修复（LE issue #1） |
+| [承诺名额与注入修复（LE issue #5）](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/promise-limits-20261119.md) | 承诺名额与注入修复（LE issue #5） |
+| [承诺兑现的上下文、多气泡与片段缓存](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/promise-memory.md) | 0. 一句话；1. 三条断裂；2. 第 4 点：主动聊天只留一个子系统；3. 承诺记忆链路；4. 数据结构；5. 交互细节对照 |
+| [承诺任务：识别、兑现与取消](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/promise.md) | 一句话；标记与识别；时间档；状态机；兑现流程；夜间与配额 |
+| [分阶段生图婉拒概率（0.4.0）](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/relationship-image-refusal.md) | 生效范围；配置与验证 |
+| [好感度计分 V2（0.4.0）](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/relationship-scoring-v2.md) | 调用链；可追踪字段；存量兼容；验证边界 |
+| [睡眠与精力规则（0.4.0）](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/sleep-energy-rules.md) | 状态与恢复；精力计算与配置兼容；唤醒窗口与在途回复；代码对应；正确性与离线验证 |
+| [0.4.2 使用与边界说明](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/stability-0.4.2.md) | 0.4.2 使用与边界说明 |
+| [P6/P7 UI 实施进度](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/ui-progress.md) | 当前预览；历史协调提示；前端冻结；最终联合复验 |
+| [livingEmotion 生活控制台 UI](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/ui.md) | 当前页面与 CI 基线（2026-11-17）；P6/P7 历史冻结记录；页面与接线；图表与交互；保存与错误；文件责任 |
+| [C50/F8 与 C22/F9 独立最终预算复验](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/verification-budgets-final.md) | 结论；给父任务与 Docs 作者的接入通知；窄门禁；实际执行与证据；C50 与 F8 实测；C22 与 F9 实测 |
+| [独立运行验收](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/verification-local-runtime.md) | 改动；离线验证；线上验收口径 |
+| [T11 C51 与 C22/F9 最终独立验收](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/verification-performance-final.md) | 最新独立验收 20261105-03；历史独立验收 20261105-02（原文保留）；给父任务；本轮完整结果；门禁策略；命令与环境 |
+| [T11 独立性能与资源验证](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/verification-performance.md) | 最新最终复验（2026-11-05 22:20 UTC）；历史验证记录；最终复验结论：C51 失败，按停止条件交回；旧轮独立结论（历史失败证据，原文保留）；环境与复跑；C51 测量边界 |
+| [LivingEmotion 关系、发送、滑块与情绪验证](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/verification-relations-emotion-20261109.md) | 后端；前端；验证边界；已授权的生产部署与复验 |
+| [0.2.0 改版验收](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/verification-retro-final.md) | 实现范围；本轮失败及修复；证据分层；执行边界；最终本地回归与性能；四版原生宿主最终结果 |
+| [P8 独立四版宿主验收](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/verification-retro-host.md) | 当前状态；环境与身份；隔离与费用；已发现的真实宿主边界；最终检查矩阵；入口 |
+| [surprise 基线修复：回归材料](https://github.com/AKIhunter/astrbot_plugin_livingemotion/blob/7325129954c3f9ac26bfa7d9e2fe06ee469352ed/docs/verification-surprise.md) | 问题与修复；场景矩阵（离线实测）；测试结果（本地实测）；复现命令 |

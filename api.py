@@ -71,6 +71,7 @@ class LivingEmotionAPI:
                         "get_current_emotion",
                         "get_action_policy", "handoff_image_failure", "resume_image_followup",
                         "get_image_prompt_retry_policy",
+                        "bind_image_promise", "settle_image_promise",
                         "get_observation", "get_relationship", "get_availability",
                         "preview_behavior", "get_health"],
             mode=mode, memory_mode=self._config.memory_mode,
@@ -331,11 +332,13 @@ class LivingEmotionAPI:
         """关系只拦新个人生图请求；已经落库的生图义务不因关系变化撤销。"""
         try:
             scope = await self._image_scope(context, event)
-            pid = event.get_extra("livingemotion:promise_id")
+            pid = (event.get_extra("livingemotion:promise_id")
+                   or event.get_extra("_livinghello_requested_promise"))
             if pid:
                 row = await self._application._promises().promises.get(str(pid))
                 if (row and row["scope_key"] == scope.scope_key
                         and row.get("handoff_account_key", "") in ("", scope.account_key)
+                        and row["generation"] == await self._store.get_generation(scope)
                         and row["status"] in ("scheduled", "running")):
                     from .runtime.promise_actions import needs_image
                     if needs_image(row["description"]):
@@ -448,6 +451,54 @@ class LivingEmotionAPI:
                                 contract="livingemotion.image-followup.v1", data=result)
         except Exception:
             return self._result("unavailable", "image_followup_resume_failed")
+
+    async def bind_image_promise(self, context, *, event) -> dict[str, Any]:
+        try:
+            scope = await self._image_scope(context, event)
+            app = self._application
+            binding = event.get_extra("_livinghello_image_binding")
+            if (not app.config.promise_enabled or not app.promise_actions_active()
+                    or event.get_extra("cron_job")
+                    or not isinstance(binding, dict)
+                    or binding.get("use_reference") is not False
+                    or any(not isinstance(binding.get(k), str) or not 1 <= len(binding[k]) <= n
+                           for k, n in (("promise_id", 128), ("request_id", 128), ("prompt", 4000)))):
+                return self._result("rejected", "invalid_image_binding")
+            service = app._promises()
+            # 与宿主注册/仲裁共用锁，查归属到领取之间不留重复执行窗口。
+            async with service.ownership.lock:
+                row = await service.promises.get(binding["promise_id"])
+                if row and row["scope_key"] == scope.scope_key:
+                    job = await service.ownership.host_match(
+                        scope, row["description"], float(row["original_due_at"]))
+                    if job:
+                        return self._result("rejected", "image_owned_by_host")
+                data = await service.promises.bind_image_request(scope, binding)
+            return self._result("ok", "image_promise_binding",
+                                contract="livingemotion.image-result.v1", data=data)
+        except Exception:
+            return self._result("unavailable", "image_binding_failed")
+
+    async def settle_image_promise(self, context, *, event) -> dict[str, Any]:
+        try:
+            scope = await self._image_scope(context, event)
+            receipt = event.get_extra("_livinghello_image_result")
+            if (not isinstance(receipt, dict) or receipt.get("status") not in ("sent", "failed", "unknown")
+                    or any(not isinstance(receipt.get(k), str) or not 1 <= len(receipt[k]) <= n
+                           for k, n in (("promise_id", 128), ("request_id", 128), ("prompt", 4000)))):
+                return self._result("rejected", "invalid_image_receipt")
+            # 使用同一新版映射许可，原事项失败不新建第二条。
+            if receipt.get("auto_prompt_retry"):
+                policy = await self.get_image_prompt_retry_policy(scope, event=event)
+                receipt = {**receipt, "auto_prompt_retry": bool(
+                    policy.get("status") == "ok" and policy.get("data", {}).get("allowed"))}
+            service = self._application._promises()
+            data = await service.promises.settle_image_request(
+                scope, receipt, ttl_seconds=service._trace_ttl())
+            return self._result("ok", "image_promise_receipt",
+                                contract="livingemotion.image-result.v1", data=data)
+        except Exception:
+            return self._result("unavailable", "image_receipt_failed")
 
     async def get_relationship(self, context: Context | Mapping[str, Any]) -> dict[str, Any]:
         return await self._snapshot(

@@ -30,7 +30,8 @@ async def restarted(tmp_path, monkeypatch, *, dream=False, extra=None):
     host.get_persona = persona
     native = NativeConfig({
         "timezone": "UTC", "diary_at": "12:00", "diary_enabled": not dream,
-        "dream_enabled": dream, "night_enabled": dream, "night_schedule_enabled": False,
+        "dream_enabled": dream, "night_enabled": dream, "allow_sleep": dream,
+        "night_schedule_enabled": False,
         "diary_backfill_yesterday": False, "provider_id": "fake",
         "autonomy_enabled": False, "catchup_enabled": False, **(extra or {})})
     first = Application(host, native, tmp_path, bridge_factory=TestBridge)

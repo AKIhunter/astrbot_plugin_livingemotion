@@ -14,19 +14,19 @@
   <header class="masthead">
     <div class="identity">
       <div class="wordmark" aria-label="livingEmotion">living<span>Emotion</span><i aria-hidden="true"></i></div>
-      <p class="eyebrow"><span data-i18n="TA 的生活控制台">TA 的生活控制台</span> <span aria-hidden="true">/</span> PERSONAL TELEMETRY</p>
+      <p class="plugin-version">v0.6.0</p>
     </div>
     <div class="header-controls">
       <button id="refresh" type="button" title="更新状态和列表，不会生成或删除内容" data-i18n="刷新" data-i18n-title="更新状态和列表，不会生成或删除内容">刷新</button>
       <span id="connection" class="sr-only" role="status" data-i18n="正在连接宿主">正在连接宿主</span>
       <div class="theme-control">
-      <label for="language" data-i18n="界面语言">界面语言</label>
+      <label class="sr-only" for="language" data-i18n="界面语言">界面语言</label>
       <select id="language" aria-label="界面语言" data-i18n-aria-label="界面语言"><option value="zh-CN" data-i18n="中文">中文</option><option value="en">English</option><option value="ja" data-i18n="日本語">日本語</option></select>
       <div class="theme-switch" role="group" aria-label="页面主题" data-i18n-aria-label="页面主题">
         <button type="button" data-theme-choice="light" aria-pressed="false" data-i18n="白昼">白昼</button>
         <button type="button" data-theme-choice="dark" aria-pressed="false" data-i18n="黑夜">黑夜</button>
       </div>
-      <span id="theme-status" class="micro" aria-live="polite"></span>
+      <span id="theme-status" class="sr-only" aria-live="polite"></span>
       </div>
     </div>
   </header>

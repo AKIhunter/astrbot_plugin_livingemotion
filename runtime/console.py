@@ -214,7 +214,7 @@ FIELD_LABELS = {
 
 
 from ..prompt_injection import PRESETS as PROMPT_PRESETS
-FIELD_LABELS.update({"prompt_core_enabled": "通用说明 · 只读",
+FIELD_LABELS.update({"prompt_core_enabled": "通用说明 · 预置",
                     "character_prompt_enabled": "人物性格", "character_preset": "人物性格预置",
                     "character_custom_text": "自定义性格", "character_preset_texts": "预置编辑稿"})
 for _stem, _title, _default in PROMPT_PRESETS:
@@ -402,7 +402,7 @@ def behavior_reason_texts(value) -> list[str]:
 
 
 ACTION_REASON_TEXT = {
-    "night.sleep": "当前模式不允许手动入睡，请把运行模式改为参与表达与行动。",
+    "night.sleep": "手动入睡需开启「允许 TA 睡眠」，并使用参与表达与行动模式。",
     "night.wake": "插件未启用或睡眠功能关闭。",
     "behavior.send": "当前条件不满足主动发送要求，先看行为模拟的判定。",
     "diary.generate": "日记生成条件未满足，详见原因。",
@@ -547,6 +547,10 @@ class Console:
                         "点/分钟" if f.name.endswith("_per_minute") else
                         "点/次" if f.name == "energy_reply_cost" else "次")
                 item.update(step=0.1 if type(f.default) is float else 1, unit=unit)
+            if f.name == "promise_trace_ttl_hours":
+                item.update(min=1, max=168, step=0.1, unit="小时")
+            if f.name == "weather_transition_seconds":
+                item.update(min=0, max=7200, step=1, unit="秒")
             if f.name.endswith("provider_id"):
                 kind = "embedding" if f.name == "embedding_provider_id" else "chat"
                 item.update(type="enum", provider_kind=kind, options=[
@@ -580,7 +584,7 @@ class Console:
                           "value": 100.0, "step": 0.1, "unit": "点", "readonly": True,
                           "section": "night", "subsection": "energy",
                           "subsection_label": NIGHT_SUBSECTION_LABELS["energy"],
-                          "parent": "night_schedule_enabled", "level": 1,
+                          "parent": "allow_sleep", "level": 1,
                           **field_help("energy_max")}],
         }
 
@@ -869,8 +873,9 @@ class Console:
                       "wake_replies_used": getattr(night, "wake_replies_used", 0),
                       "wake_reply_limit": getattr(night, "wake_reply_limit", 0),
                       "schedule": {
-                          "schedule_enabled": bool(self.config.night_schedule_enabled),
-                          "sleep_enabled": bool(self.config.night_enabled),
+                          # Compatibility DTO alias for older pages.
+                          "schedule_enabled": bool(self.config.allow_sleep),
+                          "sleep_enabled": bool(self.config.allow_sleep),
                           "allow_sleep": bool(self.config.allow_sleep),
                           "fatigue_start": self.config.fatigue_start,
                           "fatigue_end": self.config.fatigue_end,
@@ -947,8 +952,8 @@ class Console:
                  "reason_code": "" if enabled else ("mode_unavailable" if state.get("mode") != "active"
                                                     else "policy_unavailable")}
                 for name, enabled in (
-                    ("night.sleep", active and self.config.night_enabled),
-                    ("night.wake", self.config.enabled and self.config.night_enabled),
+                    ("night.sleep", active and self.config.allow_sleep),
+                    ("night.wake", self.config.enabled),
                     # 真实发送由管理员显式触发：手动路径跳过时机分数、冷却与未回应
                     # 退避，其余硬约束（静音、时段、额度、身份、来源）照旧；模型是否
                     # 可用在执行时反馈，不再把按钮直接锁死。
@@ -1731,13 +1736,7 @@ class Console:
                 raise ApplicationError("validation_error", "正文上限须在1至2000之间")
             if {"autonomy_qq_ids", "autonomy_qq_group_ids"} & patch.keys():
                 patch["autonomy_scopes"] = ""
-            # 改作息时间本身就表达「要用这套作息」：自动打开时间表，
-            # 否则设置里填了时间却永远不生效，页面与设置对不上。
-            schedule_keys = {"fatigue_start", "fatigue_end", "deep_sleep_at", "wake_at",
-                             "nap_enabled", "nap_start", "nap_end",
-                             "lie_in_min_minutes", "lie_in_max_minutes", "timezone"}
-            if patch.keys() & schedule_keys and "night_schedule_enabled" not in patch:
-                patch["night_schedule_enabled"] = True
+            # 保存作息参数不隐式授予睡眠权限。
             # 改梦境模型会重建业务对象并关闭手动执行器：正在跑的梦会被取消并落成
             # unknown / reload_after_dispatch。这里先拒绝并提示，等生成结束再保存
             # （原生 AstrBot 配置页的外部修改走 _watch_config，无法在这一层拦）。
@@ -1833,7 +1832,7 @@ class Console:
             if result is None:
                 raise ApplicationError("version_conflict", "Night state changed")
             result = {"status": "accepted",
-                      "reason": ("已按手动指令进入疲劳期：精力清零，随后进入睡眠。" if action == "night.sleep"
+                      "reason": ("已按手动指令入睡，精力保持不变。" if action == "night.sleep"
                                  else "已按手动指令叫醒，精力保持不变。"),
                       "reason_code": "night_state_committed"}
         elif action == "behavior.send":

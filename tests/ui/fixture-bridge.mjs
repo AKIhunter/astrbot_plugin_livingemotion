@@ -184,6 +184,7 @@ const bridge = {
         total: items.length, page: params.page, page_size: 10,
       };
       if (scenario === "bad-pagination") page.page_size = 20;
+      if (params.kind === "behavior" && data.behavior?.promises) page.promises = clone(data.behavior.promises);
       return { status: "ok", data: page };
     }
     return fail("not_found", "不存在的合成路由");
@@ -279,6 +280,7 @@ Object.defineProperty(window, "__fixture", { value: {
   changeConfig(patch, revision) { Object.assign(data.config.values, patch); data.config.revision = revision; },
   setFeeling(value) { data.feeling = clone(value); },
   setEnvironment(value) { data.environment = clone(value); },
+  setPromises(value) { data.behavior.promises = clone(value); },
   denyAccess() { denyAccess = true; },
 } });
 if (scenario !== "missing-bridge") window.AstrBotPluginView = bridge;

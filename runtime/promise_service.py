@@ -262,7 +262,7 @@ class PromiseService:
 
         def read(db):
             return [dict(row) for row in db.execute(
-                "SELECT promise_id, status, action_state FROM promises "
+                "SELECT promise_id, status, action_state, action_result_json FROM promises "
                 "WHERE status IN ('running','unknown')")]
 
         try:
@@ -272,6 +272,13 @@ class PromiseService:
         healed = 0
         for row in stuck:
             promise_id = row["promise_id"]
+            try:
+                external = json.loads(row["action_result_json"] or "{}").get("external_image") is True
+            except (ValueError, TypeError):
+                external = False
+            if external:
+                # 普通图片由 LH 保存真实结果；tick 不能抢回执行或触发重复收费。
+                continue
             if row["action_state"] in ("generating", "sending", "unknown"):
                 if row["status"] == "running":
                     await self.promises.move(
@@ -653,7 +660,7 @@ class PromiseService:
     def _trace_ttl(self) -> float:
         hours = getattr(self.app.config, "promise_trace_ttl_hours", 24)
         try:
-            return max(1.0, float(hours)) * 3600.0
+            return max(1.0, min(168.0, float(hours))) * 3600.0
         except (TypeError, ValueError):
             return 86400.0
 

@@ -1,56 +1,40 @@
-# 交付与检查
+# 开发与检查分层
 
-开发者：[AKIhunter](https://github.com/AKIhunter)。当前仓库公开，
-安装入口见[安装说明](installation.md)，日常使用见[插件帮助手册](plugin-manual.md)。
+适用0.6.0。完整克隆保留tests与开发依赖；使用Python 3.12/3.13验证便携路径。
+先从插件根目录安装requirements-dev.txt，然后运行：
 
-## 当前实现
-
-情绪、关系、作息、精力、补课与额度由插件自身实现。已撤下旧库导入、回退、
-外部情感插件发现及冲突退让路径；模式仅来自自身配置。
-自己的数据结构升级保留，业务配置和已有状态不因清理代码被清空。
-“本地化”的边界和升级步骤见[独立运行说明](local-runtime.md)。
+```bash
+python scripts/check_docs.py
+python -m pytest -q
+npm --prefix tests/ui ci --ignore-scripts --no-audit --no-fund
+npm --prefix tests/ui run build
+npm --prefix tests/ui test
+npm --prefix tests/ui run test:browser
+node tests/ui/sleep-master-browser.test.mjs
+```
 
 ## 检查分层
 
-从插件根目录运行：
+默认pytest覆盖规则、存储、运行时、便携预算和F6回归。
+tests/host、tests/console/test_console.py、tests/budgets/test_model_payload.py为显式宿主层；
+依赖固定AstrBot快照，不能把缺依赖跳过当作通过。
+显式双插件映射使用LIVINGHELLO_SOURCE，命令见[提示词调整](image-prompt-retry.md#离线复测)。
+LH另有tests/image_result_handoff.py，覆盖真实双方门面与SQLite，
+替换上游和发送接口，源码需分别来自当前公开版本。
 
-```bash
-.venv-ci/bin/python -m pytest -q
-npm --prefix tests/ui run build
-npm --prefix tests/ui test
-```
+UI测试读取真实Console DTO与实际页面，配置保存由合成桥处理。
+浏览器外联全部阻断；自动刷新、草稿保存、列表展开与多分辨率独立核对。
+UI_EVIDENCE_DIR可指向仓库外证据目录；PLAYWRIGHT_MODULE可复用已安装依赖。
+临时服务在finally关闭。浏览器通过不替代宿主HTTP认证和真实平台投递。
 
-普通 pytest 包含可移植规则、存储、运行时和协作回归。
-`performance_f6.py` 保持自动收集；大样本 benchmark 和独立宿主 runner 显式运行。
-`tests/console/test_console.py`、`tests/budgets/test_model_payload.py` 是宿主专项，
-不把没有宿主的跳过当作通过。真实宿主准备方法见[宿主契约](host-contract.md)。
+## 文档与提交
 
-`tests/integration/test_image_prompt_mapping.py` 需要配套 LH 2.8.0 源码，在独立默认 pytest
-之外显式执行；CI 检出固定 LH commit 后运行它。路径与命令见[生图矩阵](image-prompt-retry.md#离线复测)。
+README只作当前入口；配置参考从schema、Console和同源帮助生成。
+修改帮助后运行`python scripts/check_docs.py --write`，并重新导出真实UI DTO：
+`python tests/ui/export-native-dto.py`。不能手改证据里的源码hash。
+CI检查全部Markdown链接、元数据、schema默认值、便携测试、双插件矩阵和UI。
+历史文档统一见[CHANGELOG](../CHANGELOG.md)，旧原件可由固定Git提交追溯。
 
-测试采用隔离数据库、合成消息及模型替身。真实计费模型、真实发送和生产峰值
-不由这些结果证明。生产检查只核对代码、进程、日志、数据库和已鉴权的管理接口。
-本次结果与既有失败对照见[本地化验收](verification-local-runtime.md)。
-
-## 文档与发布包
-
-以当前源码、配置定义和运行态为准；README、手册与流程图同步更新。
-`LICENSE` 和 D3 等实际分发依赖的版权声明保留。
-发布包排除 `.git`、虚拟环境、缓存、node_modules、数据库和私人运行数据。
-原文档验证器应对实际候选运行，不能把开发环境体积当作发布包体积。
-
-旧接口参考和旧组合验收材料已撤下，可在 Git 历史查看。
-保留的 [改版报告](verification-retro-final.md)、[四版宿主报告](verification-retro-host.md)、
-[预算](verification-budgets-final.md)及[性能](verification-performance-final.md)均是各自时点的证据；
-不代表本次代码已在所有宿主和外部服务重测。
-
-## 线上部署
-
-1. 检查远端是否有额外改动，按每个文件比对 SHA-256。
-2. 备份插件、原配置与 SQLite 一致快照，记录清单、SHA-256 和逐文件回滚方法。
-3. 只更新此次清单中的文件，删除项也须先归档，不覆盖整个目录。
-4. 重启 AstrBot，核对服务、监听端口、新 ERROR、数据库及管理 API 读回。
-5. 检查失败则逐文件回滚并巡检；不拿旧整库覆盖新记录。
-
-发布到插件市场、GitHub Release、收费模型测试和真实平台投递是单独的操作，
-不能用一次普通代码部署代替它们的验收。
+测试证据放仓库外，不提交私人路径、数据库、原始消息、密钥或临时模型连接。
+正常提交精准选择文件；推送前fetch检查分叉，rebase冲突立即abort。
+逐文件部署、计费API和真实发送分别授权与验收，不由GitHub提交自动发生。

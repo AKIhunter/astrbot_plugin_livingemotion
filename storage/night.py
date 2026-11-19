@@ -8,6 +8,59 @@ from ..contracts import (
 
 
 class NightStore:
+    async def reset_sleep_permission(self, instance_id):
+        """Normalize saved nights, and exclude the disabled interval on re-enable."""
+        from types import SimpleNamespace
+        from ..domain.night import sleepless_state
+        now = self._now()
+
+        def commit(db):
+            def mutate():
+                rows = list(db.execute(
+                    """SELECT s.*, c.context_json FROM states s JOIN scopes c
+                       ON c.scope_key=s.scope_key WHERE s.kind='night'
+                       AND s.record_key='' AND json_extract(c.context_json,'$.instance_id')=?""",
+                    (instance_id,),
+                ))
+                owners = list(db.execute(
+                    """SELECT s.* FROM owner_states s JOIN state_owners o
+                       ON o.owner_key=s.owner_key JOIN state_modes m
+                       ON m.persona_key=o.persona_key WHERE s.kind='night' AND m.instance_id=?""",
+                    (instance_id,),
+                ))
+                for row in (*rows, *owners):
+                    owned = "owner_key" in row.keys()
+                    key = row["owner_key"] if owned else row["scope_key"]
+                    value = json.loads(row["value_json"])
+                    before = self._night_value(value)
+                    after = sleepless_state(before, now=now)
+                    runtime = dict(value.get("_runtime", {}))
+                    runtime.pop("manual_wake_until", None)
+                    payload = {**value, **to_dict(after), "_runtime": runtime}
+                    if payload == value:
+                        continue
+                    table, column = ("owner_states", "owner_key") if owned else ("states", "scope_key")
+                    db.execute(
+                        f"UPDATE {table} SET value_json=?,updated_at=?,version=version+1 "
+                        f"WHERE {column}=? AND kind='night'" +
+                        ("" if owned else " AND record_key=''"),
+                        (canonical_json(payload), after.updated_at, key),
+                    )
+                    if (before.energy != 100 or before.phase != after.phase
+                            or before.display_state != after.display_state):
+                        context = SimpleNamespace(scope_key=key)
+                        self._append_energy(
+                            db, context, key, stable_key("sleep-config", key, row["version"]),
+                            "allow_sleep", before, after, ({
+                                "occurred_at": after.updated_at, "category": "config",
+                                "before_units": int(round(before.energy * 10)), "after_units": 1000,
+                                "reason_code": "sleep_disabled",
+                            },),
+                        )
+                return len(rows) + len(owners)
+            return self._transaction(db, mutate)
+        return await self._run(commit)
+
     async def night_operation(self, context, transform, *, operation="tick", reply_id=None,
                               event=None, ticket=None, expected_generation=None):
         """Run a pure transform under the same transaction as admission and logs.

@@ -228,7 +228,11 @@ class Projector:
 
         night_runtime = runtime("night")
         account = account_affect(records.get("relationship"), context)
-        if night.policy_version == 2 or (config.night_policy_version == 2 and config.timezone):
+        if not config.allow_sleep:
+            from ..domain.night import sleepless_state
+            night_result = {"night": sleepless_state(night, now=now), "runtime": {}, "cost": 0}
+            night_runtime.pop("manual_wake_until", None)
+        elif night.policy_version == 2 or (config.night_policy_version == 2 and config.timezone):
             # V2 human messages never consume energy. Runtime scheduling and
             # reply submission own time/reply energy, not archive ingestion.
             from ..domain.night import life_state
@@ -247,7 +251,7 @@ class Projector:
                 interaction = {**interaction, "scope_key": context.scope_key}
             night_result = apply_interaction(
                 night, event, context=context, now=now, runtime=interaction,
-                enabled=config.night_enabled,
+                enabled=config.allow_sleep,
             )
         # 情绪强度按设置档位生效：规则增量与单次/同类闸门一起放大。
         emotion_policy_value = emotion_policy(

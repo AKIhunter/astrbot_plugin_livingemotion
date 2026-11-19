@@ -24,7 +24,6 @@ export const nativeDTO = {
       "autonomy_qq_ids": "",
       "autonomy_qq_group_ids": "",
       "muted_scopes": "",
-      "night_schedule_enabled": false,
       "wake_at": "08:00",
       "diary_at": "23:00",
       "diary_backfill_yesterday": false,
@@ -453,21 +452,6 @@ export const nativeDTO = {
         "level": 1
       },
       {
-        "key": "night_schedule_enabled",
-        "label": "自动作息",
-        "section": "night",
-        "value": false,
-        "type": "boolean",
-        "advanced": false,
-        "subsection": "schedule",
-        "subsection_label": "作息时间",
-        "help": "自动按作息维护睡眠周期。",
-        "details": "启用前填写时区；自动作息与允许睡眠分别控制时间记录和聊天阻断。旧配置保持原行为，直至完成新规则迁移。",
-        "example": "时区Asia/Shanghai，夜间23:30、沉睡02:30、基础起床08:00。",
-        "parent": "",
-        "level": 0
-      },
-      {
         "key": "wake_at",
         "label": "基础起床时间",
         "section": "night",
@@ -479,7 +463,7 @@ export const nativeDTO = {
         "help": "未加赖床时间的基础起床时刻。",
         "details": "每个夜晚只抽取一次赖床值并保存；刷新页面不会重新抽取，实际起床可能更晚。",
         "example": "08:00、赖床0–90分钟，实际起床在08:00至09:30。",
-        "parent": "night_schedule_enabled",
+        "parent": "allow_sleep",
         "level": 1
       },
       {
@@ -970,9 +954,9 @@ export const nativeDTO = {
         "value": 32768,
         "type": "integer",
         "advanced": true,
-        "help": "每次后台模型任务的输入上限。",
-        "details": "范围1–32768 Token；素材会受此预算限制，不是字符数或每日总量。",
-        "example": "4096适合短任务；较长日记可以适度提高。",
+        "help": "每次后台模型任务的输入预算。",
+        "details": "历史字段名保留；实际按完整请求UTF-8字节上界估计，范围1–32768，不是账单Token。",
+        "example": "中文通常占多个字节，不能把此值当作可输入字符数。",
         "parent": "emotion_model_enabled",
         "level": 1,
         "step": 1,
@@ -1105,11 +1089,11 @@ export const nativeDTO = {
         "advanced": false,
         "subsection": "schedule",
         "subsection_label": "作息时间",
-        "help": "允许睡眠状态影响聊天可用性。",
-        "details": "关闭后继续记录精力，但不因睡眠阻断聊天；开启时还需自动作息和相应规则生效。",
-        "example": "希望夜里仍随时回复：关闭；希望有真实作息：开启。",
-        "parent": "night_schedule_enabled",
-        "level": 1
+        "help": "睡眠与自动作息总开关。",
+        "details": "开启后在「长夜 / 自动作息」设置时区、夜间与午休；关闭立即清醒，精力始终100%，不自动睡眠、补觉或发送睡前晚安，手动入睡也须先开启。",
+        "example": "希望始终精力充沛：关闭；希望按精力与作息休息：开启。",
+        "parent": "",
+        "level": 0
       },
       {
         "key": "nap_enabled",
@@ -1123,7 +1107,7 @@ export const nativeDTO = {
         "help": "启用午休时间段。",
         "details": "与午休开始和结束配合；允许睡眠关闭时仍不阻断聊天。",
         "example": "开启并设置13:00至14:30。",
-        "parent": "night_schedule_enabled",
+        "parent": "allow_sleep",
         "level": 1
       },
       {
@@ -1168,7 +1152,7 @@ export const nativeDTO = {
         "help": "夜间疲劳消耗的起点。",
         "details": "不按时间中点转困；>20%清醒、0%＜精力≤20%恍惚、0%困。",
         "example": "00:00起点、02:30沉睡、0.5点/分钟，无回复时满精力降至25%。",
-        "parent": "night_schedule_enabled",
+        "parent": "allow_sleep",
         "level": 1
       },
       {
@@ -1183,7 +1167,7 @@ export const nativeDTO = {
         "help": "夜间疲劳消耗的结束时间。",
         "details": "停止这一段疲劳消耗，不代表可以退出沉睡；基础起床加本周期赖床值决定实际起床。",
         "example": "07:00停止疲劳消耗，但08:00起床配置仍有效。",
-        "parent": "night_schedule_enabled",
+        "parent": "allow_sleep",
         "level": 1
       },
       {
@@ -1198,7 +1182,7 @@ export const nativeDTO = {
         "help": "进入沉睡的时间。",
         "details": "须位于夜间起点与基础起床之间，支持跨午夜；本地HH:MM，宿主校验时间顺序。",
         "example": "23:30→02:30→08:00合法；沉睡09:00会被拒绝。",
-        "parent": "night_schedule_enabled",
+        "parent": "allow_sleep",
         "level": 1
       },
       {
@@ -1213,7 +1197,7 @@ export const nativeDTO = {
         "help": "本周期赖床的最少分钟数。",
         "details": "可设0；最少不得大于最多，实际抽取结果在本周期内固定。",
         "example": "0至30，允许准时起床或赖床最多半小时。",
-        "parent": "night_schedule_enabled",
+        "parent": "allow_sleep",
         "level": 1,
         "step": 1,
         "unit": "分钟"
@@ -1230,7 +1214,7 @@ export const nativeDTO = {
         "help": "本周期赖床的最多分钟数。",
         "details": "范围0–1440分钟；与最少值组成随机区间，不是每次刷新重抽。",
         "example": "最少15、最多45，基础08:00则08:15至08:45起床。",
-        "parent": "night_schedule_enabled",
+        "parent": "allow_sleep",
         "level": 1,
         "step": 1,
         "unit": "分钟"
@@ -1247,7 +1231,7 @@ export const nativeDTO = {
         "help": "谁可以通过聊天叫醒 TA。",
         "details": "仅私聊、不允许唤醒、私聊或群聊原生@Bot；普通文本里的@名字不等于原生提及。",
         "example": "不想群聊打断睡眠：选“仅私聊”。",
-        "parent": "night_schedule_enabled",
+        "parent": "allow_sleep",
         "level": 1,
         "options": [
           {
@@ -1276,7 +1260,7 @@ export const nativeDTO = {
         "help": "一次聊天唤醒可用的回复尝试数。",
         "details": "范围1–100；生成失败也计入；结束后>20%清醒、0%＜精力≤20%恍惚、0%困。",
         "example": "10轮表示最多尝试10次，仍受时间窗口限制。",
-        "parent": "night_schedule_enabled",
+        "parent": "allow_sleep",
         "level": 1,
         "step": 1,
         "unit": "次"
@@ -1293,7 +1277,7 @@ export const nativeDTO = {
         "help": "一次聊天唤醒的最长窗口。",
         "details": "范围1–1440分钟，从第一次宿主提交开始固定计算，后续消息不无限延长。",
         "example": "10表示叫醒后最多维持10分钟的回复窗口。",
-        "parent": "night_schedule_enabled",
+        "parent": "allow_sleep",
         "level": 1,
         "step": 1,
         "unit": "分钟"
@@ -1310,7 +1294,7 @@ export const nativeDTO = {
         "help": "每次宿主提交回复消耗的精力点数。",
         "details": "总精力固定100；数值0–100，步进0.1；同一回复只记一次，提交不代表送达。",
         "example": "2.0表示一次最终回复提交消耗2点。",
-        "parent": "night_schedule_enabled",
+        "parent": "allow_sleep",
         "level": 1,
         "step": 0.1,
         "unit": "点/次",
@@ -1329,7 +1313,7 @@ export const nativeDTO = {
         "help": "夜间疲劳时段未睡眠时每分钟消耗精力。",
         "details": "数值0–100，步进0.1；小憩和沉睡只恢复，白天未睡眠是否回血由“白天自动恢复精力”控制。",
         "example": "0.5表示夜间未睡眠持续10分钟消耗5点。",
-        "parent": "night_schedule_enabled",
+        "parent": "allow_sleep",
         "level": 1,
         "step": 0.1,
         "unit": "点/分钟",
@@ -1348,7 +1332,7 @@ export const nativeDTO = {
         "help": "睡眠恢复速度，也用于开启后的白天自动恢复。",
         "details": "数值0–100，步进0.1；默认只在小憩、沉睡时恢复。在本区开启“白天自动恢复精力”后，非疲劳时段未睡眠也使用此速度；固定沉睡结束恢复100%。",
         "example": "1.0表示10分钟恢复10点，上限100。",
-        "parent": "night_schedule_enabled",
+        "parent": "allow_sleep",
         "level": 1,
         "step": 0.1,
         "unit": "点/分钟",
@@ -1416,7 +1400,7 @@ export const nativeDTO = {
         "help": "醒来后阅读已保存的未读消息。",
         "details": "从本插件有真实来源的未读归档读取；不等于访问平台全部历史，补答开关独立。",
         "example": "只希望醒后了解聊天：开启阅读、关闭历史补答。",
-        "parent": "night_schedule_enabled",
+        "parent": "allow_sleep",
         "level": 1
       },
       {
@@ -1441,9 +1425,9 @@ export const nativeDTO = {
         "value": true,
         "type": "boolean",
         "advanced": false,
-        "help": "允许把对话里答应的事记成待办承诺。",
-        "details": "开启后，模型说过的承诺会落成可追踪条目，按轮次推进状态；关闭则完全不记，也不追问。",
-        "example": "开启：答应的事会被记住并在后续对话里推进；关闭：只当普通聊天，不留承诺。",
+        "help": "登记并兑现明确延后的承诺。",
+        "details": "在「设置 → 承诺代办」配置。开启后明确延后的约定登记并到期执行；关闭不新建、不兑现，已有记录保留。即时请求当场处理。",
+        "example": "答应稍后画图会登记；用户追问或调整时沿用原事项。",
         "parent": "",
         "level": 0
       },
@@ -1471,9 +1455,9 @@ export const nativeDTO = {
         "value": 3,
         "type": "integer",
         "advanced": false,
-        "help": "单条承诺允许推进的层数上限。",
-        "details": "范围1–10；防止一条承诺被反复拆解成子任务而无限展开。",
-        "example": "填3表示最多拆三层。",
+        "help": "兼容保留的承诺深度字段。",
+        "details": "可保存，当前执行器不读取；不能用它保证拆分层数上限。",
+        "example": "默认3是保存值，实际以任务状态为准。",
         "parent": "promise_enabled",
         "level": 1,
         "step": 1,
@@ -1486,9 +1470,9 @@ export const nativeDTO = {
         "value": 3,
         "type": "integer",
         "advanced": false,
-        "help": "一轮对话里最多推进几条承诺。",
-        "details": "范围1–10；避免一次回复里连珠炮似地追问一堆事。",
-        "example": "填3表示每轮最多推进3条。",
+        "help": "兼容保留的提前次数字段。",
+        "details": "可保存，当前服务使用固定3次提前上限，不读取此值。",
+        "example": "不控制每轮推进多少条承诺。",
         "parent": "promise_enabled",
         "level": 1,
         "step": 1,
@@ -1517,12 +1501,14 @@ export const nativeDTO = {
         "type": "float",
         "advanced": false,
         "help": "兑现后片段缓存保留多久。",
-        "details": "范围1–168小时；期间用户追问直接读缓存，不再走向量检索；到期自动释放，追问回到正常检索。",
+        "details": "范围1–168小时，步进0.1；期间用户追问直接读缓存，不再走向量检索；到期自动释放，追问回到正常检索。",
         "example": "填24表示刚兑现的一天内，追问「刚才那张」能直接接上。",
         "parent": "promise_enabled",
         "level": 1,
         "step": 0.1,
-        "unit": "次"
+        "unit": "小时",
+        "min": 1,
+        "max": 168
       },
       {
         "key": "promise_recall_limit",
@@ -1546,9 +1532,9 @@ export const nativeDTO = {
         "value": "auto",
         "type": "enum",
         "advanced": false,
-        "help": "承诺到点时怎么交付：并进下一轮回复，还是单独发一条。",
-        "details": "auto：检测到 LivingHello 且两侧都启用时走并轨——不单独发消息、不为兑现文案额外调模型，由对话里下一轮回复顺带交付（有图就发图），因此不会和被动回复出现两条一样的话；on：始终并轨；off：始终单独发送一条文字（这时可能与被动回复重复，属预期）。",
-        "example": "auto 适合长期使用；off 仅用于排查「承诺到底有没有到点」这类问题。",
+        "help": "到期承诺使用动作还是纯文字。",
+        "details": "auto按当前双插件能力选择，on使用动作，off使用文字。到期独立执行，不等用户下一轮发言。缺少动作能力不会伪造执行成功。",
+        "example": "图片约定使用LH真实图片门面；工具已绑定原事项时定时扫描不会重复执行。",
         "parent": "",
         "level": 0,
         "options": [
@@ -1578,7 +1564,7 @@ export const nativeDTO = {
         "help": "允许睡前在近期参与的会话道晚安。",
         "details": "只考虑真实且近期参与过的会话；不是向所有好友群发，发送仍需守卫允许。",
         "example": "夜间23:30开始、提前5分钟，可在23:25附近评估晚安。",
-        "parent": "night_schedule_enabled",
+        "parent": "allow_sleep",
         "level": 1
       },
       {
@@ -1747,8 +1733,8 @@ export const nativeDTO = {
         "type": "integer",
         "advanced": false,
         "help": "天气轮询间隔。",
-        "details": "范围300–21600秒，默认3600即每小时一次；请求失败自动退避到60–300秒重试，不会形成重试风暴。",
-        "example": "3600每小时取一次实况。",
+        "details": "保存范围300–21600秒，默认14400即4小时；受抓取窗口限制，失败从300秒起退避。",
+        "example": "默认06:00–次日01:00窗口最多5次计划评估，不是实测请求数。",
         "parent": "emotion_model_enabled",
         "level": 1,
         "step": 1,
@@ -1767,7 +1753,9 @@ export const nativeDTO = {
         "parent": "emotion_model_enabled",
         "level": 1,
         "step": 1,
-        "unit": "秒"
+        "unit": "秒",
+        "min": 0,
+        "max": 7200
       },
       {
         "key": "weather_weight_scale",
@@ -2075,7 +2063,7 @@ export const nativeDTO = {
         "help": "自然醒后是否主动爬楼补答。",
         "details": "只对这一段睡眠期确有未读的会话生效；没有未读就不读不发，也不会重复补答。",
         "example": "希望它醒来自己看看群里的消息：开启；只想被动等消息：关闭。",
-        "parent": "night_schedule_enabled",
+        "parent": "allow_sleep",
         "level": 1
       },
       {
@@ -2090,7 +2078,7 @@ export const nativeDTO = {
         "help": "爬楼前是否先发一句刚醒的招呼。",
         "details": "招呼只是一句话，用来交代「刚醒」；关闭后直接进入补答或继续安静。",
         "example": "不想它冒头时关闭。",
-        "parent": "night_schedule_enabled",
+        "parent": "allow_sleep",
         "level": 1
       },
       {
@@ -2105,7 +2093,7 @@ export const nativeDTO = {
         "help": "刚醒招呼的候选句子。",
         "details": "用竖线 | 分隔，每次随机取一条；留空则使用默认一句。",
         "example": "刚醒，我看看之前你们说了什么。|我醒了，先把这几小时翻一翻。",
-        "parent": "night_schedule_enabled",
+        "parent": "allow_sleep",
         "level": 1
       },
       {
@@ -2210,7 +2198,7 @@ export const nativeDTO = {
       },
       {
         "key": "prompt_core_enabled",
-        "label": "通用说明 · 只读",
+        "label": "通用说明 · 预置",
         "section": "prompt_injection",
         "value": true,
         "type": "boolean",
@@ -2409,7 +2397,6 @@ export const nativeDTO = {
         "id": "night",
         "label": "长夜",
         "field_keys": [
-          "night_schedule_enabled",
           "wake_at",
           "allow_sleep",
           "nap_enabled",
@@ -2610,7 +2597,7 @@ export const nativeDTO = {
         "section": "night",
         "subsection": "energy",
         "subsection_label": "精力与清醒",
-        "parent": "night_schedule_enabled",
+        "parent": "allow_sleep",
         "level": 1,
         "help": "总精力固定为100点。",
         "details": "只读上限，用于统一精力曲线和展示，不能通过配置修改。",
@@ -2909,7 +2896,6 @@ export const nativeDTO = {
         "autonomy_qq_ids": "",
         "autonomy_qq_group_ids": "",
         "muted_scopes": "",
-        "night_schedule_enabled": false,
         "wake_at": "08:00",
         "diary_at": "23:00",
         "diary_backfill_yesterday": false,
@@ -3338,21 +3324,6 @@ export const nativeDTO = {
           "level": 1
         },
         {
-          "key": "night_schedule_enabled",
-          "label": "自动作息",
-          "section": "night",
-          "value": false,
-          "type": "boolean",
-          "advanced": false,
-          "subsection": "schedule",
-          "subsection_label": "作息时间",
-          "help": "自动按作息维护睡眠周期。",
-          "details": "启用前填写时区；自动作息与允许睡眠分别控制时间记录和聊天阻断。旧配置保持原行为，直至完成新规则迁移。",
-          "example": "时区Asia/Shanghai，夜间23:30、沉睡02:30、基础起床08:00。",
-          "parent": "",
-          "level": 0
-        },
-        {
           "key": "wake_at",
           "label": "基础起床时间",
           "section": "night",
@@ -3364,7 +3335,7 @@ export const nativeDTO = {
           "help": "未加赖床时间的基础起床时刻。",
           "details": "每个夜晚只抽取一次赖床值并保存；刷新页面不会重新抽取，实际起床可能更晚。",
           "example": "08:00、赖床0–90分钟，实际起床在08:00至09:30。",
-          "parent": "night_schedule_enabled",
+          "parent": "allow_sleep",
           "level": 1
         },
         {
@@ -3855,9 +3826,9 @@ export const nativeDTO = {
           "value": 32768,
           "type": "integer",
           "advanced": true,
-          "help": "每次后台模型任务的输入上限。",
-          "details": "范围1–32768 Token；素材会受此预算限制，不是字符数或每日总量。",
-          "example": "4096适合短任务；较长日记可以适度提高。",
+          "help": "每次后台模型任务的输入预算。",
+          "details": "历史字段名保留；实际按完整请求UTF-8字节上界估计，范围1–32768，不是账单Token。",
+          "example": "中文通常占多个字节，不能把此值当作可输入字符数。",
           "parent": "emotion_model_enabled",
           "level": 1,
           "step": 1,
@@ -3990,11 +3961,11 @@ export const nativeDTO = {
           "advanced": false,
           "subsection": "schedule",
           "subsection_label": "作息时间",
-          "help": "允许睡眠状态影响聊天可用性。",
-          "details": "关闭后继续记录精力，但不因睡眠阻断聊天；开启时还需自动作息和相应规则生效。",
-          "example": "希望夜里仍随时回复：关闭；希望有真实作息：开启。",
-          "parent": "night_schedule_enabled",
-          "level": 1
+          "help": "睡眠与自动作息总开关。",
+          "details": "开启后在「长夜 / 自动作息」设置时区、夜间与午休；关闭立即清醒，精力始终100%，不自动睡眠、补觉或发送睡前晚安，手动入睡也须先开启。",
+          "example": "希望始终精力充沛：关闭；希望按精力与作息休息：开启。",
+          "parent": "",
+          "level": 0
         },
         {
           "key": "nap_enabled",
@@ -4008,7 +3979,7 @@ export const nativeDTO = {
           "help": "启用午休时间段。",
           "details": "与午休开始和结束配合；允许睡眠关闭时仍不阻断聊天。",
           "example": "开启并设置13:00至14:30。",
-          "parent": "night_schedule_enabled",
+          "parent": "allow_sleep",
           "level": 1
         },
         {
@@ -4053,7 +4024,7 @@ export const nativeDTO = {
           "help": "夜间疲劳消耗的起点。",
           "details": "不按时间中点转困；>20%清醒、0%＜精力≤20%恍惚、0%困。",
           "example": "00:00起点、02:30沉睡、0.5点/分钟，无回复时满精力降至25%。",
-          "parent": "night_schedule_enabled",
+          "parent": "allow_sleep",
           "level": 1
         },
         {
@@ -4068,7 +4039,7 @@ export const nativeDTO = {
           "help": "夜间疲劳消耗的结束时间。",
           "details": "停止这一段疲劳消耗，不代表可以退出沉睡；基础起床加本周期赖床值决定实际起床。",
           "example": "07:00停止疲劳消耗，但08:00起床配置仍有效。",
-          "parent": "night_schedule_enabled",
+          "parent": "allow_sleep",
           "level": 1
         },
         {
@@ -4083,7 +4054,7 @@ export const nativeDTO = {
           "help": "进入沉睡的时间。",
           "details": "须位于夜间起点与基础起床之间，支持跨午夜；本地HH:MM，宿主校验时间顺序。",
           "example": "23:30→02:30→08:00合法；沉睡09:00会被拒绝。",
-          "parent": "night_schedule_enabled",
+          "parent": "allow_sleep",
           "level": 1
         },
         {
@@ -4098,7 +4069,7 @@ export const nativeDTO = {
           "help": "本周期赖床的最少分钟数。",
           "details": "可设0；最少不得大于最多，实际抽取结果在本周期内固定。",
           "example": "0至30，允许准时起床或赖床最多半小时。",
-          "parent": "night_schedule_enabled",
+          "parent": "allow_sleep",
           "level": 1,
           "step": 1,
           "unit": "分钟"
@@ -4115,7 +4086,7 @@ export const nativeDTO = {
           "help": "本周期赖床的最多分钟数。",
           "details": "范围0–1440分钟；与最少值组成随机区间，不是每次刷新重抽。",
           "example": "最少15、最多45，基础08:00则08:15至08:45起床。",
-          "parent": "night_schedule_enabled",
+          "parent": "allow_sleep",
           "level": 1,
           "step": 1,
           "unit": "分钟"
@@ -4132,7 +4103,7 @@ export const nativeDTO = {
           "help": "谁可以通过聊天叫醒 TA。",
           "details": "仅私聊、不允许唤醒、私聊或群聊原生@Bot；普通文本里的@名字不等于原生提及。",
           "example": "不想群聊打断睡眠：选“仅私聊”。",
-          "parent": "night_schedule_enabled",
+          "parent": "allow_sleep",
           "level": 1,
           "options": [
             {
@@ -4161,7 +4132,7 @@ export const nativeDTO = {
           "help": "一次聊天唤醒可用的回复尝试数。",
           "details": "范围1–100；生成失败也计入；结束后>20%清醒、0%＜精力≤20%恍惚、0%困。",
           "example": "10轮表示最多尝试10次，仍受时间窗口限制。",
-          "parent": "night_schedule_enabled",
+          "parent": "allow_sleep",
           "level": 1,
           "step": 1,
           "unit": "次"
@@ -4178,7 +4149,7 @@ export const nativeDTO = {
           "help": "一次聊天唤醒的最长窗口。",
           "details": "范围1–1440分钟，从第一次宿主提交开始固定计算，后续消息不无限延长。",
           "example": "10表示叫醒后最多维持10分钟的回复窗口。",
-          "parent": "night_schedule_enabled",
+          "parent": "allow_sleep",
           "level": 1,
           "step": 1,
           "unit": "分钟"
@@ -4195,7 +4166,7 @@ export const nativeDTO = {
           "help": "每次宿主提交回复消耗的精力点数。",
           "details": "总精力固定100；数值0–100，步进0.1；同一回复只记一次，提交不代表送达。",
           "example": "2.0表示一次最终回复提交消耗2点。",
-          "parent": "night_schedule_enabled",
+          "parent": "allow_sleep",
           "level": 1,
           "step": 0.1,
           "unit": "点/次",
@@ -4214,7 +4185,7 @@ export const nativeDTO = {
           "help": "夜间疲劳时段未睡眠时每分钟消耗精力。",
           "details": "数值0–100，步进0.1；小憩和沉睡只恢复，白天未睡眠是否回血由“白天自动恢复精力”控制。",
           "example": "0.5表示夜间未睡眠持续10分钟消耗5点。",
-          "parent": "night_schedule_enabled",
+          "parent": "allow_sleep",
           "level": 1,
           "step": 0.1,
           "unit": "点/分钟",
@@ -4233,7 +4204,7 @@ export const nativeDTO = {
           "help": "睡眠恢复速度，也用于开启后的白天自动恢复。",
           "details": "数值0–100，步进0.1；默认只在小憩、沉睡时恢复。在本区开启“白天自动恢复精力”后，非疲劳时段未睡眠也使用此速度；固定沉睡结束恢复100%。",
           "example": "1.0表示10分钟恢复10点，上限100。",
-          "parent": "night_schedule_enabled",
+          "parent": "allow_sleep",
           "level": 1,
           "step": 0.1,
           "unit": "点/分钟",
@@ -4301,7 +4272,7 @@ export const nativeDTO = {
           "help": "醒来后阅读已保存的未读消息。",
           "details": "从本插件有真实来源的未读归档读取；不等于访问平台全部历史，补答开关独立。",
           "example": "只希望醒后了解聊天：开启阅读、关闭历史补答。",
-          "parent": "night_schedule_enabled",
+          "parent": "allow_sleep",
           "level": 1
         },
         {
@@ -4326,9 +4297,9 @@ export const nativeDTO = {
           "value": true,
           "type": "boolean",
           "advanced": false,
-          "help": "允许把对话里答应的事记成待办承诺。",
-          "details": "开启后，模型说过的承诺会落成可追踪条目，按轮次推进状态；关闭则完全不记，也不追问。",
-          "example": "开启：答应的事会被记住并在后续对话里推进；关闭：只当普通聊天，不留承诺。",
+          "help": "登记并兑现明确延后的承诺。",
+          "details": "在「设置 → 承诺代办」配置。开启后明确延后的约定登记并到期执行；关闭不新建、不兑现，已有记录保留。即时请求当场处理。",
+          "example": "答应稍后画图会登记；用户追问或调整时沿用原事项。",
           "parent": "",
           "level": 0
         },
@@ -4356,9 +4327,9 @@ export const nativeDTO = {
           "value": 3,
           "type": "integer",
           "advanced": false,
-          "help": "单条承诺允许推进的层数上限。",
-          "details": "范围1–10；防止一条承诺被反复拆解成子任务而无限展开。",
-          "example": "填3表示最多拆三层。",
+          "help": "兼容保留的承诺深度字段。",
+          "details": "可保存，当前执行器不读取；不能用它保证拆分层数上限。",
+          "example": "默认3是保存值，实际以任务状态为准。",
           "parent": "promise_enabled",
           "level": 1,
           "step": 1,
@@ -4371,9 +4342,9 @@ export const nativeDTO = {
           "value": 3,
           "type": "integer",
           "advanced": false,
-          "help": "一轮对话里最多推进几条承诺。",
-          "details": "范围1–10；避免一次回复里连珠炮似地追问一堆事。",
-          "example": "填3表示每轮最多推进3条。",
+          "help": "兼容保留的提前次数字段。",
+          "details": "可保存，当前服务使用固定3次提前上限，不读取此值。",
+          "example": "不控制每轮推进多少条承诺。",
           "parent": "promise_enabled",
           "level": 1,
           "step": 1,
@@ -4402,12 +4373,14 @@ export const nativeDTO = {
           "type": "float",
           "advanced": false,
           "help": "兑现后片段缓存保留多久。",
-          "details": "范围1–168小时；期间用户追问直接读缓存，不再走向量检索；到期自动释放，追问回到正常检索。",
+          "details": "范围1–168小时，步进0.1；期间用户追问直接读缓存，不再走向量检索；到期自动释放，追问回到正常检索。",
           "example": "填24表示刚兑现的一天内，追问「刚才那张」能直接接上。",
           "parent": "promise_enabled",
           "level": 1,
           "step": 0.1,
-          "unit": "次"
+          "unit": "小时",
+          "min": 1,
+          "max": 168
         },
         {
           "key": "promise_recall_limit",
@@ -4431,9 +4404,9 @@ export const nativeDTO = {
           "value": "auto",
           "type": "enum",
           "advanced": false,
-          "help": "承诺到点时怎么交付：并进下一轮回复，还是单独发一条。",
-          "details": "auto：检测到 LivingHello 且两侧都启用时走并轨——不单独发消息、不为兑现文案额外调模型，由对话里下一轮回复顺带交付（有图就发图），因此不会和被动回复出现两条一样的话；on：始终并轨；off：始终单独发送一条文字（这时可能与被动回复重复，属预期）。",
-          "example": "auto 适合长期使用；off 仅用于排查「承诺到底有没有到点」这类问题。",
+          "help": "到期承诺使用动作还是纯文字。",
+          "details": "auto按当前双插件能力选择，on使用动作，off使用文字。到期独立执行，不等用户下一轮发言。缺少动作能力不会伪造执行成功。",
+          "example": "图片约定使用LH真实图片门面；工具已绑定原事项时定时扫描不会重复执行。",
           "parent": "",
           "level": 0,
           "options": [
@@ -4463,7 +4436,7 @@ export const nativeDTO = {
           "help": "允许睡前在近期参与的会话道晚安。",
           "details": "只考虑真实且近期参与过的会话；不是向所有好友群发，发送仍需守卫允许。",
           "example": "夜间23:30开始、提前5分钟，可在23:25附近评估晚安。",
-          "parent": "night_schedule_enabled",
+          "parent": "allow_sleep",
           "level": 1
         },
         {
@@ -4632,8 +4605,8 @@ export const nativeDTO = {
           "type": "integer",
           "advanced": false,
           "help": "天气轮询间隔。",
-          "details": "范围300–21600秒，默认3600即每小时一次；请求失败自动退避到60–300秒重试，不会形成重试风暴。",
-          "example": "3600每小时取一次实况。",
+          "details": "保存范围300–21600秒，默认14400即4小时；受抓取窗口限制，失败从300秒起退避。",
+          "example": "默认06:00–次日01:00窗口最多5次计划评估，不是实测请求数。",
           "parent": "emotion_model_enabled",
           "level": 1,
           "step": 1,
@@ -4652,7 +4625,9 @@ export const nativeDTO = {
           "parent": "emotion_model_enabled",
           "level": 1,
           "step": 1,
-          "unit": "秒"
+          "unit": "秒",
+          "min": 0,
+          "max": 7200
         },
         {
           "key": "weather_weight_scale",
@@ -4960,7 +4935,7 @@ export const nativeDTO = {
           "help": "自然醒后是否主动爬楼补答。",
           "details": "只对这一段睡眠期确有未读的会话生效；没有未读就不读不发，也不会重复补答。",
           "example": "希望它醒来自己看看群里的消息：开启；只想被动等消息：关闭。",
-          "parent": "night_schedule_enabled",
+          "parent": "allow_sleep",
           "level": 1
         },
         {
@@ -4975,7 +4950,7 @@ export const nativeDTO = {
           "help": "爬楼前是否先发一句刚醒的招呼。",
           "details": "招呼只是一句话，用来交代「刚醒」；关闭后直接进入补答或继续安静。",
           "example": "不想它冒头时关闭。",
-          "parent": "night_schedule_enabled",
+          "parent": "allow_sleep",
           "level": 1
         },
         {
@@ -4990,7 +4965,7 @@ export const nativeDTO = {
           "help": "刚醒招呼的候选句子。",
           "details": "用竖线 | 分隔，每次随机取一条；留空则使用默认一句。",
           "example": "刚醒，我看看之前你们说了什么。|我醒了，先把这几小时翻一翻。",
-          "parent": "night_schedule_enabled",
+          "parent": "allow_sleep",
           "level": 1
         },
         {
@@ -5095,7 +5070,7 @@ export const nativeDTO = {
         },
         {
           "key": "prompt_core_enabled",
-          "label": "通用说明 · 只读",
+          "label": "通用说明 · 预置",
           "section": "prompt_injection",
           "value": true,
           "type": "boolean",
@@ -5294,7 +5269,6 @@ export const nativeDTO = {
           "id": "night",
           "label": "长夜",
           "field_keys": [
-            "night_schedule_enabled",
             "wake_at",
             "allow_sleep",
             "nap_enabled",
@@ -5495,7 +5469,7 @@ export const nativeDTO = {
           "section": "night",
           "subsection": "energy",
           "subsection_label": "精力与清醒",
-          "parent": "night_schedule_enabled",
+          "parent": "allow_sleep",
           "level": 1,
           "help": "总精力固定为100点。",
           "details": "只读上限，用于统一精力曲线和展示，不能通过配置修改。",
@@ -5796,7 +5770,7 @@ export const nativeDTO = {
       "wake_replies_used": 0,
       "wake_reply_limit": 0,
       "schedule": {
-        "schedule_enabled": false,
+        "schedule_enabled": true,
         "sleep_enabled": true,
         "allow_sleep": true,
         "fatigue_start": "23:30",
@@ -9503,7 +9477,6 @@ export const nativeDTO = {
         "id": "night",
         "label": "长夜",
         "field_keys": [
-          "night_schedule_enabled",
           "wake_at",
           "allow_sleep",
           "nap_enabled",
@@ -11168,14 +11141,14 @@ export const nativeDTO = {
   }
 };
 export const nativeDTOEvidence = {
-  "captured_at": "2026-11-19T08:31:40.237476+00:00",
-  "field_count": 134,
+  "captured_at": "2026-11-19T09:26:15.085039+00:00",
+  "field_count": 133,
   "scope": "real Console DTO / synthetic host / temporary database",
   "sources_sha256": {
-    "config.py": "212b8609946241aa681a34b450439f550c70b96b19f6dfd07e002e4d9bbd5ea4",
+    "config.py": "8918138f2826e428e4b849626afddbadd0a17cc62a875fcec2968bc0e9e12a6e",
     "contracts.py": "e6c4babe398c89c1c5816fca3e88e275fd9609d290e955d4b2ca74e037dc542f",
-    "runtime/console.py": "93ffa1046f59f89548fc15749f123c1acca37e6ed2352cf2096a78237dc52eb2",
-    "runtime/config_help.py": "be4abac12b213860dc26ea74dfbbd745d1270ceb111f6e0925a382751e745f9f",
+    "runtime/console.py": "0b93df824af15ac1f6947b2868123d1d58c4389bb8e9e850573785e26302b0bd",
+    "runtime/config_help.py": "254cc84aa3c4a854b48f3991db38ef59a26ce78f726b26cd69c258a43f883e5c",
     "storage/schema.py": "174a775f57e7fe8c9eb39192fe1278fc89439595e43e486abd106ce1ef715616",
     "storage/sqlite.py": "e9d3203d14177408d5a792affeabf00c264de37ff1faa006d88979cb17dc594a",
     "storage/state_scope.py": "c34ab212acdc989579c3b69dee8a314fbf1fef29cfe6a24928c8c34ca67987d5",

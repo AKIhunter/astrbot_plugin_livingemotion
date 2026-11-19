@@ -223,12 +223,13 @@ class PromiseStore:
                     """INSERT INTO promises(promise_id,scope_key,generation,status,bucket,
                        fingerprint,description,note,due_at,original_due_at,original_bucket,
                        advance_count,depth,created_at,updated_at,sent_at,last_error,
-                       context_summary,source_event_id)
-                       VALUES(?,?,?,'scheduled',?,?,?,?,?,?,?,0,?,?,?,NULL,'',?,?)""",
+                       context_summary,source_event_id,handoff_account_key)
+                       VALUES(?,?,?,'scheduled',?,?,?,?,?,?,?,0,?,?,?,NULL,'',?,?,?)""",
                     (promise_id, scope, generation,
                      bucket, fp, normalize(description)[:500], str(note or "")[:2000],
                      due_at, due_at, bucket, max(0, int(depth)), now, now,
-                     str(context_summary or "")[:1200], str(source_event_id or "")[:200]))
+                     str(context_summary or "")[:1200], str(source_event_id or "")[:200],
+                     context.account_key if self._needs_image(description) else ""))
                 return {"status": "created", "promise_id": promise_id, "active": active + 1}
 
             return self.store._transaction(db, mutate)
@@ -365,6 +366,127 @@ class PromiseStore:
                 return {"status": "resumed", "promise_id": promise_id}
             return self.store._transaction(db, mutate)
         return await self.store._run(write)
+
+    @staticmethod
+    def _needs_image(description):
+        from ..runtime.promise_actions import needs_image
+        return needs_image(description)
+
+    async def bind_image_request(self, context: Context, binding: dict) -> dict:
+        """收费前原子领取原事项，与后台调度争用同一条状态。"""
+        await self.ensure()
+        generation, now = await self.store.get_generation(context), self.store.clock()
+
+        def write(db):
+            def mutate():
+                row = db.execute(
+                    "SELECT * FROM promises WHERE promise_id=? AND scope_key=?",
+                    (binding["promise_id"], context.scope_key)).fetchone()
+                if (not row or row["handoff_account_key"] not in ("", context.account_key)
+                        or row["generation"] != generation
+                        or self.store._generation(db, context) != generation):
+                    return {"status": "rejected", "reason": "source_changed"}
+                if not row["handoff_account_key"] and context.scene_kind.value == "group":
+                    return {"status": "rejected", "reason": "legacy_source_unverified"}
+                if (row["status"] != "scheduled" or row["host_job_id"]
+                        or row["action_state"] not in ("", "retry_ready")
+                        or not self._needs_image(row["description"])):
+                    return {"status": "rejected", "reason": "image_already_owned_or_paused"}
+                prior = json.loads(row["action_result_json"] or "{}")
+                source = prior.get("source_context")
+                if source and any(source.get(k) != to_dict(context).get(k) for k in (
+                        "persona_revision", "identity_revision", "account_id")):
+                    return {"status": "rejected", "reason": "source_changed"}
+                artifact = {**prior, **binding, "external_image": True,
+                            "source_context": to_dict(context)}
+                db.execute(
+                    "UPDATE promises SET status='running',action_state='generating',"
+                    "action_result_json=?,handoff_account_key=?,updated_at=? "
+                    "WHERE promise_id=? AND status='scheduled'",
+                    (json.dumps(artifact, ensure_ascii=False), context.account_key, now,
+                     binding["promise_id"]))
+                return {"status": "bound", "promise_id": binding["promise_id"]}
+            return self.store._transaction(db, mutate)
+        return await self.store._run(write)
+
+    async def settle_image_request(self, context: Context, receipt: dict, *,
+                                   ttl_seconds: float = 86400) -> dict:
+        """请求、代次与来源一致才结算；成功事实和 trace 在同一事务提交。"""
+        await self.ensure()
+        generation, now = await self.store.get_generation(context), self.store.clock()
+        pid = receipt["promise_id"]
+
+        def write(db):
+            def mutate():
+                row = db.execute(
+                    "SELECT * FROM promises WHERE promise_id=? AND scope_key=?",
+                    (pid, context.scope_key)).fetchone()
+                if (not row or row["handoff_account_key"] != context.account_key
+                        or row["generation"] != generation
+                        or self.store._generation(db, context) != generation):
+                    return {"status": "rejected", "reason": "source_changed"}
+                prior = json.loads(row["action_result_json"] or "{}")
+                source = prior.get("source_context") or {}
+                if (prior.get("external_image") is not True
+                        or prior.get("request_id") != receipt["request_id"]
+                        or any(source.get(k) != to_dict(context).get(k) for k in (
+                            "instance_id", "persona_revision", "identity_revision", "account_id", "route"))):
+                    return {"status": "rejected", "reason": "request_mismatch"}
+                if row["status"] == "sent":
+                    return {"status": "duplicate", "promise_id": pid}
+                if row["status"] not in ("running", "waiting", "unknown"):
+                    return {"status": "rejected", "reason": "task_changed"}
+                artifact = {**prior, **receipt}
+                sent = receipt["status"] == "sent"
+                kind = str(receipt.get("kind") or "result_unknown")
+                # 新映射可重试的确定失败仍走原调度链路；未知结果始终暂停。
+                ready = not sent and receipt["status"] == "failed" and (
+                    kind == "rate_limited" or receipt.get("auto_prompt_retry") is True
+                    and kind in {"content_rejected", "prompt_too_long"})
+                status = "sent" if sent else "scheduled" if ready else "waiting"
+                action = "sent" if sent else "retry_ready" if ready else "held"
+                if ready:
+                    artifact.pop("external_image", None)
+                text = ("图片已发送；原需求：" + str(receipt.get("prompt") or "")
+                        + ("；上游画法：" + str(receipt["revised"]) if receipt.get("revised") else ""))[:4000]
+                db.execute(
+                    """UPDATE promises SET status=?,action_state=?,action_result_json=?,
+                       delivered_text=?,sent_at=?,last_error=?,bucket=?,handoff_key=?,
+                       adjustment_notice_state=?,updated_at=?,due_at=? WHERE promise_id=?""",
+                    (status, action, json.dumps(artifact, ensure_ascii=False),
+                     text if sent else "", now if sent else None, "" if sent else kind,
+                     row["bucket"] if sent else "等待重试" if ready else (
+                         "等待调整" if kind in {"content_rejected", "prompt_too_long",
+                                               "prompt_adjustment_required"} else "等待核对"),
+                     row["handoff_key"] or receipt["request_id"],
+                     "sent" if receipt.get("adjustment_asked") is True else row["adjustment_notice_state"],
+                     now, now + 300 if ready else row["due_at"], pid))
+                if sent:
+                    db.execute(
+                        """INSERT INTO promise_traces(trace_id,scope_key,promise_id,kind,summary,
+                           materials_json,reply_text,created_at,expires_at)
+                           VALUES(?,?,?,'delivery',?,'[]',?,?,?)
+                           ON CONFLICT(trace_id) DO UPDATE SET reply_text=excluded.reply_text,
+                             created_at=excluded.created_at,expires_at=excluded.expires_at""",
+                        (pid + ":delivery", context.scope_key, pid,
+                         str(row["context_summary"] or "")[:1200], text, now,
+                         now + max(3600, min(168 * 3600, float(ttl_seconds)))))
+                return {"status": "sent" if sent else "settled", "promise_id": pid}
+            return self.store._transaction(db, mutate)
+        return await self.store._run(write)
+
+    async def delivered_images(self, context: Context) -> list[dict]:
+        await self.ensure()
+
+        def read(db):
+            rows = db.execute(
+                "SELECT description,delivered_text,sent_at FROM promises "
+                "WHERE scope_key=? AND status='sent' AND sent_at>? "
+                "AND (handoff_account_key='' OR handoff_account_key=?) "
+                "ORDER BY sent_at DESC LIMIT 20",
+                (context.scope_key, self.store.clock() - 7 * 86400, context.account_key)).fetchall()
+            return [dict(row) for row in rows if self._needs_image(row["description"])][:5]
+        return await self.store._run(read)
 
     async def list(self, context: Context, *, statuses=ACTIVE,
                    limit: int | None = 20) -> list[dict[str, Any]]:
