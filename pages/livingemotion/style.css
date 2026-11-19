@@ -18,7 +18,6 @@
 .prompt-switch input { width: 18px; height: 18px; }
 /* 真实发送与测试发送并排；空出的右侧给承诺列表。 */
 .behavior-action-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
-@media (max-width: 720px) { .behavior-action-row { grid-template-columns: 1fr; } }
 .behavior-action-row > * { min-width: 0; }
 #behavior-promises { min-height: 40px; }
 .promise-list { display: grid; gap: 10px; }
@@ -47,10 +46,7 @@
 .promise-desc { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .promise-reason { margin: 8px 0 0; color: var(--warning); font-size: 12px; }
 .promise-card .hint { margin: 0; font-size: 12px; }
-@media (max-width: 420px) {
-  .promise-card > .promise-head { grid-template-columns: minmax(0, 1fr) 104px; }
-}
-/* 六列发送日志，在窄屏按相同字段纵向排列。 */
+/* 六列发送日志在 PC 保留表格。 */
 #behavior-log-query { width: 100%; margin-bottom: 12px; }
 .behavior-log-table { width: 100%; table-layout: fixed; }
 .behavior-log-table th:nth-child(1) { width: 16%; }
@@ -66,14 +62,6 @@
 .behavior-simulation-dialog::backdrop { background: rgb(0 0 0 / .45); }
 .behavior-simulation-dialog select { display: block; width: 100%; margin: 8px 0 20px; }
 .simulation-actions { display: flex; justify-content: flex-end; gap: 8px; }
-@media (max-width: 800px) {
-  .behavior-log-table, .behavior-log-table tbody, .behavior-log-table tr, .behavior-log-table td { display: block; width: 100%; }
-  .behavior-log-table thead { display: none; }
-  .behavior-log-table tr { border-bottom: 1px solid var(--line); padding: 12px 0; }
-  .behavior-log-table td { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 8px; border: 0; padding: 4px 0; }
-  .behavior-log-table td::before { content: attr(data-label); font-size: 11px; color: var(--muted); }
-  .behavior-log-table .body { grid-column: 2; }
-}
 .sub-tabs.experience-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0;
   position: relative; padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
 .sub-tabs.experience-tabs [role="tab"] { z-index: 1; width: 100%; background: transparent; border-color: transparent; }
@@ -115,7 +103,6 @@ body[data-le-section="experience"] #notice[hidden] { display: block !important; 
   width: 10px; height: 3px; background: var(--line-color); margin: 0 5px 3px 0; }
 .emotion-tooltip { min-height: 44px; padding: 8px 0; }
 .emotion-tooltip .micro { flex-basis: 100%; }
-@media (max-width: 480px) { .emotion-figure { padding: 12px; } .paper-body { padding: 4px 16px 18px; } }
 .relationship-row-editor { margin-top: 20px; padding: 20px; border: 1px solid var(--line); border-radius: 16px; }
 .relationship-row-editor textarea { width: 100%; }
 .relationship-table td:last-child button + button { margin-left: 6px; }
@@ -144,10 +131,6 @@ body[data-le-section="experience"] #notice[hidden] { display: block !important; 
 @media (prefers-reduced-motion: reduce) { .experience-tab-indicator { transition: none; } }
 body[data-le-section="experience"] #records,
 body[data-le-section="experience"] #settings { backface-visibility: hidden; }
-@media (max-width: 480px) {
-  .experience-paper { padding: 12px; }
-  .experience-book { height: clamp(360px, 62dvh, 620px); }
-}
 :root[data-le-theme="dark"] {
   --bg: #252a25; --surface: #303630; --subtle: #3a4038; --text: #eee5d6;
   --muted: #c6beaf; --line: #565c51; --control: #929b88;
@@ -159,7 +142,7 @@ body[data-le-section="experience"] #settings { backface-visibility: hidden; }
 [hidden] { display: none !important; }
 html { background: var(--bg); scroll-padding-top: 24px; }
 body {
-  margin: 0 auto; max-width: 1520px; padding: 0 40px;
+  margin: 0 auto; min-width: 700px; max-width: 1520px; padding: 0 40px;
   font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
   background: var(--bg); color: var(--text); overflow-wrap: anywhere;
   overflow-anchor: none;
@@ -207,11 +190,6 @@ nav button [data-section-label] { font: inherit; color: inherit; }
 .relationship-editor-name { display: grid; align-content: start; gap: 6px; min-width: 0; }
 .relationship-editor-name label { font-size: 12px; }
 .relationship-editor-row textarea { width: 100%; min-height: 80px; resize: vertical; }
-@media (max-width: 540px) {
-  .relationship-editor-head { display: none; }
-  .relationship-editor-row { grid-template-columns: minmax(0, 1fr); gap: 8px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
-  .relationship-editor-row:last-child { border-bottom: 0; padding-bottom: 0; }
-}
 .reason-code { margin: 12px 0; }
 [data-saved-behavior] > dl { padding: 10px 0; border-bottom: 1px solid var(--line); }
 .theme-switch { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 10px; }
@@ -334,16 +312,11 @@ th { color: var(--muted); font-weight: 400; }
 .settings-subsection > h3 { margin: 12px 0 4px; font-size: 15px; }
 .settings-subsection-body .field { grid-template-columns: minmax(0, 1fr) minmax(120px, .55fr); gap: 16px; padding: 12px 0; }
 .settings-subsection-body .field:last-child { border-bottom: 0; }
-/* 精力开关平铺，短输入保留说明宽度；手机端继续单列。 */
+/* 精力开关平铺，短输入保留说明宽度。 */
 .settings-subsection[data-subsection="energy"] .field { grid-template-columns: minmax(0, 1fr) 88px; margin-left: 0; padding-left: 0; border-left: 0; }
-@media (max-width: 720px) {
-  .settings-subsection-grid { grid-template-columns: minmax(0, 1fr); }
-  .settings-subsection-body .field { grid-template-columns: minmax(0, 1fr); gap: 8px; }
-  .settings-subsection[data-subsection="energy"] .field { grid-template-columns: minmax(0, 1fr); }
-}
 /* 保存入口固定在视口底边，独立于纸页滚动区；只在有草稿时占用空间。 */
 .editor { position: fixed; z-index: var(--z-editor); left: 20px; right: 20px;
-  bottom: max(12px, env(safe-area-inset-bottom)); max-width: 1000px; margin: 0 auto;
+  bottom: 12px; max-width: 1000px; margin: 0 auto;
   display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 12px 20px;
   background: var(--surface); border: 1px solid var(--control); border-radius: 12px;
   box-shadow: 0 4px 24px #00000026; }
@@ -362,11 +335,6 @@ th { color: var(--muted); font-weight: 400; }
 body[data-config-dirty="true"] { padding-bottom: var(--editor-clearance, 120px); }
 html:has(body[data-config-dirty="true"]) { scroll-padding-bottom: var(--editor-clearance, 120px); }
 body[data-config-dirty="true"] .experience-paper { padding-bottom: var(--editor-clearance, 120px); }
-@media (max-width: 600px) {
-  .editor { left: 12px; right: 12px; padding: 12px; gap: 8px; }
-  .editor-summary, .editor-actions { flex-basis: 100%; }
-  .editor-actions { justify-content: flex-end; }
-}
 .page-footer { display: flex; justify-content: space-between; gap: 16px; margin-top: 48px; padding: 24px 0; font: 11px var(--mono); color: var(--muted); border-top: 1px solid var(--line); }
 dialog { background: var(--surface); color: var(--text); border: 1px solid var(--control); border-radius: 24px; width: min(520px, calc(100% - 32px)); padding: 32px; }
 dialog::backdrop { background: #171c17b3; }
@@ -443,15 +411,6 @@ dialog h2 { margin: 12px 0 16px; } dialog input { width: 100%; margin-top: 8px; 
   to { transform: translateX(0); opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) { .graph-detail.entering { animation: none; } }
-@media (max-width: 720px) {
-  /* 手机上没有右侧空间：改到底部滑入，宽度铺满。 */
-  .graph-detail { top: auto; left: 12px; right: 12px; bottom: 12px; width: auto; max-height: 56%; }
-  .graph-detail.entering { animation-name: graph-detail-up; }
-  @keyframes graph-detail-up {
-    from { transform: translateY(110%); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-  }
-}
 .graph-detail, .float-card { user-select: text; -webkit-user-select: text; }
 .float-card { max-height: 100%; overflow: auto; padding: 14px 16px; background: var(--surface-2, var(--surface)); border: 1px solid var(--control); border-radius: 18px; box-shadow: 0 18px 40px rgba(0, 0, 0, .12); animation: le-float 4.2s ease-in-out infinite; }
 .float-card h2 { font-size: 17px; margin-bottom: 2px; }
@@ -474,36 +433,11 @@ dialog h2 { margin: 12px 0 16px; } dialog input { width: 100%; margin-top: 8px; 
   body { padding: 0 24px; } .workspace { grid-template-columns: 144px minmax(0, 1fr); gap: 24px; }
   nav button { gap: 10px; padding-left: 8px; } .ta-layout, .columns { grid-template-columns: 1fr; gap: 20px; }
 }
-@media (max-width: 600px) {
-  body { padding: 0 16px; font-size: 14px; }
-  .masthead { padding: 10px 0; gap: 8px; flex-wrap: wrap; } .wordmark { font-size: 24px; }
-  .header-controls { margin-left: auto; gap: 6px; }
-  .theme-control { gap: 6px; }
-  .theme-switch button { min-width: 42px; padding: 6px 8px; }
-  #refresh { min-height: 36px; padding: 5px 12px; font-size: 12px; }
-  .workspace { display: block; }
-  .sidebar { position: static; padding: 0; }
-  nav { display: flex; gap: 8px; position: static; padding: 16px 4px; margin: 0 -4px; overflow-x: auto; border-bottom: 1px solid var(--line); }
-  nav button { width: auto; white-space: nowrap; flex-shrink: 0; gap: 8px; margin: 0; padding: 10px; font-size: 13px; }
-  .environment-card { margin: 16px 0 0; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 20px; padding: 16px; }
-  .environment-card .eyebrow { margin: 0; }
-  .environment-clock { grid-column: 1; grid-row: 2; }
-  #environment-date { grid-column: 1; grid-row: 3; }
-  .environment-weather { grid-column: 2; grid-row: 1 / 3; align-self: center; border: 0; margin: 0; padding: 0; }
-  #environment-zone { grid-column: 2; grid-row: 3; }
-  main { padding-top: 24px; } h1 { font-size: 28px; }
-  .section-heading { margin-bottom: 24px; gap: 12px; } .section-heading .status { max-width: 130px; text-align: center; }
-  .hero { padding: 24px; grid-template-columns: minmax(0, 1fr); } .hero-value { font-size: 42px; } .metrics { gap: 24px; } .stat-line { gap: 24px; }
-  .key-values { grid-template-columns: 88px minmax(0, 1fr); gap: 12px; } .health-row { flex-wrap: wrap; gap: 8px; }
-  .health-row .hint { flex-basis: 100%; } .action-row { flex-wrap: wrap; gap: 12px; }
-  .field { grid-template-columns: minmax(0, 1fr); gap: 12px; } .field input[type="checkbox"] { margin-top: 0; }
-  .field[data-level="1"] { margin-left: 12px; padding-left: 12px; }
-  .field[data-level="2"] { margin-left: 24px; padding-left: 12px; }
-  .pager button { padding: 8px 12px; } dialog { padding: 24px; }
-  .radar-figure { padding: 12px; } .radar-values { gap: 8px; }
-  .relationship-graph { height: 340px; } .graph-detail { padding: 16px; }
-  .relationship-table th:last-child, .relationship-table td:last-child { position: sticky; right: 0; background: var(--bg); padding-left: 8px; padding-right: 0; }
-  .relationship-table button { padding: 8px; }
+/* PC 窄窗口仍保留侧栏，避免原生宿主的双侧栏挤压内容。 */
+@media (max-width: 900px) {
+  body { padding: 0 20px; }
+  .workspace { grid-template-columns: 110px minmax(0, 1fr); gap: 20px; }
+  nav button { gap: 6px; padding-right: 4px; font-size: 12px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
@@ -620,19 +554,6 @@ dialog h2 { margin: 12px 0 16px; } dialog input { width: 100%; margin-top: 8px; 
 .settings-subhead { margin: 20px 0 10px; font-size: 15px; }
 .warn-text { color: var(--warning); }
 .scope-hint { margin: 0 0 12px; max-width: 320px; line-height: 1.5; }
-@media (max-width: 720px) {
-  .emotion-head { flex-direction: column; align-items: flex-start; }
-  .scope-hint { max-width: none; }
-  .inline-control { width: 100%; }
-  .inline-control button { width: 100%; }
-}
-
-/* 窄屏：状态文字与心绪短句改单列。 */
-@media (max-width: 720px) {
-  .hero { grid-template-columns: minmax(0, 1fr); }
-  .hero-facts { gap: 8px 16px; }
-}
-
 /* 功能耦合：谁在场、谁已启用、承诺代办走哪条路 */
 .coupling-status { display: grid; gap: .45rem; margin: .6rem 0 1.1rem; }
 .coupling-row { display: flex; flex-wrap: wrap; gap: .55rem; align-items: baseline; }

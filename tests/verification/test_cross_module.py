@@ -43,7 +43,7 @@ def facade(store):
 def test_domain_ast_has_no_host_private_plugin_or_sql_access():
     allowed = {"__future__", "dataclasses", "datetime", "hashlib", "json", "math",
                "re", "typing", "unicodedata", "zoneinfo", "contracts", "emotion",
-               "collections.abc", "random", "appraisal"}
+               "collections.abc", "random", "appraisal", "context_emotion", "copy"}
     for path in sorted((ROOT / "domain").glob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):

@@ -7,10 +7,10 @@ import {
   experienceStatus, reasonExplanation, resultLabel, AFFECT_LABELS, modelDiagnosticText,
 } from "./model.mjs?v=eff0d6f932b0";
 import { radar3d } from "./charts/radar3d.mjs?v=eff0d6f932b0";
-import { mountRelationships, emotionExplainer } from "./charts/relationships.mjs?v=eff0d6f932b0";
+import { mountRelationships, emotionExplainer } from "./charts/relationships.mjs?v=ta-omissions-20261119-r3";
 import { mountEnergy } from "./charts/energy.mjs?v=eff0d6f932b0";
-import { emotionChart } from "./charts/emotion.mjs?v=eff0d6f932b0";
-import { renderSettings as settingsView, jumpToSettingsGroup, syncSettingsValues } from "./settings.mjs?v=eff0d6f932b0";
+import { emotionSpectrum } from "./charts/emotion-spectrum.mjs?v=ta-omissions-20261119-r3";
+import { renderSettings as settingsView, jumpToSettingsGroup, syncSettingsValues } from "./settings.mjs?v=ta-omissions-20261119-r3";
 import { EXPERIENCE_TABS, experienceTabs, selectExperienceTab, turnPage, cancelPageTurn } from "./experience.mjs?v=eff0d6f932b0";
 import { reconcileDraft } from "./draft.mjs?v=eff0d6f932b0";
 
@@ -163,6 +163,8 @@ function handleError(error) {
 function updateControls() {
   const dirty = Object.keys(state.draft).length;
   $("refresh").disabled = state.loading || state.writing;
+  if ($("context-emotion-picker")) $("context-emotion-picker").disabled =
+    state.loading || state.writing || dirty > 0;
   $("content").setAttribute("aria-busy", String(state.loading));
   $("editor").hidden = !dirty && !state.invalidFields.size;
   if ($("editor").hidden) {
@@ -372,15 +374,39 @@ function healthBlock() {
   return section;
 }
 function renderOverview(container) {
-  const global = isGlobalView();
-  const layout = node("div", undefined, global ? "ta-layout global" : "ta-layout");
-  // 五维球直接读运行期状态：前四维由本地规则推动，底气只由模型异步写入，
-  // 数值由球下方的图例承担，避免同一份数据在两处重复成表。
-  layout.append(botHero(), radar3d(object(state.data.bot_state.dimensions),
-    baselineDimensions(state.data),
-    { label: t("当前人格的五维情绪球"), dimensions: BOT_DIMENSIONS }));
-  container.append(layout);
-  container.append(emotionChart(state.data.emotion_curve));
+  // TA 概览直接显示运行时降维分量；主题切换只由 CSS 控制，共用同一份数据。
+  const spectrum = emotionSpectrum(state.data);
+  if (state.data.context_emotions?.enabled === true) {
+    const picker = node("select"); picker.id = "context-emotion-picker";
+    const all = node("option", t("人格总体 · 不含对象情绪")); all.value = ""; picker.append(all);
+    const contexts = list(state.scopes?.contexts).filter(item =>
+      item.persona_id === state.selection.persona_id && ["private", "group"].includes(item.view_scope));
+    for (const item of contexts) {
+      const option = node("option", text(item.label, `${item.platform} / ${item.account_id}`));
+      option.value = item.id; picker.append(option);
+    }
+    picker.value = state.selection.context_id || "";
+    picker.disabled = state.loading || state.writing || Object.keys(state.draft).length > 0;
+    picker.addEventListener("change", () => {
+      const context = contexts.find(item => item.id === picker.value);
+      state.selection = context
+        ? { persona_id: state.selection.persona_id, view_scope: context.view_scope,
+            platform: context.platform, context_id: context.id }
+        : { persona_id: state.selection.persona_id, view_scope: "global" };
+      state.preview = null;
+      void loadState();
+    });
+    const label = node("label", t("会话对象")); label.htmlFor = picker.id;
+    const row = node("div", undefined, "context-emotion-picker");
+    row.style.cssText = "display:flex;align-items:center;gap:12px;flex-wrap:wrap";
+    picker.style.maxWidth = "100%";
+    row.append(label, picker);
+    spectrum.append(row);
+  }
+  container.append(spectrum);
+  const feeling = node("div", undefined, "ta-overview-feeling");
+  feeling.append(feelingCard());
+  container.append(feeling);
   container.append(details(t("可用性与来源"), pairs([[t("状态"), state.data.availability.available === true ? t("可用") :
     state.data.availability.available === false ? t("暂不可用") : t("未提供")],
     [t("原因"), reasons(state.data.availability.reasons)], [t("来源"), text(state.data.bot_state.source)],
@@ -610,6 +636,9 @@ function renderRelationships(container) {
     container.append(node("p", t("没有已授权人格，不能查询关系。请刷新宿主范围。"), "empty")); return;
   }
   const panel = node("div"); panel.id = "relationship-body"; container.append(panel);
+  panel.dataset.viewKey = JSON.stringify([scopeParams(selectedScope()),
+    state.data.config.values.relationship_edit_enabled,
+    state.data.config.values.relationship_stage_names]);
   state.dispose = mountRelationships(panel, {
     api, selection: { ...scopeParams(selectedScope()), platforms: personaPlatforms() },
     queryState: state.relationshipQuery,
@@ -786,7 +815,8 @@ function renderPromisePanel(data) {
 }
 
 const SIMULATION_EMOTIONS = [["current", "当前情绪"], ["calm", "平静"], ["joy", "喜悦"],
-  ["sadness", "悲伤"], ["anger", "愤怒"], ["fear", "恐惧"], ["surprise", "惊讶"], ["disgust", "厌恶"]];
+  ["sadness", "悲伤"], ["anger", "愤怒"], ["fear", "恐惧"], ["surprise", "惊讶"], ["disgust", "厌恶"],
+  ["affection", "关爱"], ["wronged", "委屈"], ["hurt", "受伤"], ["shyness", "害羞"]];
 async function loadBehaviorOutcome(root) {
   if (!root || !state.data || state.section !== "behavior") return;
   const sequence = ++state.behaviorLogSequence;
@@ -1345,6 +1375,16 @@ function render(preserveSettings = false) {
   if (preserveSettings && state.section === "settings" && $("settings").childElementCount > 0) {
     syncSettingsValues($("settings"), state); updateControls(); return;
   }
+  if (preserveSettings && state.section === "relationships" && $("relationship-body")?.dataset.viewKey ===
+      JSON.stringify([scopeParams(selectedScope()), state.data.config.values.relationship_edit_enabled,
+        state.data.config.values.relationship_stage_names])) {
+    // Keep the mounted editor and its optimistic version; refresh its read side.
+    void state.dispose?.refresh?.(); updateControls(); return;
+  }
+  if (preserveSettings && state.section === "persona" && $("content").contains(document.activeElement) &&
+      document.activeElement.matches("input,textarea,select")) {
+    updateControls(); return;
+  }
   if (state.section === "behavior" && $("behavior-panel")?.dataset.persona ===
       (state.data.scope_selection?.persona_id || state.data.experience.persona_id)) {
     void loadBehaviorOutcome($("behavior-outcome")); updateControls(); return;
@@ -1700,10 +1740,7 @@ async function readStateConfig() {
 let stateRefresh = null;
 async function loadState({ automatic = false } = {}) {
   if (state.writing || (automatic && (document.hidden || !state.data))) return;
-  const relationshipEdit = $("content").querySelector(".relationship-edit");
-  if (automatic && (($("content").contains(document.activeElement) &&
-      document.activeElement.matches("input,textarea,select")) ||
-      (relationshipEdit && !relationshipEdit.closest("[hidden]")))) return;
+  // Editing never stops state reads; mounted forms preserve drafts in render().
   if (stateRefresh) return stateRefresh;
   stateRefresh = refreshState(automatic);
   try { return await stateRefresh; } finally { stateRefresh = null; }

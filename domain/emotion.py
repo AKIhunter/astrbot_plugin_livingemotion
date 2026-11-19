@@ -501,7 +501,8 @@ def decay_affect(state: BotAffect, *, now: float,
 
 def observe_human(event: Event, *, now: float,
                   previous: HumanObservation | None = None,
-                  policy: EmotionPolicy = EmotionPolicy()) -> HumanObservation | None:
+                  policy: EmotionPolicy = EmotionPolicy(),
+                  context_observations: bool = False) -> HumanObservation | None:
     _number(now, "now", 0)
     if previous is not None and previous.subject_id != event.actor_id:
         raise ValueError("observation_subject_mismatch")
@@ -517,6 +518,9 @@ def observe_human(event: Event, *, now: float,
         return previous
     labels = tuple(OBSERVATION_LABELS[s] for s in event_signals(event)
                    if s in OBSERVATION_LABELS)
+    if context_observations:
+        from .context_emotion import human_labels
+        labels = tuple(dict.fromkeys((*labels, *human_labels(event.body))))
     if not labels or event.confidence == 0:
         return previous
     expires_at = event.occurred_at + policy.observation_ttl
@@ -564,6 +568,7 @@ def apply_emotion(
     runtime: Mapping[str, Any] | None = None, model_suggestion: Any = None,
     policy: EmotionPolicy = EmotionPolicy(), enabled: bool = True,
     mode: str = "active", conflict: bool = False,
+    context_observations: bool = False,
 ) -> dict[str, Any]:
     """Return typed snapshots, JSON runtime and trace; never commit or send.
 
@@ -681,6 +686,7 @@ def apply_emotion(
     result.update(
         affect=affect,
         observation=observe_human(event, now=now, previous=result["observation"],
+                                  context_observations=context_observations,
                                   policy=policy) if event.actor_role == ActorRole.HUMAN
         else result["observation"],
         applied=amount > 0, reason_codes=tuple(reasons),
@@ -693,13 +699,14 @@ def expression_context(
     state: BotAffect, observation: HumanObservation | None, *, now: float,
     enabled: bool = True, mode: str = "active", conflict: bool = False,
     policy: EmotionPolicy = EmotionPolicy(),
+    context_emotions: tuple | list = (),
 ) -> dict[str, Any]:
     """Separate holders in structured hints; contains no copied persona/prompt."""
     _number(now, "now", 0)
     if not resolve_mode(enabled=enabled, mode=mode, conflict=conflict)["may_inject"]:
         return {}
     state = decay_affect(state, now=now, policy=policy)
-    return {
+    value = {
         "namespace": "livingEmotion",
         "bot": {"holder": "bot", **{name: getattr(state, name) for name in DIMENSIONS},
                 "labels": state.labels},
@@ -709,3 +716,30 @@ def expression_context(
             if observation is not None and observation.occurred_at <= now < observation.expires_at
             else None),
     }
+    if context_emotions:
+        value["bot"]["context_emotions"] = list(context_emotions)[:2]
+    return value
+
+
+def serialize_expression(value: dict, *, limit: int = 4000) -> str:
+    """Keep JSON whole when optional state or authored descriptions exceed budget."""
+    from copy import deepcopy
+    from ..contracts import canonical_json
+    value = deepcopy(value)
+    bot = value.get("bot", {})
+    if len(canonical_json(bot.get("context_emotions", []))) > 512:
+        bot.pop("context_emotions", None)
+    encoded = canonical_json(value)
+    if len(encoded) <= limit:
+        return encoded
+    bot.pop("context_emotions", None)
+    for chars in (256, 128, 64, 0):
+        relation = value.get("relationship", {})
+        if isinstance(relation.get("description"), str):
+            relation["description"] = relation["description"][:chars]
+        if isinstance(value.get("daily_emotions_note"), str):
+            value["daily_emotions_note"] = value["daily_emotions_note"][:chars]
+        encoded = canonical_json(value)
+        if len(encoded) <= limit:
+            return encoded
+    raise ValueError("expression_budget_exceeded")

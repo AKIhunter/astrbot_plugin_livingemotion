@@ -23,7 +23,8 @@ from ..storage.console_data import (
     project_relationship_clues, query_scopes, selected_contexts, write_relationship_override,
 )
 from ..services.experience import dream_ready, dream_view
-from .projector import account_affect, snapshot
+from .projector import account_affect, account_context_emotions, snapshot
+from ..domain.context_emotion import collected_values, expression_items
 from ..domain.proactivity import MOTIVES
 from ..storage.proactivity import read_schedule
 
@@ -129,6 +130,7 @@ FIELD_LABELS = {
     "memory_read": "允许读取记忆", "memory_export": "允许导出记忆",
     "autonomy_enabled": "允许主动找人", "group_autonomy_enabled": "允许群聊主动行为",
     "emotion_model_enabled": "模型辅助情绪分析", "dream_enabled": "生成梦境",
+    "context_emotions_enabled": "委屈、受伤与害羞",
     "dream_theme_pool": "梦境主题池", "dream_owner_notify": "梦中惊醒给主人发消息",
     "dream_owner_qq": "主人QQ",
     "coupling_promise_actions": "承诺到点如何交付",
@@ -731,7 +733,7 @@ class Console:
             state["contexts"] = [context_dto(c) for c in contexts]
         if context is None:
             await self._attach_manual_experience(state)
-            await self._attach_emotion_curve(state, None)
+            self._attach_weather_diagnostics(state)
             return state
         owned_state = getattr(self.store, "get_owned_state", None)
         bot_record = (await owned_state(context, "bot") if callable(owned_state)
@@ -806,7 +808,34 @@ class Console:
                 personal = None
         personal_state = (decay_affect(personal[0], now=self.store.clock(), policy=policy)
                           if personal else None)
+        contextual = {}
+        contextual_rows = []
+        if (self.config.enabled and self.config.context_emotions_enabled
+                and not global_view and personal_record is not None and relation is not None
+                and personal_record.generation == generation
+                and await self.validate_context(context, generation)):
+            from ..domain.relationship import relationship_behavior
+            from ..storage.console_data import read_relationship_override
+            override = await read_relationship_override(self.store, context)
+            boundary = "\n".join(((override or {}).get("note", ""),
+                relationship_behavior(relation.score, self.config,
+                    note=(override or {}).get("note", ""))["description"]))
+            raw_context = account_context_emotions(
+                personal_record, context, now=self.store.clock(),
+                fingerprint=self.context_emotion_fingerprint(context),
+                epoch=self._context_emotion_epoch)
+            contextual = collected_values(raw_context, context, now=self.store.clock(),
+                                           relationship=relation, relationship_note=boundary)
+            contextual_rows = expression_items(raw_context, context, now=self.store.clock(),
+                                               relationship=relation, relationship_note=boundary)
         state.update({
+            "context_emotions": {
+                "version": 1, "scope_kind": "account",
+                "context_id": context.account_key if not global_view else "",
+                "target": context.account_id if not global_view else "",
+                "enabled": self.config.enabled and self.config.context_emotions_enabled,
+                "emotions": contextual,
+            },
             "user_emotion": ({
                 "subject": context.account_id, "context_id": context.account_key,
                 "scope_kind": "account", "source": "local_account_interactions",
@@ -816,6 +845,7 @@ class Console:
                 "reason": ", ".join(personal_state.reason_codes),
                 "updated_at": personal[0].updated_at,
                 "version": personal_record.version,
+                "context_emotions": contextual_rows,
             } if personal_state else None),
             "persona": {"id": context.persona_id, "name": context.persona_id,
                         "source": "AstrBot native", "revision": context.persona_revision,
@@ -980,30 +1010,27 @@ class Console:
             )
             state["availability"]["reasons"] = []
             state["health"] = [item for item in state["health"] if item["name"] != "主动调度"]
-            # 标签与曲线统一取同一份真实状态；拆分模式使用最近活跃会话投影。
+            # 标签与分量统一取同一份真实状态；拆分模式使用最近活跃会话投影。
             shared_state = bool(getattr(self.config, "persona_shared_state", False))
             state["bot_state"].update(
                 label=state["bot_state"]["label"],
                 reason=("这是私聊与群聊共享的人格情绪，不绑定具体会话。" if shared_state else
-                        "当前展示最近活跃会话的人格状态，数值与曲线使用同一份状态。"),
+                        "当前展示最近活跃会话的人格状态，标签与分量使用同一份状态。"),
                 reason_codes=[], global_view=True,
             )
         await self._attach_manual_experience(state)
-        await self._attach_emotion_curve(state, context)
+        self._attach_weather_diagnostics(state)
         period = datetime.fromtimestamp(self.store.clock(), ZoneInfo(
             self.config.timezone or "Asia/Shanghai")).date().isoformat()
         state["behavior"]["send_statistics"] = await self.store.send_statistics(context, period)
         return state
 
-    async def _attach_emotion_curve(self, state, context):
+    def _attach_weather_diagnostics(self, state):
         from datetime import datetime
         from zoneinfo import ZoneInfo
         zone = self.config.timezone or "Asia/Shanghai"
         now = self.store.clock()
-        end = int(now // 300) * 300
-        points = (await self.store.emotion_history(context, since=now - 86400, until=now)
-                  if context else [{"at": at, "emotions": None, "basis": "uncollected"}
-                      for at in range(end - 86100, end + 1, 300)])
+        # TA 仅显示此刻状态；自动刷新不再查询或生成 24 小时历史点。
         city = self.config.home_city
         current_day = datetime.fromtimestamp(now, ZoneInfo(zone)).date().isoformat()
         # 直接复用轮询器的缓存快照，不再为页面单独请求天气：页面刷新零额外网络。
@@ -1018,10 +1045,6 @@ class Console:
                 target["weather_bonus"] = bonus
         if factor is not None:
             state["weather_weight"] = factor.snapshot().as_dict()
-        state["emotion_curve"] = {"points": points, "interval_seconds": 300,
-            "window_start": now - 86400, "window_end": now, "timezone": zone,
-            "basis": "recorded_state_decay",
-            "collected": any(p["emotions"] is not None for p in points)}
 
     def _weather_drift(self):
         """天气权重因子对四维回落目标的偏移；未启用/中性/过期时返回 None。"""

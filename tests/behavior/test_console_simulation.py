@@ -114,7 +114,8 @@ async def submit(app, emotion="current", request_id=None, actor_id="verified-adm
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("emotion", ["current", "calm", "joy", "sadness", "anger", "fear", "surprise", "disgust"])
+@pytest.mark.parametrize("emotion", ["current", "calm", "joy", "sadness", "anger", "fear", "surprise", "disgust",
+                                   "affection", "wronged", "hurt", "shyness"])
 async def test_no_source_no_material_disabled_observe_generates(emotion, tmp_path):
     app, model, host, _ = await setup(tmp_path)
     try:

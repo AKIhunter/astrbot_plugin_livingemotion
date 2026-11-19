@@ -158,6 +158,11 @@
     "default": false,
     "description": "模型辅助细化主观情绪。例：关闭保留本地规则，开启消耗模型预算。"
   },
+  "context_emotions_enabled": {
+    "type": "bool",
+    "default": false,
+    "description": "在 LivingEmotion 设置页 → 情绪勾选并保存。开启后在参与中模式按聊天对象记录委屈、受伤和害羞并用于回复，仅观察模式不新增这三项采集；在 TA 页选择具体会话查看。关闭后停止更新和表达。本地判定不调用模型，不必开启模型细化；已开启的细化仍遵循原预算。害羞需友好关系并尊重关系说明中的边界。"
+  },
   "emotion_interval_seconds": {
     "type": "int",
     "default": 600,

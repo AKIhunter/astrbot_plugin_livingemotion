@@ -8,6 +8,7 @@
 | 操作、开关、模拟与发送 | [使用手册](user-guide.md) | 实际页面、许可与动作 |
 | 所有配置项默认、位置、范围与例子 | [配置参考](config-reference.md) | schema、Config、同源帮助与Console DTO |
 | 模块、状态与功能判断流程 | [技术说明](technical-guide.md) | application、domain、storage、api |
+| 九项情绪谱、对象采集与草稿刷新 | [情绪谱](ta-emotion-spectrum.md) | collector、DTO、规则边界与页面 |
 | 保存冲突、不生成与不发送 | [排障](troubleshooting.md) | 校验、理由码与当前接口 |
 | 安装与宿主支持 | [安装](installation.md)、[兼容](compatibility.md) | metadata、宿主契约 |
 | 可信插件与管理接口 | [API](api.md) | 实际注册端点与门面 |

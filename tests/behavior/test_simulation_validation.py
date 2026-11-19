@@ -24,6 +24,12 @@ class Request:
         return self.raw
 
 
+@pytest.mark.parametrize("emotion", ["affection", "wronged", "hurt", "shyness"])
+async def test_all_added_emotions_cross_transport_validation(emotion):
+    value = await body_parameters("behavior-simulate", Request({"emotion": emotion}))
+    assert value["emotion"] == emotion
+
+
 @pytest.mark.asyncio
 async def test_optional_legacy_context_and_new_fields():
     assert (await body_parameters("behavior-simulate", Request({})))["context_id"] == ""

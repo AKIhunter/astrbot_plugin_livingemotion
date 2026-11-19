@@ -379,6 +379,64 @@ class BotAffect:
 
 
 @dataclass(frozen=True)
+class ContextAppraisal:
+    """Evidence for one interlocutor; never a shared four-axis delta."""
+    kind: str
+    cause_code: str
+    evidence: str
+    confidence: float = 1.0
+    strength: float = 0.5
+    context_refs: tuple[str, ...] = ()
+
+    def __post_init__(self):
+        if self.kind not in ("wronged", "hurt", "shyness"):
+            raise ValueError("context_emotion_kind")
+        _text(self.cause_code, "cause_code")
+        if not isinstance(self.evidence, str) or not 2 <= len(self.evidence) <= 256:
+            raise ValueError("context_emotion_evidence")
+        finite(self.confidence, "confidence", 0, 1)
+        finite(self.strength, "strength", 0, 1)
+        object.__setattr__(self, "context_refs", tuple(self.context_refs))
+        if len(self.context_refs) > 2:
+            raise ValueError("context_emotion_refs")
+        for ref in self.context_refs:
+            _text(ref, "context_ref")
+
+
+@dataclass(frozen=True)
+class ContextEmotion:
+    """Short-lived account feeling, separate from BotAffect."""
+    kind: str
+    target: str
+    cause_code: str
+    intensity: float
+    confidence: float
+    started_at: float
+    updated_at: float
+    expires_at: float
+    incident_key: str
+    stimulus_key: str
+    evidence_refs: tuple[str, ...] = ()
+    holder: str = "bot"
+
+    def __post_init__(self):
+        if self.kind not in ("wronged", "hurt", "shyness") or self.holder != "bot":
+            raise ValueError("context_emotion_kind")
+        for name in ("target", "cause_code", "incident_key", "stimulus_key"):
+            _text(getattr(self, name), name)
+        finite(self.intensity, "intensity", 0, 1)
+        finite(self.confidence, "confidence", 0, 1)
+        finite(self.started_at, "started_at", 0)
+        finite(self.updated_at, "updated_at", self.started_at)
+        finite(self.expires_at, "expires_at", self.updated_at)
+        object.__setattr__(self, "evidence_refs", tuple(self.evidence_refs))
+        if len(self.evidence_refs) > 2:
+            raise ValueError("context_emotion_refs")
+        for ref in self.evidence_refs:
+            _text(ref, "evidence_ref")
+
+
+@dataclass(frozen=True)
 class HumanObservation:
     subject_id: str
     labels: tuple[str, ...]

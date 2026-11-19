@@ -265,18 +265,46 @@ class LivingEmotionAPI:
             generation = await self._store.get_generation(scope)
             if app is not None and not await app.validate_context(scope, generation):
                 return self._result("unavailable", "context_changed")
-            from .runtime.projector import current_affect
+            from .runtime.projector import account_context_emotions, current_affect, snapshot
+            from .domain.context_emotion import expression_items
+            from .domain.relationship import relationship_behavior
+            from .storage.console_data import apply_relationship_override, read_relationship_override
             from .runtime.state_scope import source_affect
             from .domain.dreaming import six_emotions
             record = await self._store.get_state(scope, "bot")
             state = current_affect(record, now=self._store.clock())
             state = source_affect(state, scope)
             emotions = await app.weather_emotions(state) if app else six_emotions(state)
+            relation_record, extra = None, {}
+            if self._config.context_emotions_enabled and scope.account_id:
+                relation_record = await self._store.get_state(scope, "relationship", scope.account_id)
+                if relation_record is not None and relation_record.generation == generation:
+                    relation = await apply_relationship_override(
+                        self._store, scope, snapshot(relation_record, Relationship))
+                    override = await read_relationship_override(self._store, scope)
+                    description = relationship_behavior(relation.score, self._config,
+                        note=(override or {}).get("note", ""))["description"]
+                    rows = expression_items(account_context_emotions(
+                        relation_record, scope, now=self._store.clock(),
+                        fingerprint=app.context_emotion_fingerprint(scope) if app else "",
+                        epoch=app._context_emotion_epoch if app else ""),
+                        scope, now=self._store.clock(), relationship=relation,
+                        relationship_note="\n".join(((override or {}).get("note", ""), description)))
+                    extra = {"context_emotions": {r["kind"]: r["intensity"] for r in rows},
+                             "context_emotions_version": 1,
+                             "context_emotions_state_version": relation_record.version}
             if app is not None and not await app.validate_context(scope, generation):
                 return self._result("unavailable", "context_changed")
             latest = await self._store.get_state(scope, "bot")
             if (latest.version if latest else 0) != (record.version if record else 0):
                 return self._result("unavailable", "state_changed")
+            if await self._store.get_generation(scope) != generation:
+                return self._result("unavailable", "context_changed")
+            if self._config.context_emotions_enabled and scope.account_id:
+                latest_relation = await self._store.get_state(scope, "relationship", scope.account_id)
+                if ((latest_relation.version if latest_relation else 0)
+                        != (relation_record.version if relation_record else 0)):
+                    return self._result("unavailable", "state_changed")
             dominant = max(emotions, key=emotions.get)
             dominant = dominant if emotions[dominant] >= .25 else "calm"
             mode = app.effective_mode(scope) if app else self._config.mode
@@ -287,6 +315,7 @@ class LivingEmotionAPI:
                 "updated_at": state.updated_at, "sampled_at": self._store.clock(),
                 "version": record.version if record else 0, "generation": generation,
                 "mode": mode, "may_influence_reply": mode == "active",
+                **extra,
             })
         except (TypeError, ValueError, KeyError, AttributeError):
             return self._result("rejected", "invalid_context")

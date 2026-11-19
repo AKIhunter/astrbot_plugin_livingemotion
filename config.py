@@ -53,6 +53,8 @@ class Config:
     # 随机主动行为；关掉宿主那条之后，这边自动接管，不需要再改配置。
     proactive_native_yield: bool = True
     emotion_model_enabled: bool = False
+    # Optional account-scoped feelings; existing installations retain their behavior.
+    context_emotions_enabled: bool = False
     dream_enabled: bool = False
     dream_theme_pool: str = json.dumps(DEFAULT_THEMES, ensure_ascii=False)
     dream_owner_notify: bool = False

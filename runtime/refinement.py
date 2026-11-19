@@ -9,9 +9,12 @@ from zoneinfo import ZoneInfo
 from ..contracts import BotAffect, StateWrite, prompt_json, to_dict, stable_key
 from ..domain.emotion import apply_control, apply_emotion, decay_affect, emotion_policy, shift_baseline
 from ..domain.appraisal import parse_suggestion
+from ..domain.context_emotion import (
+    apply_context_emotions, empty_state, memory_support, parse_context_appraisals, read_state,
+)
 from ..domain.relationship import apply_relationship, RelationshipPolicy
 from ..ports.memory import MemoryRequest
-from .projector import account_affect_token, encode_account_runtime, encode_account_state
+from .projector import account_affect_token, attach_context_emotions, encode_account_runtime, encode_account_state
 from .state_scope import source_affect
 
 
@@ -162,6 +165,7 @@ class Refinement:
         if not await current():
             return
         binding = await self.model_binding(context)
+        binding_fingerprint = binding.fingerprint
         source = await self.bridge.current(context)
         if source is None:
             self._analysis(event, "skipped", "source_invalid")
@@ -201,9 +205,25 @@ class Refinement:
             "冷淡、被忽视或被打断调低，同一段对话里也应跟着变化。"
             "不要惯性地重复 0.5，也不要每次都写同一个值。"
         )
+        contextual_enabled = self.config.enabled and self.config.mode == "active" and self.config.context_emotions_enabled
+        context_before = seed.get("context_emotions", empty_state())
+        support = memory_support(materials, context, now=inputs["now"]) if contextual_enabled else {}
+        if contextual_enabled:
+            system += (
+                "可选context_appraisals最多2项，为bot对当前对象的短期情绪，"
+                "对方自述委屈/受伤/害羞仅是人类观察。"
+                "wronged委屈：admitted_unfair_blame（明确承认你无辜却怪你）或"
+                "devalued_contribution（当前否认帮助且context_refs引用帮助认可证明）；"
+                "无证明仅可hurt受伤/direct_devaluation。"
+                "shyness害羞/warm_attention需直接温柔亲密关注、关系raw score>=250；"
+                "当前话语或关系说明拒绝暧昧时禁止触发，技术夸奖不算。"
+                "每项仅含kind,cause_code,evidence,confidence,strength,context_refs；"
+                "evidence逐字来自当前message，confidence>=0.75，"
+                "context_refs只能引用context_support_refs，拿不准空数组。"
+            )
         # 人格只发送 LivingEmotion 自己的风格摘要（未保存时回退原生人格截断），
         # 记忆压缩到 2 条 × 400 字：只为理解语境，不需要整段原文。
-        data = prompt_json({"persona": await self.persona_style(
+        payload = {"persona": await self.persona_style(
                                 context.persona_id, source.persona.prompt),
                             "message": event.body,
                             "relationship_target": ("unknown" if "native_other_target" in event.signals
@@ -214,13 +234,20 @@ class Refinement:
                             "bot": to_dict(inputs["state"]),
                             "relationship": to_dict(inputs["relationship"]),
                             "memories": [{"kind": m.evidence.kind.value, "text": m.text[:400]}
-                                         for m in materials]})
+                                         for m in materials]}
+        if contextual_enabled:
+            payload.update(
+                context_support_refs=sorted(set(support) | {r["ref"] for r in context_before["support"]}),
+                verified_help_context=support,
+                relationship_boundary=seed.get("relationship_note", ""),
+            )
+        data = prompt_json(payload)
 
         async def generate():
             if not await memory_current() or not await current():
                 raise ValueError("context_changed")
             selected = await self.model_binding(context)
-            if selected.fingerprint != binding.fingerprint:
+            if selected.fingerprint != binding_fingerprint:
                 raise ValueError("provider_changed")
             self._analysis(event, "running", "running", memory_count=len(materials))
             return await binding.generate(system, data, self.config.model_output_tokens,
@@ -233,12 +260,20 @@ class Refinement:
         )
         if not await current():
             return
+        if (await self.model_binding(context)).fingerprint != binding_fingerprint:
+            self._analysis(event, "discarded", "provider_changed")
+            return
         if not await memory_current():
             self._analysis(event, "discarded", "memory_authorization_changed")
             return
         # Recompute once from the original pre-event snapshot, then replace only
         # that event's Bot projection/trace by CAS. No second event or ledger row.
         try:
+            context_appraisals, context_reasons = (), ()
+            if contextual_enabled:
+                suggestion, context_appraisals, context_reasons = parse_context_appraisals(
+                    suggestion, event, inputs["relationship"], context_before,
+                    support_refs=support, relationship_note=seed.get("relationship_note", ""))
             suggestion, signals = parse_suggestion(suggestion, event.body)
         except (ValueError, TypeError, KeyError):
             self._analysis(event, "failed", "model_output_invalid")
@@ -247,7 +282,7 @@ class Refinement:
         # 情绪强度与常驻投影保持一致：同一档位同时决定增量与闸门。
         policy = emotion_policy(getattr(self.config, "emotion_intensity", "normal"))
         refined = apply_emotion(event=classified, model_suggestion=suggestion,
-                                policy=policy, **inputs)
+                                policy=policy, context_observations=contextual_enabled, **inputs)
         if "model_refined" not in refined["reason_codes"]:
             self._analysis(event, "failed", "model_output_invalid")
             return
@@ -281,6 +316,22 @@ class Refinement:
             }, relation_version, context.account_id, owner)
             relation_trace = {"kind": "relationship", **relation["trace"],
                               "reason_codes": relation["reason_codes"]}
+            if contextual_enabled or context_before != empty_state():
+                contextual = apply_context_emotions(
+                    context_before, event, inputs["relationship"], now=inputs["now"],
+                    enabled=contextual_enabled, appraisals=context_appraisals,
+                    support_refs=support, relationship_note=seed.get("relationship_note", ""))
+                contextual["trace"]["reason_codes"].extend(context_reasons)
+                payload = attach_context_emotions(
+                    relation_write.value,
+                    read_state(contextual["state"], context, now=self.store.clock()),
+                    fingerprint=seed.get("context_fingerprint", ""),
+                    epoch=seed.get("context_epoch", ""))
+                relation_write = replace(relation_write, value=payload)
+                if "context_emotions" not in payload["_account_affect"]:
+                    contextual["trace"].update(after=[], reason_codes=["context_capacity_limited"])
+                if contextual_enabled:
+                    relation_trace["context_emotions"] = contextual["trace"]
             contributions = relation["contributions"]
         if not await memory_current() or not await current():
             return

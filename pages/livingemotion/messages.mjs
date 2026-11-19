@@ -1,5 +1,24 @@
 // 明确的界面资源表。每行依次为中文、英文、日文，插值不参与翻译。
-const rows = `{0}–{1} 分|{0}–{1} points|{0}–{1} 点
+const rows = `未采集|Uncollected|未取得
+人格总体 · 不含对象情绪|Persona overall · excludes per-person emotions|人格全体 · 相手ごとの感情を除く
+会话对象|Conversation partner|会話の相手
+仅观察模式不新增这三项采集；在设置 → 快速开始将运行模式改为参与中后生效。|Observe-only mode does not collect these three emotions; set the run mode to Active in Settings → Quick start.|観察のみではこの3種の感情を新規記録しません。設定 → クイックスタートで動作モードを「参加中」にしてください。
+委屈、受伤与害羞|Wronged, hurt and shyness|理不尽さ・傷つき・照れ
+委屈、受伤与害羞按对象采集；选择具体会话后查看。|Wronged, hurt and shyness are collected per person; select a conversation to view.|理不尽さ・傷つき・照れは相手ごとに記録します。会話を選んで確認してください。
+委屈、受伤与害羞：当前会话对象 {0}|Wronged, hurt and shyness: current interlocutor {0}|理不尽さ・傷つき・照れ：現在の相手 {0}
+在设置 → 情绪开启「委屈、受伤与害羞」并保存后采集。|Enable “Wronged, hurt and shyness” in Settings → Emotions and save to collect.|設定 → 感情で「理不尽さ・傷つき・照れ」を有効にして保存します。
+此刻状态|Current state|現在の状態
+最强|Strongest|最も強い
+最强分量|Strongest component|最も強い成分
+其他分量|Other components|その他の成分
+情绪分布|Emotion distribution|感情の分布
+TA 当前情绪分布|TA current emotion distribution|TA の現在の感情分布
+独立强度 · 0–100|Independent intensity · 0–100|独立した強度 · 0–100
+实线为已采集 · 虚线为未采集|Solid: collected · Dashed: uncollected|実線：取得済み · 破線：未取得
+委屈|Wronged|理不尽さ
+受伤|Hurt|傷つき
+害羞|Shyness|照れ
+{0}–{1} 分|{0}–{1} points|{0}–{1} 点
 TA 对此人的情绪|TA feelings toward this person|この相手に対する TA の感情
 对此人的情绪分析|Analysis of feelings toward this person|この相手に対する感情の分析
 尚无此人的独立互动状态；不会用人格总体情绪代替。|No independent interaction state for this person yet; persona-wide emotions will not be substituted.|この相手の独立した交流状態はまだありません。人格全体の感情で代用しません。

@@ -3,6 +3,13 @@
 from ..config import RELATIONSHIP_STAGE_NAMES_FIELD
 
 CONFIG_HELP = {
+    "context_emotions_enabled": (
+        "参与中模式按聊天对象记录委屈、受伤和害羞，并用于回复。",
+        "在「设置 → 情绪」开启并保存；仅观察模式不新增这三项采集，"
+        "在「设置 → 快速开始」将运行模式改为参与中后生效。到 TA 页选择具体会话查看。"
+        "关闭后停止更新和表达。本地规则不调用模型；已开启的细化遵循原预算。"
+        "害羞需友好关系，并尊重关系说明中的边界。",
+        "帮助被认可后又被否认可产生委屈；直接贬低可产生受伤；亲密关注可产生害羞。"),
     "prompt_core_enabled": ("通用说明独立开关。", "在「设置 → 提示词注入」调整；开启注入共享、情绪和关系说明，关闭不注入这些说明，动态状态和关系描述仍保留。", "默认开启，可展开查看完整说明。"),
     "character_prompt_enabled": ("注入当前选中的人物性格。", "在「设置 → 提示词注入」选择和编辑后保存；开启注入当前文字，关闭保留毒舌、可爱、温柔和自定义各自草稿。", "先选择预置或填写自定义，再开启保存。"),
     "character_preset": ("选择毒舌、可爱、温柔或自定义。", "毒舌保留原生性格与毒舌表达并采用v3外围规则；可爱、温柔和自定义采用v4外围规则。切换不覆盖草稿。", "自定义默认空白，由你填写。"),
@@ -253,7 +260,7 @@ def field_parent(name):
     if name in ("enabled", "mode", "timezone", "provider_id", "home_city",
                 "persona_mode", "autonomy_enabled", "promise_enabled", "allow_sleep",
                 "diary_enabled", "dream_enabled", "livingmemory_enabled",
-                "emotion_model_enabled"):
+                "emotion_model_enabled", "context_emotions_enabled"):
         return "", 0
     if name.startswith("promise_"):
         return "promise_enabled", 1

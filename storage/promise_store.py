@@ -156,6 +156,7 @@ class PromiseStore:
         if max_active is not None and (type(max_active) is not int or not 1 <= max_active <= 10):
             raise ValueError("promise_max_active: expected 1-10")
         await self.ensure()
+        from ..runtime.promise_actions import needs_image
         scope = context.scope_key
         fp = fingerprint(scope, description)
         now = self.store.clock()
@@ -169,7 +170,6 @@ class PromiseStore:
             def mutate():
                 if source_event_id:
                     # 消息提交钩子可能晚于 LH 失败回执，不能再次建立同源图片任务。
-                    from ..runtime.promise_actions import needs_image
                     if needs_image(description):
                         handed = db.execute(
                             """SELECT promise_id FROM promises
@@ -482,9 +482,11 @@ class PromiseStore:
             rows = db.execute(
                 "SELECT description,delivered_text,sent_at FROM promises "
                 "WHERE scope_key=? AND status='sent' AND sent_at>? "
-                "AND (handoff_account_key='' OR handoff_account_key=?) "
+                "AND (handoff_account_key=? OR (handoff_account_key='' AND ?)) "
                 "ORDER BY sent_at DESC LIMIT 20",
-                (context.scope_key, self.store.clock() - 7 * 86400, context.account_key)).fetchall()
+                # 旧群聊空归属无法确认收件人，不作为当前账号的图片事实。
+                (context.scope_key, self.store.clock() - 7 * 86400, context.account_key,
+                 context.scene_kind.value != "group")).fetchall()
             return [dict(row) for row in rows if self._needs_image(row["description"])][:5]
         return await self.store._run(read)
 

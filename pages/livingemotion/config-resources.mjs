@@ -1,6 +1,7 @@
 import { locale, controlled, t } from "./i18n.mjs?v=eff0d6f932b0";
 // 按配置键维护帮助，避免依赖后端自由文本的逐词翻译。
-const rows = `enabled|Enable lifecycle processing. Module switches and operating mode still apply.|生活イベント処理を有効にします。モードと各モジュールの制限にも従います。
+const rows = `context_emotions_enabled|Enable and save in Settings → Emotions. Active mode records wronged, hurt and shyness per person; observe-only does not collect them. Set Active in Settings → Quick start, then select a conversation on TA. Off stops updating and expressing them. Local rules make no model calls; refinement keeps its budget. Shyness respects relationship boundaries.|設定 → 感情で有効にして保存します。参加中は相手ごとの理不尽さ・傷つき・照れを記録し、観察のみでは新規記録しません。設定 → クイックスタートで参加中を選び、TA で会話を選択します。無効時は更新と表現を停止します。ローカル規則はモデルを呼ばず、補助分析は予算に従い、照れは関係の境界を尊重します。
+enabled|Enable lifecycle processing. Module switches and operating mode still apply.|生活イベント処理を有効にします。モードと各モジュールの制限にも従います。
 mode|Observe-only records state without autonomous sending. Active mode still requires authorization.|観察モードは状態を記録し自発送信しません。通常モードでも許可が必要です。
 persona_mode|Follow each conversation persona or explicitly select an existing native persona.|会話の人格に従うか、既存のネイティブ人格を指定します。
 persona_id|Select a native persona for explicit mode. This does not change the resolution mode.|指定モード用の人格を選びます。この項目だけでは解決モードは変わりません。

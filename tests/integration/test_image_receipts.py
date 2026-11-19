@@ -174,7 +174,9 @@ async def test_real_api_validates_event_and_injects_completed_fact(tmp_path):
         await app.on_message(next_event)
         request = SimpleNamespace(extra_user_content_parts=[], system_prompt="")
         await app.on_llm_request(next_event, request)
-        fact = next(p.text for p in request.extra_user_content_parts if "已成功交付的图片事实" in p.text)
+        facts = [p.text for p in request.extra_user_content_parts if "已成功交付的图片事实" in p.text]
+        assert len(facts) == 1  # 两套底座合并后也只注入一次，避免重复提示词。
+        fact = facts[0]
         assert "橙色猫在窗边" in json.loads(fact.rsplit("\n", 1)[1])[0]["delivered_text"]
         assert "不等于你已做视觉检查" in fact
         assert not await store.active()
@@ -208,3 +210,26 @@ async def test_facade_shares_ownership_lock_and_configured_trace_ttl(tmp_path):
         service.ownership.host_match.assert_awaited_once()
     finally:
         await app.terminate()
+
+
+@pytest.mark.parametrize("group", [False, True])
+async def test_completed_fact_never_attributes_legacy_group_to_arbitrary_member(scenario, group):
+    s = scenario
+    context = replace(s.context, scene_kind="group", scene_id="test-group") if group else s.context
+    created = await s.service.promises.create(
+        context, description="拍一张窗边的猫", note="图片", bucket="马上",
+        due_at=s.clock[0] + 60)
+    pid = created["promise_id"]
+    # 存量群聊空归属不能冒充当前成员的图片；明确归属后才允许读取。
+    await s.service.store._run(lambda db: db.execute(
+        "UPDATE promises SET status='sent',sent_at=?,delivered_text='旧图片',"
+        "handoff_account_key='' WHERE promise_id=?", (s.clock[0], pid)))
+    rows = await s.service.promises.delivered_images(context)
+    assert bool(rows) is not group
+    if group:
+        await s.service.store._run(lambda db: db.execute(
+            "UPDATE promises SET handoff_account_key=? WHERE promise_id=?",
+            (context.account_key, pid)))
+        assert len(await s.service.promises.delivered_images(context)) == 1
+        assert await s.service.promises.delivered_images(
+            replace(context, account_id="another-member")) == []

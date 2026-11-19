@@ -1,0 +1,62 @@
+/* TA 情绪分布仅适配 PC；昼夜共用数据，主题仅改变表现。 */
+.ta-emotions {
+  --ta-quiet: #b4bdae; --ta-rail: #e3e3d8;
+  padding: 36px 28px 28px; min-width: 680px; color: var(--text);
+}
+:root[data-le-theme="dark"] .ta-emotions { --ta-quiet: #788769; --ta-rail: #343d32; }
+.ta-emotion-grid { display: grid; grid-template-columns: minmax(240px, .85fr) minmax(370px, 1.3fr); gap: 48px; }
+.ta-emotion-summary { min-width: 0; }
+.ta-emotion-eyebrow { font-size: .875rem; color: var(--muted); letter-spacing: 1px; margin: 0 0 20px; }
+.ta-emotions .ta-emotion-word { font: 500 4rem/1.25 var(--display); letter-spacing: -.04em; margin: 0; color: var(--accent); overflow-wrap: anywhere; }
+.ta-emotion-strength { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; margin-top: 22px; font-size: 1rem; color: var(--muted); }
+.ta-emotion-strength strong { font: 400 2rem/1 var(--mono); color: var(--accent); }
+.ta-emotion-unit { font: .875rem var(--mono); }
+.ta-emotion-companions { display: grid; gap: 12px; margin-top: 32px; max-width: 220px; font-size: 1rem; }
+.ta-emotion-companions .ta-emotion-eyebrow { margin: 0; }
+.ta-emotion-companions > div { display: flex; justify-content: space-between; gap: 16px; }
+.ta-emotion-number { font: 1rem var(--mono); color: var(--muted); }
+.ta-emotion-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; font-size: .875rem; color: var(--muted); margin-bottom: 36px; }
+.ta-emotion-heading strong { font-weight: 500; color: var(--text); }
+.ta-emotion-paper { position: relative; padding-left: 36px; }
+.ta-emotion-scale { position: absolute; left: 36px; right: 0; border-top: 1px solid var(--line); opacity: .5; pointer-events: none; }
+.ta-emotion-scale span { position: absolute; right: calc(100% + 8px); transform: translateY(-50%); font: .875rem var(--mono); color: var(--muted); white-space: nowrap; }
+.ta-emotion-stems { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 9px; }
+.ta-emotions .ta-emotion-stem-button { display: grid; align-content: start; justify-items: center; min-width: 0; padding: 0; min-height: 0; border: 0; border-radius: 0; background: transparent; color: var(--muted); }
+.ta-emotion-stem { display: block; position: relative; width: 11px; height: 200px; background: var(--ta-rail); }
+.ta-emotion-fill { position: absolute; inset: 0; background: var(--ta-quiet); transform-origin: bottom; transform: scaleY(var(--strength)); }
+.ta-emotion-stem-number { position: absolute; left: 50%; transform: translateX(-50%); font: 1rem var(--mono); white-space: nowrap; }
+.ta-emotion-stem-label { margin-top: 16px; max-width: 100%; font-size: 1rem; line-height: 1.4; overflow-wrap: anywhere; }
+.ta-emotion-stem-button.strongest { color: var(--accent); }
+.ta-emotion-stem-button.strongest .ta-emotion-fill { background: var(--accent); }
+.ta-emotion-stem-button.missing .ta-emotion-stem { background: transparent; border: 1px dashed var(--line); }
+.ta-emotion-stem-button.missing .ta-emotion-fill { display: none; }
+.ta-emotion-stem-button.missing .ta-emotion-stem-number { width: 3rem; white-space: normal; overflow-wrap: anywhere; font: .875rem/1.4 -apple-system, "PingFang SC", sans-serif; }
+.ta-emotion-pixel, .ta-pixel-glyph { display: none; }
+.ta-emotion-inspection { min-height: 20px; text-align: right; margin: 20px 0 0; font-size: .875rem; color: var(--muted); }
+:root[data-le-theme="dark"] .ta-emotion-paper { display: none; }
+:root[data-le-theme="dark"] .ta-emotion-pixel { display: grid; gap: 15px; }
+:root[data-le-theme="dark"] .ta-pixel-glyph { display: block; width: 44px; height: 44px; margin: 0 0 22px; color: var(--accent); }
+:root[data-le-theme="dark"] .ta-emotions .ta-emotion-word { font: 500 3.5rem/1.25 -apple-system, "PingFang SC", sans-serif; letter-spacing: -.04em; }
+.ta-emotions .ta-emotion-pixel-row { display: grid; grid-template-columns: 5rem minmax(0, 1fr) 6rem; gap: 12px; align-items: center; min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; font-size: 1rem; text-align: left; color: var(--muted); }
+.ta-emotion-cells { display: grid; grid-template-columns: repeat(20, minmax(0, 1fr)); gap: 3px; }
+.ta-emotion-cell { position: relative; height: 10px; background: var(--ta-rail); }
+.ta-emotion-cell b { position: absolute; inset: 0; background: var(--ta-quiet); transform-origin: left; transform: scaleX(var(--filled)); }
+.ta-emotion-pixel-number { font: 1rem var(--mono); text-align: right; }
+.ta-emotion-pixel-row.strongest { color: var(--accent); }
+.ta-emotion-pixel-row.strongest .ta-emotion-cell b { background: var(--accent); }
+.ta-emotion-pixel-row.missing .ta-emotion-cell { background: transparent; border: 1px dashed var(--line); }
+.ta-emotion-pixel-row.missing .ta-emotion-cell b { display: none; }
+.ta-emotion-pixel-row.missing .ta-emotion-pixel-number { font: .875rem -apple-system, "PingFang SC", sans-serif; }
+.ta-overview-feeling { margin: 0 28px 20px; border-top: 1px solid var(--line); padding-top: 20px; }
+.ta-overview-feeling .hero-feeling { border: 0; padding: 0; min-height: 0; }
+/* 窄桌面 iframe 将图表放在标题下，放大文字后仍给九个分量留足宽度。 */
+@media (max-width: 900px) {
+  .ta-emotions { min-width: 0; padding: 28px 20px; }
+  .ta-emotion-grid { grid-template-columns: minmax(0, 1fr); gap: 36px; }
+  .ta-emotion-summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 28px; }
+  .ta-emotion-summary > .ta-emotion-eyebrow, .ta-pixel-glyph, .ta-emotion-word, .ta-emotion-strength { grid-column: 1; }
+  .ta-emotion-companions { grid-column: 2; grid-row: 1 / span 4; align-self: center; margin: 0; }
+  .ta-emotions .ta-emotion-word { font-size: 3.5rem; }
+  :root[data-le-theme="dark"] .ta-emotions .ta-emotion-word { font-size: 3rem; }
+  .ta-emotion-stems { gap: 6px; }
+}

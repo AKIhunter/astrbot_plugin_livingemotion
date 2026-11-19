@@ -25,8 +25,12 @@ from ..contracts import (
     to_dict,
 )
 from ..domain.emotion import apply_emotion, decay_affect, emotion_policy
+from ..domain.context_emotion import apply_context_emotions, empty_state, read_state
 from ..domain.night import apply_interaction
-from ..domain.relationship import RelationshipPolicy, apply_relationship, initial_relationship, relationship_stage
+from ..domain.relationship import (
+    RelationshipPolicy, apply_relationship, initial_relationship, relationship_stage,
+    relationship_behavior,
+)
 from ..storage import SQLiteStore
 from ..storage.sqlite import _ProjectionPayload
 from .state_scope import source_affect
@@ -167,6 +171,39 @@ def account_affect(record: StateRecord | None, context: Context):
         return None
 
 
+def account_context_emotions(record: StateRecord | None, context: Context, *, now,
+                             fingerprint="", epoch=""):
+    if record is None or not context.account_id or record.record_key != context.account_id:
+        return empty_state()
+    value = record.value.get("_account_affect")
+    if not isinstance(value, dict):
+        return empty_state()
+    token, saved = account_affect_token(context), value.get("context")
+    if saved != token:
+        # Across a restart only, recover when all stable source/persona fields match.
+        if (not isinstance(saved, dict) or not fingerprint or not epoch
+                or value.get("context_emotions_epoch") == epoch
+                or value.get("context_emotions_persona") != fingerprint
+                or {k: v for k, v in saved.items() if k != "persona_revision"}
+                != {k: v for k, v in token.items() if k != "persona_revision"}):
+            return empty_state()
+    return read_state(value.get("context_emotions"), context, now=now)
+
+
+def attach_context_emotions(payload, state, *, fingerprint="", epoch=""):
+    from ..contracts import canonical_json
+    payload = deepcopy(payload)
+    payload["_account_affect"]["context_emotions"] = state
+    if fingerprint:
+        payload["_account_affect"]["context_emotions_persona"] = fingerprint
+    if epoch:
+        payload["_account_affect"]["context_emotions_epoch"] = epoch
+    if len(canonical_json(payload)) > 65536:
+        for key in ("context_emotions", "context_emotions_persona", "context_emotions_epoch"):
+            payload["_account_affect"].pop(key, None)
+    return payload
+
+
 @dataclass(frozen=True)
 class Projection:
     writes: tuple[StateWrite, ...]
@@ -177,10 +214,13 @@ class Projection:
 
 
 class Projector:
-    def __init__(self, store: SQLiteStore, config, *, config_for_context=None):
+    def __init__(self, store: SQLiteStore, config, *, config_for_context=None,
+                 context_fingerprint=None, context_epoch=""):
         self.store = store
         self.config = config
         self.config_for_context = config_for_context
+        self.context_fingerprint = context_fingerprint or (lambda context: "")
+        self.context_epoch = context_epoch
 
     async def __call__(self, event: Event) -> Projection:
         event = projection_event(event)
@@ -228,6 +268,19 @@ class Projector:
 
         night_runtime = runtime("night")
         account = account_affect(records.get("relationship"), context)
+        fingerprint = self.context_fingerprint(context)
+        context_before = account_context_emotions(
+            records.get("relationship"), context, now=now,
+            fingerprint=fingerprint, epoch=self.context_epoch)
+        context_enabled = config.enabled and config.mode == "active" and config.context_emotions_enabled
+        relationship_note = "\n".join((
+            override.get("note", ""),
+            relationship_behavior(relationship.score, config,
+                                  note=override.get("note", ""))["description"],
+        ))
+        contextual = apply_context_emotions(
+            context_before, event, relationship, now=now,
+            enabled=context_enabled, relationship_note=relationship_note)
         if not config.allow_sleep:
             from ..domain.night import sleepless_state
             night_result = {"night": sleepless_state(night, now=now), "runtime": {}, "cost": 0}
@@ -260,6 +313,7 @@ class Projector:
             bot, event, now=now, observation=observation, relationship=relationship,
             night=night_result["night"], runtime=runtime("bot"),
             enabled=config.enabled, mode=config.mode, policy=emotion_policy_value,
+            context_observations=context_enabled,
         )
         relation = apply_relationship(
             relationship, event, now=now, runtime=runtime("relationship"),
@@ -299,12 +353,22 @@ class Projector:
             )
             payload = deepcopy(relation["trace"]["after"])
             payload["_relationship_override_version"] = override_version
-            if account is not None or personal["applied"]:
+            if (account is not None or personal["applied"] or contextual["applied"]
+                    or context_before != empty_state()):
                 payload["_account_affect"] = {
                     "context": account_affect_token(context),
                     "state": encode_account_state(personal["trace"]["after"]),
                     "runtime": encode_account_runtime(personal["runtime"]),
                 }
+                if context_enabled or context_before != empty_state():
+                    payload["_runtime"] = relation["runtime"]
+                    payload = attach_context_emotions(
+                        payload, contextual["state"], fingerprint=fingerprint,
+                        epoch=self.context_epoch)
+                    if "context_emotions" not in payload["_account_affect"]:
+                        contextual["trace"].update(after=[], reason_codes=["context_capacity_limited"])
+            if context_enabled:
+                relation["trace"]["context_emotions"] = contextual["trace"]
             write("relationship", relation["relationship"], relation["runtime"],
                   serialized=payload)
         return Projection(
@@ -321,7 +385,9 @@ class Projector:
              "relationship_version": (records["relationship"].version
                                       if records.get("relationship") else 0) + 1,
              "override_version": override_version,
-             "account": account}
+             "account": account, "context_emotions": context_before,
+             "context_fingerprint": fingerprint, "context_epoch": self.context_epoch,
+             "relationship_note": relationship_note}
             if config.emotion_model_enabled and config.mode == "active" else None,
             generation,
         )

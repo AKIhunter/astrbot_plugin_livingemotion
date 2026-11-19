@@ -233,7 +233,8 @@ async def body_parameters(operation: str, request) -> dict:
                 "persona_id": text(values.get("persona_id"), 512), "kind": values["kind"]}
     if operation == "behavior-simulate":
         emotion = values.get("emotion", "current")
-        if emotion not in ("current", "calm", "joy", "sadness", "anger", "fear", "surprise", "disgust"):
+        if emotion not in ("current", "calm", "joy", "sadness", "anger", "fear", "surprise", "disgust",
+                           "affection", "wronged", "hurt", "shyness"):
             invalid()
         return {"context_id": text(values.get("context_id", ""), 512, required=False),
                 "persona_id": text(values.get("persona_id", ""), 512, required=False),

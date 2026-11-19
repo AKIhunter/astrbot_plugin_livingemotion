@@ -34,6 +34,7 @@ from ..contracts import (
     to_dict,
 )
 from ..domain.emotion import expression_context
+from ..domain.context_emotion import expression_items
 from ..prompt_injection import (
     MARKER as EXPRESSION_MARKER, STATE_HEADER, IMAGE_ACCEPT, IMAGE_REFUSE,
     IMAGE_TAIL, PROMISE_CONTRACT, expression_text, prompt_state,
@@ -52,7 +53,7 @@ from .materials import Materials
 from .models import Generation
 from .memory import AutoMemoryIngestor, build_memory_backend
 from .night import NightRuntime
-from .projector import Projector, current_affect, snapshot
+from .projector import Projector, account_context_emotions, current_affect, snapshot
 from .weather_factor import WeatherFactor
 from .refinement import Refinement
 from .relationship_projection import read_relationship_projection
@@ -104,6 +105,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         # 没有实时来源，不能拿来作为消息发送落点；私有日记/梦境另行复核持久来源。
         self._live_contexts: set[str] = set()
         self._revision = uuid4().hex
+        self._context_emotion_epoch = uuid4().hex
         self._config_fault = False
         self._task_fault = ""
         self._actions = set()
@@ -165,6 +167,8 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         self.api = self.lifecycle.api
         self.api._application = self
         self.projector = Projector(self.store, lambda: self.config,
+                                   context_fingerprint=self.context_emotion_fingerprint,
+                                   context_epoch=self._context_emotion_epoch,
                                    config_for_context=self.scoped_config)
         self.api._project_event = self.projector
         self.closed = False
@@ -1162,6 +1166,13 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         from ..storage.console_data import apply_relationship_override
         return await apply_relationship_override(self.store, context, relationship)
 
+    def context_emotion_fingerprint(self, context):
+        if type(context) is not Context:
+            context = Context.from_dict(to_dict(context))
+        source = self.bridge.source(context)
+        return stable_key("context-emotions-v1", source.persona.mode,
+                          context.persona_id, source.persona.prompt) if source else ""
+
     def is_live_context(self, context) -> bool:
         """该会话在本进程里是否真的收到过消息（有实时来源）。"""
         return context is not None and context.account_key in self._live_contexts
@@ -1346,6 +1357,17 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             override = await read_relationship_override(self.store, context)
             expression["relationship"] = relationship_behavior(
                 relationship.score, self.config, note=(override or {}).get("note", ""))
+            if self.config.context_emotions_enabled:
+                relation_record = await self.store.get_state(context, "relationship", context.account_id)
+                contextual = expression_items(account_context_emotions(
+                    relation_record, context, now=self.store.clock(),
+                    fingerprint=self.context_emotion_fingerprint(context),
+                    epoch=self._context_emotion_epoch),
+                    context, now=self.store.clock(), relationship=relationship,
+                    relationship_note="\n".join((
+                        (override or {}).get("note", ""), expression["relationship"]["description"])))
+                if contextual:
+                    expression["bot"]["context_emotions"] = contextual
             night = await self.night_snapshot(context)
             expression["night"] = {"phase": night.phase.value, "energy": night.energy}
             expression["night"]["display_state"] = (

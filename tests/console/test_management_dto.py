@@ -194,6 +194,47 @@ async def test_state_baseline_and_global_no_action_route(le_store, le_context):
         await app.console_preview("")
 
 
+@pytest.mark.parametrize("scope", ["global", "context", "empty"])
+async def test_state_refresh_skips_emotion_history_and_keeps_weather_diagnostics(
+        le_store, le_context, monkeypatch, scope):
+    from astrbot_plugin_livingemotion.adapters.weather import WeatherReport
+    from astrbot_plugin_livingemotion.contracts import BotAffect
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    if scope != "empty":
+        await le_store.register_context(le_context)
+        wrote = await le_store.write_states(
+            le_context, await le_store.get_generation(le_context),
+            (StateWrite("bot", to_dict(BotAffect(updated_at=le_store.clock()))),))
+        assert wrote.accepted
+    app = ConsoleDouble(le_store, le_context)
+    app.config = replace(app.config, home_city="上海", timezone="UTC")
+    day = datetime.fromtimestamp(le_store.clock(), ZoneInfo("UTC")).date().isoformat()
+    weight = {"status": "ok", "source": "cached-weather"}
+    app.weather_factor = SimpleNamespace(
+        report=lambda: WeatherReport("上海", day, "UTC", "ok", code=61),
+        snapshot=lambda: SimpleNamespace(as_dict=lambda: dict(weight)), drift=lambda: None)
+
+    async def forbidden(*_args, **_kwargs):
+        raise AssertionError("TA refresh must never load 24-hour emotion history")
+    monkeypatch.setattr(le_store, "emotion_history", forbidden)
+    if scope == "empty":
+        app._contexts.clear()
+    kwargs = {"persona_id": le_context.persona_id,
+              "view_scope": "private" if scope == "context" else "global"}
+    if scope == "context":
+        kwargs["context_id"] = le_context.account_key
+    state = await app.console_state(**kwargs)
+    assert "emotion_curve" not in state
+    assert state["weather_weight"] == weight
+    if scope != "empty":
+        for analysis in (state["emotion_analysis"]["bot"],
+                         state["bot_state"]["emotion_analysis"]):
+            assert analysis["weather_bonus"]["sadness"] == .2
+            assert analysis["emotions"]["sadness"] == 0
+
+
 async def test_console_baseline_and_decay_share_actual_policy(le_store, le_context, monkeypatch):
     from astrbot_plugin_livingemotion.contracts import BotAffect
     await le_store.register_context(le_context)

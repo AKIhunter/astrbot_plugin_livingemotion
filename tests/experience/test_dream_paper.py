@@ -68,10 +68,10 @@ async def test_console_label_is_not_rewritten_by_weather(affect):
     app = SimpleNamespace(config=Config(home_city="合成城市", timezone="UTC"),
                           store=SimpleNamespace(clock=lambda: 1794484800.0),
                           _manual_weather=Cloudy())
-    # 空上下文走合成曲线；只检验真实控制台标签路径，不访问模型、网络或生产库。
+    # 只检验真实控制台天气诊断路径，不访问模型、网络或生产库。
     state = {"emotion_analysis": {"bot": emotion_analysis(affect)},
              "bot_state": {"emotion_analysis": emotion_analysis(affect), "label": "calm"}}
-    await Console._attach_emotion_curve(app, state, None)
+    Console._attach_weather_diagnostics(app, state)
     # 阴天曾经把 label 改写成六情绪 dominant（arousal .9 -> excited），导致同一天里
     # 大标题有时来自五维阈值、有时来自六情绪；现在天气不进展示值，label 只看五维。
     assert state["bot_state"]["label"] == "calm"
@@ -160,8 +160,7 @@ async def test_manual_themes_weather_but_no_owner_messages(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_weather_same_current_curve_and_expression_no_double_overlay(le_store, le_context):
-    from datetime import datetime
+async def test_weather_same_current_and_expression_no_double_overlay(le_store, le_context):
     from astrbot_plugin_livingemotion.runtime.console import Console, emotion_analysis
     from astrbot_plugin_livingemotion.runtime.manual_experience import ManualExperienceRuntime
     now = le_store.clock()
@@ -171,23 +170,21 @@ async def test_weather_same_current_curve_and_expression_no_double_overlay(le_st
     class Rain:
         async def get(self, city, day, timezone):
             return WeatherReport(city, day, timezone, "ok", code=61)
-    async def history(*args, **kwargs):
-        return [{"at": now, "emotions": dict(raw), "basis": "recorded_decay"}]
     app = SimpleNamespace(config=Config(home_city="上海", timezone="UTC"),
-        store=SimpleNamespace(clock=le_store.clock, emotion_history=history), _manual_weather=Rain())
+        store=SimpleNamespace(clock=le_store.clock), _manual_weather=Rain())
     # 雨天不再往六情绪上叠 0.2：愉悦为正时 negative=0，那是凭空造悲伤。
     expected = dict(raw)
     def state():
         return {"emotion_analysis": {"bot": emotion_analysis(affect)},
                 "bot_state": {"emotion_analysis": emotion_analysis(affect), "label": "calm"}}
     first, refreshed = state(), state()
-    await Console._attach_emotion_curve(app, first, le_context)
-    await Console._attach_emotion_curve(app, refreshed, le_context)
+    Console._attach_weather_diagnostics(app, first)
+    Console._attach_weather_diagnostics(app, refreshed)
     assert first == refreshed
     current = await ManualExperienceRuntime.weather_emotions(app, affect)
     assert current == first["emotion_analysis"]["bot"]["emotions"]
     assert current == first["bot_state"]["emotion_analysis"]["emotions"]
-    assert current == first["emotion_curve"]["points"][0]["emotions"]
+    assert "emotion_curve" not in first
     assert current["sadness"] == expected["sadness"] == 0.0
     assert six_emotions(affect) == raw
 

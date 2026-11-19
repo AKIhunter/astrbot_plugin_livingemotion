@@ -13,6 +13,11 @@ Install on AstrBot 4.29.1–4.29.4 with Python 3.12 or later. Open `livingemotio
 select your persona mode and save. Local mood rules work without model calls.
 Configure an IANA timezone before enabling sleep. Disabling sleep keeps the persona awake at 100% energy.
 
+TA displays nine emotion components. Optional wronged, hurt and shyness collection is off by default;
+enable it in Settings → Emotions and select a conversation on TA. Collection requires Active mode.
+Behavior simulation offers 12 choices, keeps its records separate and does not send messages.
+State refresh continues while editing and preserves drafts and optimistic versions.
+
 Delayed promises execute when due. Image tasks can bind and settle the original promise through LivingHello 2.9.0.
 Known image failures may receive bounded wording repairs; unknown generation or delivery waits for verification.
 Successful wording substitutions are scoped by the actual image provider, model and protocol.

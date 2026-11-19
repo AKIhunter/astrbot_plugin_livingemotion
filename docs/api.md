@@ -37,6 +37,13 @@ Event必填event_id/producer/event_type/context/actor_role/occurred_at/source_id
 human actor_id匹配来源。时间为有限非负UTC秒，bool不可冒充数字。
 authorization和代际须最终复核；历史、梦与摘要不伪造成新互动。
 
+对象采集启用且存在有效同代关系状态时，`get_current_emotion.data` 可附加
+`context_emotions`、`context_emotions_version=1` 和 `context_emotions_state_version`。
+原 `emotions` 六项及 affect 等字段保持兼容；附加值仅含达到表达阈值的当前对象分量。
+`console/state.data.context_emotions` 则返回 version、scope_kind、context_id、target、
+enabled 与 emotions，提供实测零值及低于阈值的衰减值；全局、关闭、来源不匹配或未采集时为空。
+TA 概览迁为九项情绪谱，Console 不再返回已移除的 `emotion_curve` 历史曲线字段。
+
 ## 生图绑定与回执
 
 LH 2.9.0在同一受信事件extra写入受控结构，再调用公开门面：

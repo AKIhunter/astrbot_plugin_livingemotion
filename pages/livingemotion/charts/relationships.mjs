@@ -217,7 +217,6 @@ export function mountRelationships(root, {
   let version = null, conflict = false, edited = null, graphKey = "";
   const positionCache = new Map();
   const motionPreference = matchMedia("(prefers-reduced-motion: reduce)");
-  const compactViewport = matchMedia("(max-width: 600px)");
   const view = { ...VIEW, yaw: DEFAULT_VIEW.yaw, pitch: DEFAULT_VIEW.pitch };
   const placed = new Map();
   const writeKey = item => `relationship:${selection.persona_id}/${item.platform}/${item.account_id}`;
@@ -243,8 +242,6 @@ export function mountRelationships(root, {
     "aria-label": t("人格中心三维关系图，可拖动旋转，选择人物查看详情"),
   });
   const world = svgNode("g"); svg.append(world);
-  const fitViewport = () => svg.setAttribute("viewBox", compactViewport.matches ? "160 10 400 400" : "0 0 720 420");
-  fitViewport(); compactViewport.addEventListener("change", fitViewport);
   const tableRoot = node("div");
   const editor = node("section", undefined, "relationship-row-editor");
   editor.hidden = true;
@@ -395,7 +392,8 @@ export function mountRelationships(root, {
       const error = node("p", undefined, "error-text"); error.setAttribute("role", "alert");
       const save = node("button", t("保存基础信息")); save.type = "submit"; save.className = "primary";
       const refresh = button(t("读取最新关系并复核"), async () => {
-        await load(true);
+        // Only an explicit review adopts the latest CAS version, keeping the draft.
+        await load(true, true);
       });
       refresh.hidden = true;
       const validVersion = () => Number.isSafeInteger(version) && version >= 0;
@@ -656,7 +654,7 @@ export function mountRelationships(root, {
     pager.append(previous, node("span", t("第 {0} 页 · 共 {1} 人", [page, data.total])), next);
     tableRoot.append(wrapper, pager);
   }
-  async function load(preserve = false) {
+  async function load(preserve = false, review = false) {
     if (writing) return;
     const current = ++sequence; stop(); count.textContent = t("正在读取关系…"); root.setAttribute("aria-busy", "true");
     // 查询条件在请求前交给宿主持久化：自动刷新重新挂载本面板时不会丢筛选和页码。
@@ -668,7 +666,7 @@ export function mountRelationships(root, {
       if (data.total === 0 && page !== 1) page = 1;
       if (!data.items.length && data.total > 0 && page > 1) {
         page = Math.max(1, Math.ceil(data.total / 10));
-        await load(preserve); return;
+        await load(preserve, review); return;
       }
       graph = data;
       count.textContent = t("图中 {0} 人 · 列表匹配 {1} 人 · {2} 条人物关系线索", [data.nodes.length, data.total, data.peer_edges.length]) +
@@ -693,8 +691,10 @@ export function mountRelationships(root, {
       }
       if (edited) {
         const updated = [...data.nodes, ...data.items].find(item => item.id === edited.id);
-        if (updated) openRowEditor(updated, preserve);
-        else { edited = null; editor.hidden = true; }
+        // Automatic reads keep the exact form, focus, selection and expected version.
+        // A save still detects an external change through the original CAS version.
+        if (updated && (!preserve || review)) openRowEditor(updated, review);
+        else if (!updated) { edited = null; editor.hidden = true; }
       }
     } catch (error) {
       if (disposed || current !== sequence) return;
@@ -737,6 +737,8 @@ export function mountRelationships(root, {
   motionPreference.addEventListener("change", motion);
   document.addEventListener("visibilitychange", visibility);
   load();
-  return () => { disposed = true; sequence++; stop(); document.removeEventListener("visibilitychange", visibility);
-    motionPreference.removeEventListener("change", motion); compactViewport.removeEventListener("change", fitViewport); };
+  const dispose = () => { disposed = true; sequence++; stop(); document.removeEventListener("visibilitychange", visibility);
+    motionPreference.removeEventListener("change", motion); };
+  dispose.refresh = () => load(true);
+  return dispose;
 }

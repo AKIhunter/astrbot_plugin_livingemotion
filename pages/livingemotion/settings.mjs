@@ -1,9 +1,10 @@
 import { t, locale, controlled, resource } from "./i18n.mjs?v=eff0d6f932b0";
 import { object, list, text, fieldValue, stageNames, DEFAULT_STAGE_NAMES } from "./model.mjs?v=eff0d6f932b0";
-import { fieldHelp, localizedFieldLabel } from "./config-resources.mjs?v=eff0d6f932b0";
+import { fieldHelp, localizedFieldLabel } from "./config-resources.mjs?v=ta-omissions-20261119-r3";
 import { node, button } from "./dom.mjs?v=eff0d6f932b0";
 import { renderPromptInjection, syncPromptInjection } from "./prompt-injection.mjs?v=0.6.0";
 const labels = resource({
+  context_emotions_enabled: t("委屈、受伤与害羞"),
   relationship_special_description: t("独特关系说明"),
   relationship_stage_names: t("关系阶段自定义名称"), enabled: t("启用 livingEmotion"), mode: t("工作模式"), persona_mode: t("人格解析方式"), persona_id: t("原生人格"),
   relationship_stage_descriptions: t("关系阶段描述"),
@@ -579,7 +580,8 @@ export function renderSettings(root, state, options, updateControls, description
       if (bucket) mounted = bucket;
       else if (isAdvanced) mounted = advancedBody;
       else mounted = common;
-      mounted.append(wrapper);
+      if (group === "emotion" && field.key === "context_emotions_enabled") mounted.prepend(wrapper);
+      else mounted.append(wrapper);
       if (!bucket && !isAdvanced) common.hidden = false;
       // 人格说明只读展示：内容来自宿主 personas.system_prompt，本页不写入。
       if (field.key === "persona_id") {
