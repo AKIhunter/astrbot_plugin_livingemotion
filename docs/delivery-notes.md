@@ -21,6 +21,15 @@ tests/host、tests/console/test_console.py、tests/budgets/test_model_payload.py
 显式双插件映射使用LIVINGHELLO_SOURCE，命令见[提示词调整](image-prompt-retry.md#离线复测)。
 LH另有tests/image_result_handoff.py，覆盖真实双方门面与SQLite，
 替换上游和发送接口，源码需分别来自当前公开版本。
+该入口编译真实宿主工具类，额外安装固定参数校验依赖：
+
+```bash
+python -m pip install pydantic==2.14.3 jsonschema==4.26.0
+ASTRBOT_NATIVE_SOURCE=../AstrBot/astrbot python -B ../astrbot_plugin_LivingHello/scripts/run_image_handoff_tests.py
+```
+
+AstrBot、LH、LE源码放同一父目录，LE目录名为astrbot_plugin_livingemotion。
+ASTRBOT_NATIVE_SOURCE仅指向源码快照，不启动宿主或连接平台。
 
 UI测试读取真实Console DTO与实际页面，配置保存由合成桥处理。
 浏览器外联全部阻断；自动刷新、草稿保存、列表展开与多分辨率独立核对。
