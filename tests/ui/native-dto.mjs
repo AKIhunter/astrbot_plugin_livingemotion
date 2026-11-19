@@ -1455,10 +1455,12 @@ export const nativeDTO = {
         "type": "integer",
         "advanced": false,
         "help": "同时追踪的承诺条数上限。",
-        "details": "范围1–20；超出后先丢弃最旧的低优先级条目，不会无限堆积。",
-        "example": "填3表示同时最多跟3件答应过的事。",
+        "details": "在「设置 → 承诺代办」设置，整数1–10，默认3；等待调整或核对的图片也占名额。满额拒绝新增，允许复用同一任务；降低上限保留已有条目，可在主动行为页查看。完成或明确取消后释放名额。",
+        "example": "填3最多接纳3条未完成承诺；已有6条时保留6条，降至3条以下才接纳新项。",
         "parent": "promise_enabled",
         "level": 1,
+        "min": 1,
+        "max": 10,
         "step": 1,
         "unit": "次"
       },
@@ -4338,10 +4340,12 @@ export const nativeDTO = {
           "type": "integer",
           "advanced": false,
           "help": "同时追踪的承诺条数上限。",
-          "details": "范围1–20；超出后先丢弃最旧的低优先级条目，不会无限堆积。",
-          "example": "填3表示同时最多跟3件答应过的事。",
+          "details": "在「设置 → 承诺代办」设置，整数1–10，默认3；等待调整或核对的图片也占名额。满额拒绝新增，允许复用同一任务；降低上限保留已有条目，可在主动行为页查看。完成或明确取消后释放名额。",
+          "example": "填3最多接纳3条未完成承诺；已有6条时保留6条，降至3条以下才接纳新项。",
           "parent": "promise_enabled",
           "level": 1,
+          "min": 1,
+          "max": 10,
           "step": 1,
           "unit": "次"
         },
@@ -11164,14 +11168,14 @@ export const nativeDTO = {
   }
 };
 export const nativeDTOEvidence = {
-  "captured_at": "2026-11-19T02:46:23.697296+00:00",
+  "captured_at": "2026-11-19T08:31:40.237476+00:00",
   "field_count": 134,
   "scope": "real Console DTO / synthetic host / temporary database",
   "sources_sha256": {
-    "config.py": "6bce89867bcbeaeeb742b3ffc1eaf5281cd89ffaad0c55565964c086c9438faf",
+    "config.py": "212b8609946241aa681a34b450439f550c70b96b19f6dfd07e002e4d9bbd5ea4",
     "contracts.py": "e6c4babe398c89c1c5816fca3e88e275fd9609d290e955d4b2ca74e037dc542f",
-    "runtime/console.py": "913e827b7a1e6561a5e9275270636862bad6e0b3804e817652e2ce521e9c8e51",
-    "runtime/config_help.py": "1864fc216b440f9ebd39761478eef6ff3c05e137ffc9dd7ab834547f29c6f731",
+    "runtime/console.py": "93ffa1046f59f89548fc15749f123c1acca37e6ed2352cf2096a78237dc52eb2",
+    "runtime/config_help.py": "be4abac12b213860dc26ea74dfbbd745d1270ceb111f6e0925a382751e745f9f",
     "storage/schema.py": "174a775f57e7fe8c9eb39192fe1278fc89439595e43e486abd106ce1ef715616",
     "storage/sqlite.py": "e9d3203d14177408d5a792affeabf00c264de37ff1faa006d88979cb17dc594a",
     "storage/state_scope.py": "c34ab212acdc989579c3b69dee8a314fbf1fef29cfe6a24928c8c34ca67987d5",
