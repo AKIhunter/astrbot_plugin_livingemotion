@@ -420,7 +420,17 @@ try {
     await section(page, "settings");
     // 关系阶段编辑器对同一个原生数组提供多个输入；按键覆盖核对，不能按控件个数计数。
     const keys = await page.locator("#settings [data-key]").evaluateAll(fields => [...new Set(fields.map(field => field.dataset.key))].sort());
-    assert.deepEqual(keys, [...nativeDTO.config.fields, ...nativeDTO.config.readonly].map(field => field.key).sort());
+    // 提示词使用独立编辑器；若兼容样例保留旧作息键，页面仍须省略它。
+    const genericFields = [...nativeDTO.config.fields, ...nativeDTO.config.readonly]
+      .filter(field => field.section !== "prompt_injection" && field.key !== "night_schedule_enabled");
+    assert.deepEqual(keys, genericFields.map(field => field.key).sort());
+    assert.equal(await page.locator("#config-night_schedule_enabled").count(), 0);
+    await page.locator('[data-settings-jump="prompt_injection"]').click();
+    assert.equal(await page.locator("#config-character_prompt_enabled").count(), 1);
+    assert.equal(await page.locator("#config-character_preset").count(), 1);
+    assert.equal(await page.locator("#config-character-text").count(), 1);
+    assert.equal(await page.locator("#config-prompt_core_enabled").count(), 1);
+    assert.equal(await page.locator(".prompt-core summary").innerText(), "预置提示词");
     assert.equal(await page.locator("#config-energy_reply_cost").getAttribute("type"), "number");
     assert.equal(await page.locator("#config-energy_reply_cost").getAttribute("step"), "0.1");
     assert.equal(await page.locator("#config-energy_max").isDisabled(), true);

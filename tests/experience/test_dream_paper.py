@@ -234,7 +234,7 @@ class NightDouble(NightRuntime):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("outcome", ["confirmed", "unknown"])
 @pytest.mark.parametrize("guard", ["allowed", "owner_changed", "source_revoked",
-    "night_disabled", "wake_changed", "notify_disabled", "recipient_changed",
+    "sleep_disabled", "wake_changed", "notify_disabled", "recipient_changed",
     "manual", "nap", "muted", "observe"])
 async def test_night_owner_guard_dedupe_unknown_and_wake(le_store, le_context, outcome, guard):
     now = le_store.clock()
@@ -271,7 +271,7 @@ async def test_night_owner_guard_dedupe_unknown_and_wake(le_store, le_context, o
             async def revoked(*args): return False
             app.validate_context = revoked
         overrides = {
-            "night_disabled": {"night_enabled": False},
+            "sleep_disabled": {"allow_sleep": False},
             "notify_disabled": {"dream_owner_notify": False},
             "recipient_changed": {"dream_owner_qq": "87654321"},
             "muted": {"muted_scopes": context.scope_key},

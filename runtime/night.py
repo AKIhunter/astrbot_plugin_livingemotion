@@ -22,6 +22,7 @@ from ..domain.night import (
     finish_waking,
     life_policy,
     night_availability,
+    sleepless_state,
     start_life_reply,
     submit_life_reply,
     wake_night,
@@ -34,6 +35,10 @@ NIGHT_DISPLAY_ONLY = ContextVar("livingemotion_night_display_only", default=Fals
 
 
 class NightRuntime:
+    def _sleep_allowed(self):
+        # Legacy permissions migrate in Config; no hidden runtime switch.
+        return bool(self.config.allow_sleep)
+
     def _night_v2(self):
         return getattr(self.config, "night_policy_version", 1) == 2 and bool(self.config.timezone)
 
@@ -75,9 +80,16 @@ class NightRuntime:
 
     def _life_cycle(self, state, now):
         config = self.config
-        if not config.night_enabled or not config.night_schedule_enabled:
+        if not self._sleep_allowed() or not config.timezone:
             return None
         timeline = self.night_timeline(now, state=state)
+        # 已获准的补觉唤醒回复可跨自然起床完成。疲劳开始只扣精力，
+        # 到固定沉睡才接管旧周期，不能用新夜晚 ID 提前使在途回复过期。
+        if (state.cycle_id and (state.cycle_kind in ("nap", "manual", "recovery", "awake")
+                               or state.deep_sleep_at is None)
+                and not (timeline["deep"] <= now < timeline["wake"]
+                         or state.updated_at < timeline["wake"] <= now)):
+            return None
         if (state.wake_at is not None and state.wake_at > now and state.cycle_id
                 and not (state.cycle_kind in ("nap", "manual", "recovery")
                          and (timeline["deep"] <= now < timeline["wake"]
@@ -135,7 +147,7 @@ class NightRuntime:
         return SleepCycle(
             stable_key("recovery", now, config.timezone), "recovery", now,
             base.timestamp() + lie * 60,
-            deep.timestamp() if config.night_enabled and config.night_schedule_enabled else None,
+            deep.timestamp() if self._sleep_allowed() else None,
             base_wake=base.timestamp(), lie_in_minutes=lie,
         )
 
@@ -159,6 +171,10 @@ class NightRuntime:
         return tuple(windows)
 
     def _advance_life(self, state, now, runtime=None):
+        if not self._sleep_allowed():
+            if runtime is not None:
+                runtime.pop("manual_wake_until", None)
+            return advance_life(state, now=now, allow_sleep=False)
         manual_until = (runtime or {}).get("manual_wake_until", 0)
         cycle = self._life_cycle(state, now) if manual_until <= now else None
         if cycle is not None and cycle.wake <= manual_until:
@@ -168,7 +184,7 @@ class NightRuntime:
             state, now=now, cycle=cycle,
             fatigue_windows=self._fatigue_windows(state.updated_at, now),
             policy=life_policy(self.config),
-            allow_sleep=bool(self.config.allow_sleep and self.config.night_enabled),
+            allow_sleep=self._sleep_allowed(),
             recovery_cycle_factory=(None if manual_until > now
                                     else self._recovery_cycle),
         )
@@ -188,23 +204,27 @@ class NightRuntime:
             return result
         night = snapshot(await self.store.get_state(context, "night"), NightState,
                          updated_at=self.store.clock())
+        if not self._sleep_allowed():
+            return sleepless_state(night, now=self.store.clock())
         if night.policy_version == 2:
             return night
-        return advance_night(night, now=self.store.clock(), enabled=self.config.night_enabled)
+        return advance_night(night, now=self.store.clock(), enabled=self._sleep_allowed())
 
     async def night_display_snapshot(self, context):
         """页面只投影现有周期；自动刷新不能推进/写入睡眠状态。"""
         night = snapshot(await self.store.get_state(context, "night"), NightState,
                          updated_at=self.store.clock())
+        if not self._sleep_allowed():
+            return sleepless_state(night, now=self.store.clock())
         if self._night_v2():
             current, _ = advance_life(
                 night, now=self.store.clock(), policy=life_policy(self.config),
                 fatigue_windows=self._fatigue_windows(night.updated_at, self.store.clock()),
-                allow_sleep=bool(self.config.allow_sleep and self.config.night_enabled))
+                allow_sleep=self._sleep_allowed())
             return current
         if night.policy_version == 2:
             return night
-        return advance_night(night, now=self.store.clock(), enabled=self.config.night_enabled)
+        return advance_night(night, now=self.store.clock(), enabled=self._sleep_allowed())
 
     async def availability(self, context, *, exempt=False):
         if self.effective_mode(context) != "active" or context.scene_kind == SceneKind.PUBLIC_COMMENT:
@@ -214,7 +234,7 @@ class NightRuntime:
         except Exception:
             return Availability(False, ("state_unavailable",), block_chat=False)
         if self._night_v2() or state.policy_version == 2:
-            allowed = (not self.config.allow_sleep or not self.config.night_enabled
+            allowed = (not self._sleep_allowed()
                        or self._night_v2() and state.display_state in
                        (SleepState.AWAKE, SleepState.GROGGY, SleepState.DROWSY))
             # Exempt is not a chat-wake bypass for deep sleep; authenticated
@@ -224,12 +244,11 @@ class NightRuntime:
             return Availability(allowed, (reason,), not allowed)
         return night_availability(state, now=self.store.clock(),
                                   block_chat=self.config.night_block_chat, exempt=exempt,
-                                  enabled=self.config.night_enabled)
+                                  enabled=self._sleep_allowed())
 
     async def reply_started(self, context, reply_id, *, expected_generation=None):
         if not self._night_v2():
-            if (await self._pending_life_state(context) and self.config.allow_sleep
-                    and self.config.night_enabled):
+            if await self._pending_life_state(context) and self._sleep_allowed():
                 return {"allowed": False, "status": "rejected",
                         "reason_code": "night_timezone_required", "ticket": None}
             return {"allowed": True, "status": "accepted", "reason_code": "night_v1",
@@ -250,8 +269,7 @@ class NightRuntime:
     async def reply_submitted(self, context, reply_id, *, ticket=None):
         """First final result enters host output, NOT evidence of delivery."""
         if not self._night_v2():
-            if (await self._pending_life_state(context) and self.config.allow_sleep
-                    and self.config.night_enabled):
+            if await self._pending_life_state(context) and self._sleep_allowed():
                 return {"allowed": False, "status": "rejected",
                         "reason_code": "night_timezone_required"}
             return {"allowed": True, "status": "accepted", "reason_code": "night_v1"}
@@ -270,7 +288,7 @@ class NightRuntime:
                 and attempt["started_at"] < state.wake_at <= now
                 and attempt["cycle_id"] == state.cycle_id
             )
-            valid = (
+            valid = not self._sleep_allowed() or (
                 state.display_state != SleepState.DEEP_SLEEP
                 and (deadline is None or now < deadline)
                 and (not attempt["wake_session"]
@@ -281,7 +299,7 @@ class NightRuntime:
                 return state, changes, {"allowed": False, "reason_code": "reply_submission_expired"}
             state, charge = submit_life_reply(
                 state, now=now, policy=life_policy(self.config),
-                allow_sleep=bool(self.config.allow_sleep and self.config.night_enabled),
+                allow_sleep=self._sleep_allowed(),
                 pending_wake_replies=attempt.get("pending_wake_replies", 0),
             )
             return state, (*changes, *charge), {"allowed": True, "reason_code": "reply_submitted"}
@@ -335,7 +353,7 @@ class NightRuntime:
 
     def sleep_window(self, now):
         config = self.config
-        if not config.timezone or not config.night_schedule_enabled:
+        if not config.timezone or not self._sleep_allowed():
             return None
         tz = ZoneInfo(config.timezone)
         current = datetime.fromtimestamp(now, tz)
@@ -351,6 +369,8 @@ class NightRuntime:
     async def advance_scope(self, context, *, recovering=False, action=None):
         if context.scene_kind == SceneKind.PUBLIC_COMMENT or not self.config.enabled:
             return None
+        if action == "night.sleep" and not self._sleep_allowed():
+            return None
         if self._night_v2():
             if action and not await self.validate_context(context):
                 return None
@@ -359,6 +379,8 @@ class NightRuntime:
                 # 之前的实现会让手动叫醒后精力跳到满值，用户看到的就是"刷满"。
                 before_units = state.energy_units
                 state, changes = self._advance_life(state, now, runtime)
+                if not self._sleep_allowed():
+                    return state, changes, {"allowed": True, "reason_code": "sleep_disabled"}
                 if action == "night.wake":
                     manual_wake_until = (state.wake_at if state.wake_at is not None
                                          and state.wake_at > now
@@ -377,11 +399,10 @@ class NightRuntime:
                     runtime.pop("manual_wake_until", None)
                     cycle = self._recovery_cycle(state, now)
                     state = replace(state, wake_at=None)
-                    # 手动入睡必须真正进入睡眠：allow_sleep 是「自动作息是否影响聊天」
-                    # 的开关，不应阻断管理员的手动指令，否则按钮看起来完全没生效。
+                    # 手动入睡也须先获得睡眠总开关授权。
                     state, added = advance_life(state, now=now, cycle=cycle,
                                                policy=life_policy(self.config),
-                                               allow_sleep=True)
+                                               allow_sleep=self._sleep_allowed())
                     state = replace(state, display_state=SleepState.DEEP_SLEEP,
                                     phase=NightPhase.ASLEEP,
                                     sleep_started_at=state.sleep_started_at or now)
@@ -413,19 +434,19 @@ class NightRuntime:
             now = self.store.clock()
             record = await self.store.get_state(context, "night")
             night = snapshot(record, NightState, updated_at=now)
-            if night.policy_version == 2:
+            if night.policy_version == 2 and self._sleep_allowed():
                 # Keep absolute windows, energy units and attempts intact until
                 # the configured life policy can resume them.
                 return night
             runtime = dict(record.value.get("_runtime", {})) if record else {}
-            night = advance_night(night, now=now, enabled=self.config.night_enabled,
+            night = advance_night(night, now=now, enabled=self._sleep_allowed(),
                                   recovering=recovering)
             if action == "night.wake":
                 night = wake_night(night, now=now, reason="manual",
-                                   enabled=self.config.night_enabled)
+                                   enabled=self._sleep_allowed())
             elif action == "night.sleep":
                 night = begin_sleep(night, context, now=now, wake_at=now + 8 * 3600,
-                                    manual=True, enabled=self.config.night_enabled)
+                                    manual=True, enabled=self._sleep_allowed())
             elif not recovering and self.effective_mode(context) == "active":
                 window = self.sleep_window(now)
                 if window and runtime.get("schedule_key") != str(window[0]):
@@ -434,7 +455,7 @@ class NightRuntime:
                     pending = self._pending_replies.get(context.scope_key)
                     message_id = pending[0] if pending and pending[1] > now else None
                     night = begin_sleep(night, context, now=now, wake_at=window[1],
-                                        message_id=message_id, enabled=self.config.night_enabled)
+                                        message_id=message_id, enabled=self._sleep_allowed())
             rows = []
             watermark = await self.store.human_watermark(context)
             policy = CatchupPolicy(max_rows=min(200, self.config.window_per_scope))
@@ -453,7 +474,7 @@ class NightRuntime:
                 intent = catchup_intent(catchup["summary"], night, context,
                                         now=now, generation=generation)
             if night.phase == NightPhase.WAKING and not catchup["has_more"]:
-                night = finish_waking(night, now=now, enabled=self.config.night_enabled)
+                night = finish_waking(night, now=now, enabled=self._sleep_allowed())
             if self.closed or not self.config.enabled:
                 return None
             if action and not await self.validate_context(context, generation):
@@ -472,7 +493,7 @@ class NightRuntime:
         return None
 
     async def night_guard(self, context, original, *, identity_guard=None):
-        if self.effective_mode(context) != "active" or not self.config.night_enabled:
+        if self.effective_mode(context) != "active" or not self._sleep_allowed():
             return False
         record = await self.store.get_state(context, "night")
         if record is None:
@@ -485,12 +506,12 @@ class NightRuntime:
         if self._night_v2():
             current, _ = advance_life(
                 persisted, now=now, policy=life_policy(self.config),
-                allow_sleep=bool(self.config.allow_sleep and self.config.night_enabled),
+                allow_sleep=self._sleep_allowed(),
             )
         elif persisted.policy_version == 2:
             return False
         else:
-            current = advance_night(persisted, now=now, enabled=self.config.night_enabled)
+            current = advance_night(persisted, now=now, enabled=self._sleep_allowed())
         # 只复核「仍在同一段睡眠里且没到起床时间」；不再要求正好 REM。
         # 自动做梦的时长门槛由 ExperienceService 按 dream_start_after_minutes 判定。
         return (current.phase == NightPhase.ASLEEP
@@ -515,7 +536,7 @@ class NightRuntime:
             if record.value.get("policy_version") == 2:
                 return False
             night = apply_reply_receipt(snapshot(record, NightState), receipt,
-                                        now=self.store.clock(), enabled=self.config.night_enabled)
+                                        now=self.store.clock(), enabled=self._sleep_allowed())
             result = await self.store.write_states(context, generation, (
                 StateWrite("night", {**record.value, **to_dict(night)}, record.version,
                            owner=record.owner),
@@ -680,7 +701,7 @@ class NightRuntime:
     async def maybe_dream_wake(self, context):
         """Explicit owner consent; no synthetic QQ route, private body or model send."""
         if (not self.config.dream_owner_notify or not self.config.dream_owner_qq
-                or not self.config.night_enabled or not self.config.allow_sleep
+                or not self._sleep_allowed()
                 or context.scene_kind != SceneKind.PRIVATE or context.platform.lower() != "qq"
                 or context.account_id != self.config.dream_owner_qq):
             return
@@ -699,7 +720,7 @@ class NightRuntime:
             async def authorized(target, gen, rev):
                 now = self.store.clock()
                 if (self.closed or not self.config.enabled or not self.config.dream_owner_notify
-                        or not self.config.night_enabled or not self.config.allow_sleep
+                        or not self._sleep_allowed()
                         or self.revision != rev or self.effective_mode(target) != "active"
                         or target.account_id != self.config.dream_owner_qq
                         or target.scope_key in self.config.muted_scopes.split()

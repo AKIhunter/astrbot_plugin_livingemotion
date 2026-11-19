@@ -1,5 +1,8 @@
 # T3 情绪与关系领域交接
 
+> 历史阶段记录。当前算法见[技术说明](technical-guide.md)与[原理示例](principles-examples.md)；
+> 下文默认值与验收数字仅适用于当时阶段。
+
 负责人：`/root/emotion_domain`。仅独立新写 `domain/emotion.py`、
 `domain/relationship.py` 及对应测试；未修改共享类型、存储、入口、API 或规格复选框。
 领域模块由本插件实现，没有 AstrBot 或长期记忆运行时依赖。

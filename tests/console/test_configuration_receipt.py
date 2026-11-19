@@ -81,6 +81,25 @@ async def test_configuration_read_has_no_full_state_and_validates_scope(le_store
         await app.console_configuration(persona_id=le_context.persona_id, view_scope="invalid")
 
 
+async def test_editing_schedule_never_grants_sleep_permission(le_store, le_context):
+    app = SaveConsole(le_store, le_context)
+    app.config = replace(app.config, allow_sleep=False)
+    app.native_config.update(to_dict(app.config))
+    result = await app.update_config(
+        {"timezone": "UTC", "wake_at": "09:00", "nap_enabled": True},
+        expected_revision=app.config_revision, reason="", actor_id="synthetic-admin",
+        receipt="config",
+    )
+    assert result["config"]["values"]["allow_sleep"] is False
+    assert app.native_config.saved["allow_sleep"] is False
+    assert "night_schedule_enabled" not in result["config"]["values"]
+    with pytest.raises(ApplicationError) as caught:
+        await app.update_config(
+            {"night_schedule_enabled": True}, expected_revision=app.config_revision,
+            reason="", actor_id="synthetic-admin", receipt="config")
+    assert caught.value.code == "validation_error"
+
+
 @pytest.mark.parametrize("value", ['[]', '["","",""]', '["","","",1]', '["\\u0000","","",""]',
                                  json.dumps(["x" * 1001, "", "", ""])])
 def test_description_limits(value):

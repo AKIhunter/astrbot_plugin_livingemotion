@@ -113,6 +113,8 @@ def advance_night(
     enabled: bool = True, recovering: bool = False,
 ) -> NightState:
     """Settle elapsed time once; recovery never replays missed actions."""
+    if not enabled:
+        return sleepless_state(state, now=now)
     _validate(state, now)
     effective = max(state.updated_at, now)
     rollback = now < state.updated_at
@@ -140,9 +142,7 @@ def advance_night(
             state.energy, effective - state.updated_at, -policy.awake_cost_per_hour
         ))
 
-    if not enabled:
-        result = _awake(result, "night_disabled", policy, force=True)
-    elif result.phase == NightPhase.SETTLING and effective >= result.transition_deadline:
+    if result.phase == NightPhase.SETTLING and effective >= result.transition_deadline:
         result = _awake(result, "settling_timeout", policy)
     elif result.phase == NightPhase.WAKING and effective >= result.transition_deadline:
         result = _awake(result, "waking_timeout", policy)
@@ -445,6 +445,35 @@ def _clear_wake(state):
                    first_reply_submitted_at=None, wake_window_deadline=None)
 
 
+def sleepless_state(state, *, now):
+    """Closed sleep permission is always awake at 100%, including old records."""
+    finite(now, "now", 0)
+    effective = max(now, state.updated_at)
+    return replace(
+        _clear_wake(state), energy=100.0,
+        energy_units=1000 if state.policy_version == 2 else None,
+        energy_remainder=0, energy_direction="", phase=NightPhase.AWAKE,
+        display_state=SleepState.AWAKE if state.policy_version == 2 else None,
+        sleep_started_at=None, wake_at=None, transition_deadline=None,
+        sleep_stage=None, awaiting_reply_id=None, cycle_id=None, cycle_kind=None,
+        cycle_started_at=None, drowsy_at=None, deep_sleep_at=None, base_wake_at=None,
+        lie_in_minutes=None, quiet_since=effective, updated_at=effective,
+        reason_codes=("sleep_disabled",),
+    )
+
+
+def disable_life_sleep(state, *, now):
+    # Older partial v2 records may lack units; config events still need integers.
+    before = state.energy_units if state.energy_units is not None else int(round(state.energy * 10))
+    result = sleepless_state(state, now=now)
+    changes = () if (before == 1000 and state.phase == NightPhase.AWAKE
+                     and state.display_state == SleepState.AWAKE) else ({
+        "occurred_at": result.updated_at, "category": "config",
+        "before_units": before, "after_units": 1000, "reason_code": "sleep_disabled",
+    },)
+    return result, changes
+
+
 def finish_life_wake(state, *, now):
     """Conversation completion must not silently re-enter its old nap."""
     state = replace(_clear_wake(state), cycle_kind="awake", quiet_since=now)
@@ -481,6 +510,8 @@ def advance_life(state, *, now, cycle=None, fatigue_windows=(), policy=LifePolic
     """Settle all rate boundaries once. Returns state and body-free event deltas."""
     finite(now, "now", 0)
     state = life_state(state)
+    if not allow_sleep:
+        return disable_life_sleep(state, now=now)
     if now < state.updated_at:
         return replace(state, reason_codes=("clock_rollback",)), ()
     changes = []
@@ -691,6 +722,8 @@ def start_life_reply(state, *, now=None, policy=LifePolicy()):
 
 def submit_life_reply(state, *, now, policy=LifePolicy(), allow_sleep=True,
                       pending_wake_replies=0):
+    if not allow_sleep:
+        return disable_life_sleep(life_state(state), now=now)
     before = state.energy_units
     after = max(0, before - policy.reply_cost_units)
     state = replace(state, energy=after / 10, energy_units=after,

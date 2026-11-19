@@ -1,5 +1,8 @@
 # T1 冻结接口 v1
 
+> 历史冻结类型参考。当前签名、能力、场景与管理DTO以源码、
+> [技术说明](technical-guide.md)和[API](api.md)为准。
+
 共享类型唯一入口：`astrbot_plugin_livingemotion.contracts`。同插件内使用
 `from ..contracts import ...`（根模块使用 `.contracts`）。无 AstrBot 依赖。
 

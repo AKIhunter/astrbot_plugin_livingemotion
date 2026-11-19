@@ -1,7 +1,8 @@
 import { t, locale, controlled, resource } from "./i18n.mjs?v=eff0d6f932b0";
 import { object, list, text, fieldValue, stageNames, DEFAULT_STAGE_NAMES } from "./model.mjs?v=eff0d6f932b0";
-import { fieldHelp, localizedFieldLabel } from "./config-resources.mjs?v=eff0d6f932b0";
+import { fieldHelp, localizedFieldLabel } from "./config-resources.mjs?v=sleep-master-20261119";
 import { node, button } from "./dom.mjs?v=eff0d6f932b0";
+import { renderPromptInjection, syncPromptInjection } from "./prompt-injection.mjs?v=sleep-master-20261119";
 const labels = resource({
   relationship_special_description: t("独特关系说明"),
   relationship_stage_names: t("关系阶段自定义名称"), enabled: t("启用 livingEmotion"), mode: t("工作模式"), persona_mode: t("人格解析方式"), persona_id: t("原生人格"),
@@ -58,7 +59,7 @@ const quickKeys = new Set(["enabled", "mode", "persona_id", "timezone", "night_t
   "residence_city", "home_city", "memory_mode", "use_livingmemory", "night_enabled", "sleep_enabled"]);
 const advancedPattern = /budget|limit|threshold|concurrency|timeout|cooldown|retention|ttl|maximum|max_records|read|export|write|lead|backoff/;
 const legacyKeys = new Set(["night_enabled", "night_block_chat", "sleep_at", "memory_mode",
-  "memory_export", "night_policy_version", "autonomy_scopes"]);
+  "memory_export", "night_policy_version", "autonomy_scopes", "night_schedule_enabled"]);
 function orderedFields(fields) {
   const result = [], used = new Set();
   function add(field) {
@@ -371,6 +372,11 @@ export function renderSettings(root, state, options, updateControls, description
     section.inert = section.hidden;
     section.setAttribute("aria-hidden", String(section.hidden));
     const heading = node("h2", title); heading.tabIndex = -1; section.append(heading);
+    if (group === "prompt_injection") {
+      renderPromptInjection(section, state, updateControls);
+      builtSections.push(section);
+      continue;
+    }
     if (group === "coupling") renderCouplingStatus(section, state);
     // 「长夜」原来 27 个字段平铺，作息/唤醒/精力/补课/晚安混在一起看不清边界。
     // 后端给了每个字段的 subsection，这里按它拆成小卡片；其它分组保持原样。
@@ -729,6 +735,7 @@ function mountRelationshipEditor(root, state) {
 }
 
 export function syncSettingsValues(root, state) {
+  syncPromptInjection(root);
   // 后台更新只同步未编辑字段，保留原 DOM、焦点、无效输入、折叠和滚动位置。
   for (const field of state.data.config.fields) {
     const input = root.querySelector(`#config-${field.key}`);

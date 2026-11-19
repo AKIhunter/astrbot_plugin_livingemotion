@@ -96,13 +96,28 @@ jobs:
           options = tomllib.loads((root / "pyproject.toml").read_text())["tool"]["pytest"]["ini_options"]
           assert "performance_f6.py" in options["python_files"]
           docs = [root / name for name in (
-              "README.md", "CHANGELOG.md", "THIRD_PARTY_NOTICES.md",
+              "README.md", "README.en.md", "CHANGELOG.md", "THIRD_PARTY_NOTICES.md",
+              "docs/README.md", "docs/user-guide.md", "docs/config-reference.md",
+              "docs/technical-guide.md", "docs/principles-examples.md",
+              "docs/troubleshooting.md", "docs/plugin-manual.md",
               "docs/architecture.md", "docs/api.md", "docs/compatibility.md",
               "docs/installation.md", "docs/delivery-notes.md", "docs/memory.md", "docs/local-runtime.md",
               "docs/life-console.md", "docs/internal-state-contract.md",
               "docs/internal-console-contract.md", "docs/internal-memory-contract.md",
               "docs/internal-reply-contract.md", "docs/ui.md",
           )]
+          switches = {key for key, field in schema.items() if field["type"] == "bool"}
+          user_guide = (root / "docs/user-guide.md").read_text()
+          reference = (root / "docs/config-reference.md").read_text()
+          for key in switches:
+              assert f"`{key}`" in user_guide, f"Missing switch documentation: {key}"
+          for key in set(schema) - switches:
+              assert f"`{key}`" in reference, f"Missing parameter documentation: {key}"
+          version = metadata["version"]
+          assert f"v{version}" in (root / "pages/livingemotion/index.html").read_text()
+          for name in ("README.md", "README.en.md"):
+              assert f"version-{version}-" in (root / name).read_text(), name
+          assert f"## {version}" in (root / "CHANGELOG.md").read_text()
           links = 0
           for path in docs:
               text = path.read_text()

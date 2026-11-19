@@ -9,9 +9,9 @@ desc: >-
 help: >-
   第一次使用：打开插件页面 livingemotion → 设置 → 快速开始，选择人格并保存。
   情绪强度先选平常，规则情绪不用模型；主动聊天、日记和梦境按需开启。
-  安装、保存生效和常见问题见 docs/plugin-manual.md；le_wake 仅管理员手动叫醒。
+  功能开关见 docs/user-guide.md，配置、技术、原理示例与排障分别见 docs/README.md；le_wake 仅管理员手动叫醒。
   开发者：GitHub AKIhunter；配置、流程图和迁移入口见 README。
-version: 0.4.2
+version: 0.4.3
 author: AKIhunter
 # Public repository; commits and CI are recorded in GitHub.
 repo: https://github.com/AKIhunter/astrbot_plugin_livingemotion

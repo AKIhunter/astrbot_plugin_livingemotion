@@ -1,5 +1,8 @@
 # T5 长夜与醒后补课交接
 
+> 本页保留早期v1规则及阶段验收。当前0.4.3睡眠总许可与v2精力规则见
+> [使用手册](user-guide.md)和[睡眠规则](sleep-energy-rules.md)；关闭许可锁满100%适用于所有路径。
+
 新版五档作息、固定精度精力、唤醒点数、首次提交起算的窗口与回复轮数，
 见 [生活控制台](life-console.md#长夜计算)、[状态接入契约](internal-state-contract.md)
 及 [2026-11-16 睡眠与精力规则](sleep-energy-rules.md)。

@@ -32,8 +32,7 @@ behavior_daily_limit|Daily attempt quota across all conversations. Failed and un
 behavior_scope_daily_limit|Daily attempt quota per actual conversation, in addition to the overall limit.|実際の会話ごとの 1 日の試行上限です。全体上限と同時に適用します。
 behavior_cooldown_seconds|Cooldown in seconds after a proactive attempt. Random wait also applies.|自発試行後の待機時間（秒）です。ランダム待機も同時に適用します。
 behavior_unanswered_limit|Stop after this many unanswered attempts. Unknown sends count conservatively.|連続未応答がこの回数に達すると停止します。送信結果不明も保守的に加算します。
-night_schedule_enabled|Maintain sleep cycles automatically. Requires a valid timezone; permission to sleep is a separate setting.|睡眠周期を自動管理します。有効なタイムゾーンが必要で、睡眠の許可は別設定です。
-allow_sleep|Allow sleep to affect chat availability. When off, energy can still be recorded.|睡眠による返信可否への影響を許可します。無効でも活力は記録できます。
+allow_sleep|Master permission for sleep and automatic schedules. Configure timezone and night/nap times under Night. When off, TA stays awake at 100% energy, with no sleep, recovery naps or bedtime goodbye. Manual sleep requires this permission too.|睡眠と自動生活リズムの総合スイッチです。「長夜」でタイムゾーン・夜間・昼寝を設定します。無効時は常に覚醒・活力100%となり、睡眠・補眠・就寝の挨拶を行いません。手動睡眠にも許可が必要です。
 nap_enabled|Enable the nap interval. Chat blocking still depends on permission to sleep.|昼寝時間帯を有効にします。返信停止には睡眠の許可も必要です。
 nap_start|Local nap start in HH:MM, such as 13:00. Must differ from nap end.|昼寝開始を現地 HH:MM で入力します。例 13:00。終了とは異なる時刻にします。
 nap_end|Local nap end in HH:MM, such as 14:30. Energy and sleep rules still apply.|昼寝終了を現地 HH:MM で入力します。例 14:30。活力と睡眠規則も適用します。
@@ -123,8 +122,7 @@ behavior_daily_limit|6 permits at most six attempts across all conversations per
 behavior_scope_daily_limit|Total 6 and per-conversation 2 permits at most two attempts for one friend.|全体 6、会話別 2 なら 1 人の相手には最大 2 回です。
 behavior_cooldown_seconds|7200 means a cooldown of at least two hours.|7200 は最低 2 時間の待機です。
 behavior_unanswered_limit|2 pauses after two consecutive unanswered attempts.|2 は連続 2 回未応答でいったん停止します。
-night_schedule_enabled|Use night start 23:30, deep sleep 02:30 and base wake 08:00.|夜間開始 23:30、深い眠り 02:30、基本起床 08:00 を指定します。
-allow_sleep|Disable if normal chat should remain available overnight.|夜間も通常の返信を続けたい場合は無効にします。
+allow_sleep|Disable to stay awake at 100% energy; enable for energy and schedule based sleep.|常に覚醒・活力100%にするには無効に、活力と時刻に従って休むには有効にします。
 nap_enabled|Enable and set 13:00–14:30 for an afternoon nap.|有効にし、13:00～14:30 の昼寝時間を設定します。
 nap_start|13:00 starts the nap at one in the afternoon.|13:00 は午後 1 時に昼寝を開始します。
 nap_end|14:30 ends the nap at half past two.|14:30 は午後 2 時半に昼寝を終了します。

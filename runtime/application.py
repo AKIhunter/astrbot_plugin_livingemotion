@@ -170,6 +170,8 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         for context in reversed(await self.store.list_contexts()):
             self._contexts[context.account_key] = context
             await self.initialize_state_scope(context)
+        if not self._sleep_allowed():
+            await self.store.reset_sleep_permission(self.instance_id)
         self.catchup_archive = CatchupArchive(self.store)
         await self.catchup_archive.open()
         await self._build_services()
@@ -1727,7 +1729,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         await self.maybe_close_conversation(context, merge_event=event)
 
     async def _closing_due(self, context, *, active_reply=False):
-        if (not self.config.closing_enabled or not self.config.timezone
+        if (not self.config.closing_enabled or not self._sleep_allowed() or not self.config.timezone
                 or self.effective_mode(context) != "active"):
             return None
         now = self.store.clock()
@@ -1943,6 +1945,8 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         if previous.persona_shared_state != updated.persona_shared_state:
             await self._switch_state_modes(previous, updated)
         self.store.config = updated
+        if not self._sleep_allowed() or not previous.allow_sleep:
+            await self.store.reset_sleep_permission(self.instance_id)
         self.runtime = BackgroundRuntime(self.store, updated)
         self.lifecycle.runtime = self.runtime
         self.api._runtime, self.api._config = self.runtime, updated

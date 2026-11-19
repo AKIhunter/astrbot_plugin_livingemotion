@@ -1,5 +1,10 @@
 # 承诺任务：识别、兑现与取消
 
+> 0.4.3当前配置口径：promise_enabled关闭既不新建也不兑现，已有记录保留；
+> 扫描默认15秒。promise_max_active/max_depth/advance_limit为未接入执行的旧参数，
+> 当前服务提前上限固定3次，登记不按max_active限额，承诺不占随机主动额度。
+> 下文涉及旧上限/共用配额的历史描述，以[当前配置参考](config-reference.md#承诺)为准。
+
 > 适用版本 0.3.0 及以上。默认开启（`promise_enabled=true`）。
 >
 > 本文只讲 **Bot 自己应下的** 这一类。用户明确要求"提醒我/每天几点叫我"

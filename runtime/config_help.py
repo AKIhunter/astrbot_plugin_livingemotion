@@ -47,8 +47,7 @@ CONFIG_HELP = {
     "behavior_scope_daily_limit": ("一个真实会话每天的主动尝试额度。", "与总额度同时生效；到达任一上限就停止当日尝试。", "总额度6、每个会话2，单个好友当天最多2次。"),
     "behavior_cooldown_seconds": ("同一会话主动尝试后的冷却时间。", "单位秒；和随机等待共同约束，不会因为新话题立即绕过冷却。", "7200表示至少冷却2小时。"),
     "behavior_unanswered_limit": ("连续未获回应后停止主动的次数。", "已确认或结果未知的发送都会保守计入；对方回复后才可能重新获得机会。", "填2，连续两次没有回应就先停下来。"),
-    "night_schedule_enabled": ("自动按作息维护睡眠周期。", "启用前填写时区；自动作息与允许睡眠分别控制时间记录和聊天阻断。旧配置保持原行为，直至完成新规则迁移。", "时区Asia/Shanghai，夜间23:30、沉睡02:30、基础起床08:00。"),
-    "allow_sleep": ("允许睡眠状态影响聊天可用性。", "关闭后继续记录精力，但不因睡眠阻断聊天；开启时还需自动作息和相应规则生效。", "希望夜里仍随时回复：关闭；希望有真实作息：开启。"),
+    "allow_sleep": ("睡眠与自动作息总开关。", "开启后在「长夜 / 自动作息」设置时区、夜间与午休；关闭立即清醒，精力始终100%，不自动睡眠、补觉或发送睡前晚安，手动入睡也须先开启。", "希望始终精力充沛：关闭；希望按精力与作息休息：开启。"),
     "nap_enabled": ("启用午休时间段。", "与午休开始和结束配合；允许睡眠关闭时仍不阻断聊天。", "开启并设置13:00至14:30。"),
     "nap_start": ("午休的开始时间。", "本地24小时HH:MM；必须与午休结束不同，支持跨午夜但一般使用白天。", "13:00表示下午一点开始午休。"),
     "nap_end": ("午休的结束时间。", "与午休开始配对，实际可用性还受精力和其他作息状态影响。", "14:30表示下午两点半结束午休。"),
@@ -64,18 +63,18 @@ CONFIG_HELP = {
     "energy_reply_cost": ("每次宿主提交回复消耗的精力点数。", "总精力固定100；数值0–100，步进0.1；同一回复只记一次，提交不代表送达。", "2.0表示一次最终回复提交消耗2点。"),
     "energy_fatigue_per_minute": ("夜间疲劳时段未睡眠时每分钟消耗精力。", "数值0–100，步进0.1；小憩和沉睡只恢复，白天未睡眠是否回血由“白天自动恢复精力”控制。", "0.5表示夜间未睡眠持续10分钟消耗5点。"),
     "energy_recovery_per_minute": ("睡眠恢复速度，也用于开启后的白天自动恢复。", "数值0–100，步进0.1；默认只在小憩、沉睡时恢复。在本区开启“白天自动恢复精力”后，非疲劳时段未睡眠也使用此速度；固定沉睡结束恢复100%。", "1.0表示10分钟恢复10点，上限100。"),
-    "promise_enabled": ("允许把对话里答应的事记成待办承诺。",
-     "开启后，模型说过的承诺会落成可追踪条目，按轮次推进状态；关闭则完全不记，也不追问。",
-     "开启：答应的事会被记住并在后续对话里推进；关闭：只当普通聊天，不留承诺。"),
-    "promise_max_active": ("同时追踪的承诺条数上限。",
-     "范围1–20；超出后先丢弃最旧的低优先级条目，不会无限堆积。",
-     "填3表示同时最多跟3件答应过的事。"),
-    "promise_max_depth": ("单条承诺允许推进的层数上限。",
-     "范围1–10；防止一条承诺被反复拆解成子任务而无限展开。",
-     "填3表示最多拆三层。"),
-    "promise_advance_limit": ("一轮对话里最多推进几条承诺。",
-     "范围1–10；避免一次回复里连珠炮似地追问一堆事。",
-     "填3表示每轮最多推进3条。"),
+    "promise_enabled": ("允许登记和兑现明确延后的承诺。",
+     "开启后到「设置 → 承诺」调整上限与扫描间隔；关闭既不新建也不兑现，已有任务记录保留。",
+     "即时能做的事当场做；明确答应稍后再做才记成待办。"),
+    "promise_max_active": ("旧承诺上限字段，当前未接入执行。",
+     "可保存配置，但当前服务不读取这个数值，不能据此限制新建条数。",
+     "不要把默认3理解为实际最多三条。"),
+    "promise_max_depth": ("旧承诺深度字段，当前未接入执行。",
+     "可保存配置，但当前服务不读取这个数值，不能据此保证拆分层数。",
+     "实际任务以承诺记录和状态为准。"),
+    "promise_advance_limit": ("旧提前次数字段，当前未接入执行。",
+     "可保存配置，但当前服务使用固定3次提前上限，不读取这个数值。",
+     "不控制每轮回复推进数量。"),
     "promise_tick_seconds": ("后台检查到期承诺的间隔。",
      "单位秒，范围15–600；到点会单独发消息，不并入下一轮回复。",
      "填15表示每15秒检查一次，2分钟的承诺通常几秒内发出。"),
@@ -252,14 +251,14 @@ def field_parent(name):
     if name.startswith("coupling_"):
         return "", 0
     if name in ("enabled", "mode", "timezone", "provider_id", "home_city",
-                "persona_mode", "autonomy_enabled", "promise_enabled", "night_schedule_enabled",
+                "persona_mode", "autonomy_enabled", "promise_enabled", "allow_sleep",
                 "diary_enabled", "dream_enabled", "livingmemory_enabled",
                 "emotion_model_enabled"):
         return "", 0
     if name.startswith("promise_"):
         return "promise_enabled", 1
     if name in ("nap_enabled", "catchup_enabled", "closing_enabled"):
-        return "night_schedule_enabled", 1
+        return "allow_sleep", 1
     for prefixes, parent in (
         (("behavior", "autonomy_qq", "group_autonomy", "proactive", "dnd", "active", "muted"), "autonomy_enabled"),
         (("diary",), "diary_enabled"), (("dream",), "dream_enabled"),
@@ -267,8 +266,8 @@ def field_parent(name):
         (("persona",), "persona_mode"),
         (("nap_",), "nap_enabled"), (("catchup_",), "catchup_enabled"),
         (("closing_",), "closing_enabled"),
-        (("allow_sleep", "nap_enabled", "fatigue", "deep_sleep", "wake", "lie_in",
-          "energy", "catchup_enabled", "closing_enabled"), "night_schedule_enabled"),
+        (("nap_enabled", "fatigue", "deep_sleep", "wake", "lie_in",
+          "energy", "catchup_enabled", "closing_enabled"), "allow_sleep"),
     ):
         if name.startswith(prefixes):
             return parent, 2 if parent in ("nap_enabled", "catchup_enabled", "closing_enabled") else 1

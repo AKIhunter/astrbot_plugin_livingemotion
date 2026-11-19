@@ -325,14 +325,14 @@ async def test_manual_wake_during_lie_in_stays_awake_until_actual_wake(sleep_app
     assert (await app.night_snapshot(context)).energy == 40
 
 
-async def test_sleep_disabled_never_recovers_or_draws_supplement_deadline(sleep_app):
+async def test_sleep_disabled_locks_full_without_drawing_supplement_deadline(sleep_app):
     app, _, clock, context = sleep_app
     app.config = replace(app.config, allow_sleep=False)
     await set_energy(app, context, 15)
     draws = app.draw_count
     clock[0] += 7200
     state = await app.night_snapshot(context)
-    assert state.energy == 15 and state.display_state.value == "groggy"
+    assert state.energy == 100 and state.display_state.value == "awake"
     assert app.draw_count == draws
     assert (await app.availability(context)).available
 
