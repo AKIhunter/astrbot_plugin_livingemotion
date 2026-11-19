@@ -247,9 +247,12 @@ class PromiseStore:
         pid = stable_key("image-followup", context.scope_key, request_id)
         payload = json.dumps({**failure, "source_context": to_dict(context)}, ensure_ascii=False)
         notice = "sent" if failure.get("adjustment_asked") is True else ""
-        ready = failure["kind"] == "rate_limited" and not failure.get("use_reference")
+        ready = not failure.get("use_reference") and (
+            failure["kind"] == "rate_limited" or failure.get("auto_prompt_retry") is True
+            and failure["kind"] in {"content_rejected", "prompt_too_long"})
         status, action = ("scheduled", "retry_ready") if ready else ("waiting", "held")
-        bucket = "等待重试" if ready else "等待调整" if failure["kind"] == "content_rejected" else "等待核对"
+        bucket = "等待重试" if ready else "等待调整" if failure["kind"] in {
+            "content_rejected", "prompt_too_long", "prompt_adjustment_required"} else "等待核对"
         description = "生图：" + failure["prompt"][:490]
 
         def write(db):
@@ -264,7 +267,8 @@ class PromiseStore:
                         db.execute(
                             """UPDATE promises SET adjustment_notice_state='sent'
                                WHERE promise_id=? AND status='waiting'
-                               AND last_error='content_rejected'""", (row["promise_id"],))
+                               AND last_error IN ('content_rejected','prompt_too_long',
+                                                  'prompt_adjustment_required')""", (row["promise_id"],))
                     return {"status": "duplicate", "promise_id": row["promise_id"],
                             "task_status": row["status"]}
                 # 原回复已经登记过图片承诺时，复用唯一尚未执行的那条；不抢宿主/执行中任务。
@@ -336,13 +340,17 @@ class PromiseStore:
                 if row["status"] != "waiting":
                     return {"status": "conflict"}
                 failure = json.loads(row["action_result_json"])
-                if (failure.get("kind") != "content_rejected" or failure.get("use_reference")
+                if (failure.get("kind") not in {
+                        "content_rejected", "prompt_too_long", "prompt_adjustment_required"} or failure.get("use_reference")
                         or not source_event_id or not is_adjustment(prompt)
                         or source_event_id == row["source_event_id"]
                         or normalize(prompt) == normalize(failure["prompt"])):
                     return {"status": "rejected", "reason": "adjustment_required"}
                 failure.update(prompt=prompt, kind="adjusted_request", reason="用户已调整画面需求",
-                               adjustment_round=int(failure.get("adjustment_round") or 0) + 1)
+                               adjustment_round=int(failure.get("adjustment_round") or 0) + 1,
+                               original_prompt=prompt, attempted_prompt=prompt, prompt_retry_count=0)
+                failure.pop("prompt_repair", None)
+                failure.pop("notice", None)
                 description = "生图：" + prompt[:490]
                 db.execute(
                     """UPDATE promises SET status='scheduled',action_state='retry_ready',
@@ -613,11 +621,11 @@ class PromiseStore:
         def write(db):
             changed = db.execute(
                 """UPDATE promises SET status='waiting',bucket='等待调整',
-                   last_error='content_rejected',action_state='held',action_result_json=?,
+                   last_error=?,action_state='held',action_result_json=?,
                    handoff_key=?,handoff_account_key=?,adjustment_notice_state=?,
                    adjustment_notice_attempt=0,adjustment_notice_retry_at=0,updated_at=?
                    WHERE promise_id=? AND scope_key=? AND status='running'""",
-                (payload, request_id, context.account_key,
+                (str(failure.get("kind") or "content_rejected"), payload, request_id, context.account_key,
                  "sent" if failure.get("adjustment_asked") is True else "",
                  self.store.clock(), promise_id, context.scope_key))
             return changed.rowcount == 1
@@ -629,7 +637,7 @@ class PromiseStore:
         def read(db):
             rows = db.execute(
                 """SELECT * FROM promises WHERE status='waiting' AND action_state='held'
-                   AND last_error='content_rejected'
+                   AND last_error IN ('content_rejected','prompt_too_long','prompt_adjustment_required')
                    AND adjustment_notice_state IN ('','rejected')
                    AND adjustment_notice_attempt<3 AND adjustment_notice_retry_at<=?
                    ORDER BY updated_at,promise_id LIMIT ?""",
@@ -649,7 +657,8 @@ class PromiseStore:
                         or row["handoff_account_key"] not in ("", context.account_key)
                         or row["generation"] != self.store._generation(db, context)
                         or row["status"] != "waiting" or row["action_state"] != "held"
-                        or row["last_error"] != "content_rejected"
+                        or row["last_error"] not in {"content_rejected", "prompt_too_long",
+                                                    "prompt_adjustment_required"}
                         or row["adjustment_notice_state"] not in ("", "rejected")
                         or row["adjustment_notice_attempt"] >= 3
                         or row["adjustment_notice_retry_at"] > now):
@@ -721,7 +730,8 @@ class PromiseStore:
                                     or row["handoff_account_key"] not in ("", context.account_key)):
                         return {"status": "conflict"}
                     known_failure = (row["status"] == "waiting" and row["last_error"] in {
-                        "content_rejected", "provider_error", "rate_limited", "quota_exhausted"})
+                        "content_rejected", "provider_error", "rate_limited", "quota_exhausted",
+                        "prompt_too_long", "prompt_adjustment_required"})
                     if row["status"] not in ("scheduled", "awaiting") and not known_failure:
                         return {"status": "conflict"}
                 for pid in ids:

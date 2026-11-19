@@ -3,7 +3,7 @@
 ![livingEmotion 原创 LE 字标与四维状态线](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-%E2%89%A54.29.1-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.4.2-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.0-3a8060)](CHANGELOG.md)
 
 **简体中文** · [English](README.en.md)
 
@@ -83,6 +83,11 @@ LivingEmotion 给你的 AstrBot 角色增加持续变化的心情、人物关系
 发出来，不会先记一条“待办”；只有「晚点」「稍后」「六点过」「10分钟后」这类
 明确延后才会落标记、到点兑现。判断口径见
 [承诺任务：识别、兑现与取消](docs/promise.md)。
+
+配套 **LivingHello 2.8.0** 后，明确生图内容拒绝或描述超长可为同一图片承诺最多调整两次
+等义用词，使用 LE 自己的收尾模型。成功用词由 LH 按实际生图模型记录并复用；
+需要改变画面或次数耗尽时等待你调整或取消，生成和投递未知不补发。
+在 LH 生图页设置调整次数和学习开关，LE 需开启承诺兑现。[用法与恢复](docs/image-prompt-retry.md)。
 
 ### 🔄 它是怎么发生的
 
@@ -322,15 +327,16 @@ tests/ui/node_modules/.bin/playwright install chromium
 npm --prefix tests/ui run test:browser
 ```
 
-普通 pytest 只运行可移植层；真实宿主、console ASGI 和原生 Provider payload
+普通 pytest 只运行可移植层；双插件生图矩阵、真实宿主、console ASGI 和原生 Provider payload
 须[显式运行](docs/delivery-notes.md#检查分层)，不通过 skip 冒充通过。
 浏览器命令会更新合成证据，不应覆盖其他验收者正在使用的产物。
 
 ## 📦 更新日志与来源
 
-当前版本 **0.4.2**：提供可编辑预置提示词，修复消息提交布尔契约、承诺重试与并发状态边界；
-独立 LLM 挂钩和原图片调整流程保留。[使用与升级说明](docs/stability-0.4.2.md)；
-完整变化见 [CHANGELOG.md](CHANGELOG.md)。完整共享提示词衔接需 **LivingHello 2.7.11**。
+当前版本 **0.5.0**：为同一图片承诺提供有限等义用词调整，保留原文、尝试计数和准备候选，
+失败后仍可由用户调整或取消；补齐承诺取消与名额限制。配套 **LivingHello 2.8.0**。
+已有 SQLite 原记录保留。[使用与恢复说明](docs/image-prompt-retry.md)；
+完整变化见 [CHANGELOG.md](CHANGELOG.md)。
 
 版本与更新见 [metadata.yaml](metadata.yaml)、[CHANGELOG.md](CHANGELOG.md)。
 情绪、关系、作息、补课和额度由本插件实现。
@@ -343,6 +349,6 @@ Logo/Banner 为原创几何 LE 与 livingEmotion 字标，仅参考极简留白�
 
 **🎯 Emotion 先活起来，话才说得像真的。**
 
-## 0.4.2 更新日志
+## 0.5.0 更新日志
 
-预置与边界修复的用法见[本版说明](docs/stability-0.4.2.md)，变化见[更新日志](CHANGELOG.md)。
+图片承诺调整见[本版说明](docs/image-prompt-retry.md)，变化见[更新日志](CHANGELOG.md)。

@@ -34,6 +34,13 @@ jobs:
           # 保留父提交，让 git show --check 只核验当前差异。
           fetch-depth: 2
           persist-credentials: false
+      - name: Pin LivingHello for explicit image prompt matrix
+        uses: actions/checkout@v4
+        with:
+          repository: AKIhunter/astrbot_plugin_livinghello
+          ref: d0c611073db5a0ca28642fe5ca8ca9214583075f
+          path: .image-prompt-peer
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
@@ -96,7 +103,8 @@ jobs:
           options = tomllib.loads((root / "pyproject.toml").read_text())["tool"]["pytest"]["ini_options"]
           assert "performance_f6.py" in options["python_files"]
           docs = [root / name for name in (
-              "README.md", "CHANGELOG.md", "THIRD_PARTY_NOTICES.md",
+              "README.md", "README.en.md", "CHANGELOG.md", "THIRD_PARTY_NOTICES.md",
+              "docs/plugin-manual.md", "docs/promise.md", "docs/image-prompt-retry.md",
               "docs/architecture.md", "docs/api.md", "docs/compatibility.md",
               "docs/installation.md", "docs/delivery-notes.md", "docs/memory.md", "docs/local-runtime.md",
               "docs/life-console.md", "docs/internal-state-contract.md",
@@ -121,7 +129,8 @@ jobs:
         run: |
           printf '%s\n' \
             'Default pytest includes portable budgets, verification and all 18 F6 regressions.' \
-            'Excluded native-host tiers: tests/host, tests/console/test_console.py, tests/budgets/test_model_payload.py.' \
+            'Excluded explicit tiers: tests/host, tests/console/test_console.py, tests/budgets/test_model_payload.py, tests/integration/test_image_prompt_mapping.py.' \
+            'The image prompt matrix runs separately with a pinned LivingHello checkout.' \
             'Run their explicit pinned-host commands in docs/delivery-notes.md; this job does not certify them.'
       - name: Reject raw tracked evidence and personal workspace paths
         run: |
@@ -164,6 +173,10 @@ jobs:
           PY
       - name: Portable Python regression tests
         run: python -m pytest -q
+      - name: Explicit paired image prompt matrix
+        env:
+          LIVINGHELLO_SOURCE: ${{ github.workspace }}/.image-prompt-peer
+        run: python -m pytest -q -o addopts="-ra --strict-markers" tests/integration/test_image_prompt_mapping.py
       - name: Committed whitespace check
         run: git show --format= --check HEAD
 

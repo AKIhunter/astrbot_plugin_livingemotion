@@ -70,6 +70,7 @@ class LivingEmotionAPI:
             operations=["get_capabilities", "resolve_producer_context", "ingest_event", "get_bot_state",
                         "get_current_emotion",
                         "get_action_policy", "handoff_image_failure", "resume_image_followup",
+                        "get_image_prompt_retry_policy",
                         "get_observation", "get_relationship", "get_availability",
                         "preview_behavior", "get_health"],
             mode=mode, memory_mode=self._config.memory_mode,
@@ -358,7 +359,7 @@ class LivingEmotionAPI:
                     or failure.get("notified") is not True
                     or failure.get("kind") not in {
                         "content_rejected", "rate_limited", "provider_error", "result_unknown",
-                        "delivery_unknown", "quota_exhausted"}
+                        "delivery_unknown", "quota_exhausted", "prompt_too_long", "prompt_adjustment_required"}
                     or not isinstance(failure.get("prompt"), str)
                     or not 1 <= len(failure["prompt"]) <= 4000
                     or not isinstance(failure.get("request_id"), str)
@@ -368,16 +369,42 @@ class LivingEmotionAPI:
                     or type(failure.get("use_reference")) is not bool):
                 return self._result("rejected", "invalid_image_failure")
             source_id = str(event.message_obj.message_id)
+            # 自动改词权限由 LH 当前契约决定，不能信任事件里自报的布尔开关。
+            from .livinghello_coupling import discover
+            peer = discover(app.bridge.discover)
+            from .runtime.promise_actions import ImagePromiseAction
+            policy = ImagePromiseAction.mapping_policy(peer) if peer else {}
+            metadata = {"adjustment_asked": failure.get("adjustment_asked") is True}
+            for key in ("original_prompt", "attempted_prompt", "notice"):
+                value = failure.get(key)
+                if isinstance(value, str) and len(value) <= (200 if key == "notice" else 4000):
+                    metadata[key] = value
+            count = failure.get("prompt_retry_count", 0)
+            metadata["prompt_retry_count"] = count if type(count) is int and 0 <= count <= 2 else 2
+            metadata["auto_prompt_retry"] = bool(
+                policy.get("enabled") and policy.get("retry_limit", 0) > metadata["prompt_retry_count"]
+                and failure["kind"] in {"content_rejected", "prompt_too_long"}
+                and not failure["use_reference"])
             result = await app._promises().promises.accept_image_handoff(
                 scope, request_id=failure["request_id"], source_event_id=source_id,
                 failure={k: failure[k] for k in
                          ("request_id", "prompt", "kind", "reason", "use_reference")}
-                | {"adjustment_asked": failure.get("adjustment_asked") is True},
+                | metadata,
                 max_active=app._promises().max_active)
             return self._result("ok", "image_failure_handoff",
                                 contract="livingemotion.image-followup.v1", data=result)
         except Exception:
             return self._result("unavailable", "image_handoff_failed")
+
+    async def get_image_prompt_retry_policy(self, context, *, event):
+        try:
+            await self._image_scope(context, event)
+            app = self._application
+            return self._result("ok", "image_prompt_retry_policy",
+                contract="livingemotion.image-prompt-retry.v1",
+                data={"allowed": bool(app.config.promise_enabled and app.promise_actions_active())})
+        except Exception:
+            return self._result("unavailable", "image_prompt_retry_unavailable")
 
     async def resume_image_followup(self, context, *, event, promise_id, prompt) -> dict[str, Any]:
         try:

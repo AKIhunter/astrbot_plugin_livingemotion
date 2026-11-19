@@ -25,6 +25,9 @@ npm --prefix tests/ui test
 `tests/console/test_console.py`、`tests/budgets/test_model_payload.py` 是宿主专项，
 不把没有宿主的跳过当作通过。真实宿主准备方法见[宿主契约](host-contract.md)。
 
+`tests/integration/test_image_prompt_mapping.py` 需要配套 LH 2.8.0 源码，在独立默认 pytest
+之外显式执行；CI 检出固定 LH commit 后运行它。路径与命令见[生图矩阵](image-prompt-retry.md#离线复测)。
+
 测试采用隔离数据库、合成消息及模型替身。真实计费模型、真实发送和生产峰值
 不由这些结果证明。生产检查只核对代码、进程、日志、数据库和已鉴权的管理接口。
 本次结果与既有失败对照见[本地化验收](verification-local-runtime.md)。

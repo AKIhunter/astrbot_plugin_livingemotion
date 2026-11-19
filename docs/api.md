@@ -107,6 +107,15 @@ authorization 是提供者复核凭据，不是字符串 admin 或永久访问�
 
 ## 图片失败交接
 
+LE 0.5.0 新增 `get_image_prompt_retry_policy(context, event=event)`，
+返回 `contract=livingemotion.image-prompt-retry.v1` 与 `data.allowed`，
+接手需当前请求通过身份校验、承诺开启且动作执行器可用。
+LH 2.8.0 提供 `get_image_prompt_mapping_contract()` 和
+`prepare_image_prompt_repair(prompt, proposal, expected_scope=...)`，
+契约为 `livinghello.image-prompt-mapping.v1`，长度、次数与实际模型范围由 LH 决定。
+事件自报的自动重试开关不能授权；新增可交接失败为 `prompt_too_long` 和
+`prompt_adjustment_required`。候选调整及恢复见[提示词重试说明](image-prompt-retry.md)。
+
 LivingHello 2.7.8 调用 `handoff_image_failure(context, event=event)`，以及
 `resume_image_followup(context, event=event, promise_id=..., prompt=...)`；
 成功 envelope 带 `contract=livingemotion.image-followup.v1`。

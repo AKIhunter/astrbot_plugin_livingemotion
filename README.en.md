@@ -3,7 +3,7 @@
 ![livingEmotion banner](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-%E2%89%A54.29.1-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.4.2-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.5.0-3a8060)](CHANGELOG.md)
 
 [简体中文](README.md) · **English**
 
@@ -30,14 +30,15 @@ inside the plugin; it reuses the persona you already configured in AstrBot.
 | 📓 Diary and dreams | First-person diary with weather; dreams reviewed separately |
 | 🎛️ Own console | Nine sections, scope filtering, two themes, no external CDN |
 
-## 🆕 What's new in 0.4.2
+## 🆕 What's new in 0.5.0
 
-- Content-rejected photos, selfies and drawings ask what to change or whether to cancel.
-  A repeated rejection explains that the revised idea also failed and offers the choice again.
-- Only a concrete new description resumes the original image; “OK” or “try again” does not.
-  Unknown generation or delivery outcomes still require verification.
-- Existing waiting images gain persistent notice tracking automatically. Upgrade LivingHello
-  to **2.7.8** for the complete handoff. [Behavior and migration (Chinese)](docs/promise-adjustment-20261118.md).
+- With **LivingHello 2.8.0**, explicit image rejection or excessive prompt length can trigger up
+  to two equivalent wording adjustments for the same promise, using LE's closing model.
+- The original description, attempt count and prepared candidate persist. Scene changes or
+  exhausted attempts wait for your revision or cancellation; uncertain outcomes are not repeated.
+- LH stores and reuses successful wording for the actual image model. Configure retry and
+  learning in LH's image settings, and enable promise fulfillment in LE.
+  Existing tasks and SQLite data remain. [Usage and recovery (Chinese)](docs/image-prompt-retry.md).
 
 ### Retained from 0.4.0
 
@@ -130,8 +131,8 @@ else as unknown. Unknown is never auto-resent.
 
 ## 📦 Changelog
 
-Current version **0.4.2** — natural adjustment questions, persistent notice deduplication,
-and user-controlled resumption or cancellation of content-rejected images.
+Current version **0.5.0** — bounded equivalent wording adjustments for image promises,
+persistent recovery and user-controlled revision or cancellation, with LivingHello 2.8.0.
 See [CHANGELOG.md](CHANGELOG.md).
 
 MIT for original content. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

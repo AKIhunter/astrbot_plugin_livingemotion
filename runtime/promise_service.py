@@ -430,7 +430,7 @@ class PromiseService:
                 await self.promises.move(
                     promise_id, status="waiting", expect=("running",),
                     error=str(outcome.get("reason") or "image_result_unknown"))
-                if outcome.get("reason") == "content_rejected":
+                if outcome.get("reason") in {"content_rejected", "prompt_too_long", "prompt_adjustment_required"}:
                     current = await self.promises.get(promise_id)
                     if current and current["status"] == "waiting":
                         await self._ask_adjustment(current)
@@ -544,7 +544,9 @@ class PromiseService:
                     and current.get("action_result_json") == payload)
 
         # 只说用户听得懂的情况；编号、执行状态和上游正文留在内部。
-        if int(artifact.get("adjustment_round") or 0) > 0:
+        if artifact.get("notice"):
+            text = str(artifact["notice"])[:200] + "你想调整一下，还是这次就算了？"
+        elif int(artifact.get("adjustment_round") or 0) > 0:
             text = ("按你刚才改的想法又试了一下，还是没能弄好，有些内容我暂时做不了。"
                     "我先停在这里。你想再调整一下，还是这次就算了？")
         else:

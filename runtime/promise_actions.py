@@ -39,8 +39,10 @@ class ImagePromiseAction:
         generation = int(row.get("generation") or 0)
 
         async def allowed():
-            return await self.app._preparation_guard(
-                context, generation, revision, delivery=True)
+            current = await store.get(pid) or {}
+            return (current.get("status") == "running"
+                    and await self.app._preparation_guard(
+                        context, generation, revision, delivery=True))
 
         if not await allowed():
             return {"status": "rejected"}
@@ -65,55 +67,11 @@ class ImagePromiseAction:
             if (contract.get("contract") != "livinghello.deferred-image.v1"
                     or contract.get("available") is not True):
                 return {"status": "unavailable"}
-            # 失败待办沿用明确的原画面或用户新调整，不让模型自动改写被拒绝的请求。
-            prompt = artifact.get("prompt") if state == "retry_ready" else None
-            source = await self.app.bridge.current(context)
-            persona_prompt = getattr(getattr(source, "persona", None), "prompt", "")
-            if prompt is None:
-                prompt = await self.app.purpose_model(
-                    context, "closing",
-                    "把已约定的图片需求写成具体画面描述，保留人物、场景与风格。"
-                    "只输出生图描述，不声称图片已经完成。不使用参考图片。",
-                    prompt_json({
-                        "persona": await self.app.persona_style(context.persona_id, persona_prompt),
-                        "promised": row.get("description"),
-                        "detail": row.get("note"),
-                        "context": row.get("context_summary"),
-                    }),
-                    stable_key("promise-image-prompt", pid),
-                    max_output_tokens=500, delivery=True,
-                )
-            if not str(prompt or "").strip():
-                return {"status": "unavailable"}
-            if not await allowed():
-                return {"status": "rejected"}
-            event = self.make_event(context, row)
-            prior = artifact
-            # 必须在可能收费之前写盘；kill 后留下 generating，禁止自动补发。
-            if not await store.checkpoint_action(pid, "generating", artifact):
-                return {"status": "rejected"}
-            artifact = await peer.generate_deferred_image(event, str(prompt).strip())
-            failure = artifact.get("failure")
-            if isinstance(failure, dict):
-                # 保留用户已修改的轮次，再次失败时才能说明“按你刚才的想法又试过”。
-                failure = {**failure, "adjustment_round": int(prior.get("adjustment_round") or 0)}
-                phase = "retry_ready" if failure.get("kind") == "rate_limited" else "held"
-                if failure.get("kind") == "content_rejected":
-                    # 到期执行与即时交接一样，保留画面及原任务 ID 供用户调整后恢复。
-                    failure = {"prompt": str(prompt).strip(), "use_reference": False, **failure}
-                    if not await store.hold_image_request(context, pid, failure):
-                        return {"status": "unknown"}
-                else:
-                    await store.checkpoint_action(pid, phase, failure)
-                return {"status": "rejected" if phase == "retry_ready" else "waiting",
-                        "reason": failure.get("kind", "result_unknown")}
-            if artifact.get("status") == "unavailable":
-                await store.checkpoint_action(pid, state, prior)
-                return artifact
+            artifact = await self.generate(context, row, peer, artifact, state, allowed)
             if artifact.get("status") != "generated":
-                await store.checkpoint_action(pid, "unknown")
-                return {"status": "unknown"}
-            artifact["detail"] = str(artifact.get("revised") or prompt)[:4000]
+                return artifact
+            artifact["detail"] = str(artifact.get("revised") or artifact.get("effective_prompt")
+                                     or artifact.get("prompt"))[:4000]
             if not await store.checkpoint_action(pid, "generated", artifact):
                 return {"status": "unknown"}
         path = str(artifact.get("path") or "")
@@ -171,6 +129,133 @@ class ImagePromiseAction:
             # 发送完成已写盘；对端额度标记失败不能再发一遍图片。
             pass
         return {"status": "sent", "text": artifact["detail"]}
+
+    @staticmethod
+    def mapping_policy(peer):
+        method = getattr(peer, "get_image_prompt_mapping_contract", None)
+        policy = method() if callable(method) else {}
+        if not isinstance(policy, dict) or policy.get("contract") != "livinghello.image-prompt-mapping.v1":
+            return {}
+        return policy
+
+    async def generate(self, context, row, peer, prior, state, allowed):
+        """只有明确失败能进入局部改词；每个尝试在收费前持久化并有独立 ID。"""
+        pid, store = row["promise_id"], self.service.promises
+        policy = self.mapping_policy(peer)
+        prompt = ((prior.get("prompt") if prior.get("prompt_repair") else
+                   prior.get("attempted_prompt") or prior.get("prompt"))
+                  if state == "retry_ready" else None)
+        if prompt is None:
+            source = await self.app.bridge.current(context)
+            persona = getattr(getattr(source, "persona", None), "prompt", "")
+            soft = policy.get("limits", {}).get("desc_soft", 400)
+            prompt = await self.app.purpose_model(
+                context, "closing",
+                f"把已约定的图片需求写成具体画面描述，尽量不超过{soft}字。"
+                "保留人物、场景、风格和必要动作，用简洁表情词，避免重复堆叠细节。"
+                "只输出生图描述，不声称图片已经完成。不使用参考图片。",
+                prompt_json({"persona": await self.app.persona_style(context.persona_id, persona),
+                             "promised": row.get("description"), "detail": row.get("note"),
+                             "context": row.get("context_summary")}),
+                stable_key("promise-image-prompt", pid), max_output_tokens=500, delivery=True)
+        prompt = str(prompt or "").strip()
+        if not prompt:
+            return {"status": "unavailable"}
+        original = str(prior.get("original_prompt") or prompt)
+        artifact = dict(prior)
+        while True:
+            policy = self.mapping_policy(peer)
+            limit = max(0, min(2, int(policy.get("retry_limit", 0)))) if policy.get("enabled") else 0
+            count = max(0, min(2, int(artifact.get("prompt_retry_count") or 0)))
+            kind = artifact.get("kind")
+            if kind in {"content_rejected", "prompt_too_long"}:
+                method = getattr(peer, "prepare_image_prompt_repair", None)
+                if count >= limit or artifact.get("use_reference") or not callable(method):
+                    return await self.hold(context, pid, artifact, prompt, original)
+                if not await allowed():
+                    return {"status": "rejected"}
+                answer = await self.app.purpose_model(
+                    context, "closing",
+                    "为同一张图片整理提示词，只允许等义局部替换，不规避内容规则。"
+                    "不能改变人物、年龄、衣着覆盖度、场景、风格、姿势或表情。"
+                    "若必须改变画面，changes_scene=true，等待用户确认。"
+                    "只输出JSON：{\"changes_scene\":false,\"substitutions\":["
+                    "{\"from\":\"原词\",\"to\":\"等义词\"}]}。"
+                    "只有描述过长时可用shortened_prompt代替substitutions，保留全部画面要点。"
+                    "不能保证通过生图服务；没有合适等义调整就给空列表。",
+                    prompt_json({"prompt": prompt, "reason": kind,
+                                 "image_model": policy.get("scope", {}).get("model"),
+                                 "limits": policy.get("limits")}),
+                    stable_key("promise-image-repair", pid, count, prompt),
+                    max_output_tokens=500, delivery=True)
+                try:
+                    proposal = json.loads(re.sub(r"^```(?:json)?\s*|\s*```$", "", str(answer).strip()))
+                    repair = method(prompt, proposal, expected_scope=policy.get("scope"))
+                except (ValueError, TypeError):
+                    repair = {"status": "invalid"}
+                if not await allowed():
+                    return {"status": "rejected"}
+                if not isinstance(repair, dict) or repair.get("status") != "ready":
+                    if isinstance(repair, dict) and repair.get("notice"):
+                        artifact.update(kind="prompt_adjustment_required", notice=repair["notice"])
+                    return await self.hold(context, pid, artifact, prompt, original)
+                artifact.update(prompt_repair=repair, kind="adjusted_prompt",
+                                prompt=prompt, original_prompt=original, prompt_retry_count=count + 1)
+                count += 1
+                # 改词是可恢复的准备动作；崩溃后复用该候选，不能重新消耗次数。
+                if not await store.checkpoint_action(pid, "retry_ready", artifact):
+                    return {"status": "rejected"}
+            if not await allowed():
+                return {"status": "rejected"}
+            event = self.make_event(context, row)
+            event.message_obj.message_id += ":prompt:" + str(count)
+            event.set_extra("_livinghello_image_original_prompt", original)
+            event.set_extra("_livinghello_prompt_retry_count", count)
+            event.set_extra("_livinghello_image_prompt_repair", artifact.get("prompt_repair"))
+            if not await store.checkpoint_action(pid, "generating", artifact):
+                return {"status": "rejected"}
+            outcome = await peer.generate_deferred_image(event, prompt)
+            failure = outcome.get("failure")
+            if isinstance(failure, dict):
+                failure = {**failure, "prompt": failure.get("prompt") or prompt,
+                           "original_prompt": original, "use_reference": False,
+                           "prompt_retry_count": count,
+                           "adjustment_round": int(prior.get("adjustment_round") or 0)}
+                kind = failure.get("kind")
+                if kind in {"content_rejected", "prompt_too_long"}:
+                    prompt = str(failure.get("attempted_prompt") or failure["prompt"])
+                    artifact = failure
+                    if not await store.checkpoint_action(pid, "retry_ready", artifact):
+                        return {"status": "unknown"}
+                    continue
+                if kind == "prompt_adjustment_required":
+                    return await self.hold(context, pid, failure, prompt, original)
+                # 超时或投递未知即使带 failure 字段也不能进入重试队列。
+                if kind in {"result_unknown", "delivery_unknown"}:
+                    await store.checkpoint_action(pid, "unknown", failure)
+                    return {"status": "unknown"}
+                if kind == "rate_limited":
+                    failure.update(prompt_repair=artifact.get("prompt_repair"),
+                                   prompt=prompt)
+                    await store.checkpoint_action(pid, "retry_ready", failure)
+                    return {"status": "rejected", "reason": kind}
+                await store.checkpoint_action(pid, "held", failure)
+                return {"status": "waiting", "reason": kind}
+            if outcome.get("status") == "unavailable":
+                await store.checkpoint_action(pid, "retry_ready", artifact)
+                return outcome
+            if outcome.get("status") != "generated":
+                await store.checkpoint_action(pid, "unknown", artifact)
+                return {"status": "unknown"}
+            return {**outcome, "prompt": prompt, "original_prompt": original,
+                    "prompt_retry_count": count}
+
+    async def hold(self, context, pid, failure, prompt, original):
+        failure = {**failure, "prompt": prompt, "original_prompt": original,
+                   "use_reference": False}
+        if not await self.service.promises.hold_image_request(context, pid, failure):
+            return {"status": "unknown"}
+        return {"status": "waiting", "reason": failure.get("kind", "content_rejected")}
 
     def make_event(self, context, row):
         from astrbot.core.cron.events import CronMessageEvent
