@@ -38,5 +38,29 @@ def policy(context):
 
 
 def allowed(context, kind):
+    # Coupling controls LivingHello's calls, not LivingEmotion's autonomous hooks.
+    if kind == "livingemotion":
+        return True
     value = policy(context)
     return value is None or value.get("integrations", {}).get(kind, {}).get("effective") is True
+
+
+def shared_prompts(context, request, variant):
+    """Read LH's public runtime contract; standalone/older LH retains LE defaults."""
+    from .prompt_bundle import request_shared_settings
+    frozen = request_shared_settings(request)
+    if frozen is not None:
+        return frozen
+    getter = getattr(context, "get_registered_star", None)
+    if not callable(getter):
+        return None
+    for name in NAMES:
+        try:
+            meta = getter(name)
+            peer = getattr(meta, "star_cls", None)
+            method = getattr(peer, "get_shared_prompt_snapshot", None)
+            if meta and meta.activated and callable(method):
+                return request_shared_settings(request, method(variant=variant))
+        except Exception:
+            continue
+    return None

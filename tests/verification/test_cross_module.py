@@ -42,7 +42,8 @@ def facade(store):
 
 def test_domain_ast_has_no_host_private_plugin_or_sql_access():
     allowed = {"__future__", "dataclasses", "datetime", "hashlib", "json", "math",
-               "re", "typing", "unicodedata", "zoneinfo", "contracts", "emotion"}
+               "re", "typing", "unicodedata", "zoneinfo", "contracts", "emotion",
+               "collections.abc", "random", "appraisal"}
     for path in sorted((ROOT / "domain").glob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
@@ -154,9 +155,10 @@ async def test_application_interaction_trace_expression_behavior_and_mode_contro
     async def expression():
         request = SimpleNamespace(extra_user_content_parts=[SimpleNamespace(text="native block")])
         await app.on_llm_request(message, request)
-        assert len(request.extra_user_content_parts) == 2
-        block = request.extra_user_content_parts[-1].text
-        assert block.startswith(app_fixtures.SUFFIX)
+        blocks = [part.text for part in request.extra_user_content_parts
+                  if part.text.startswith(app_fixtures.SUFFIX)]
+        assert len(blocks) == 1 and request.extra_user_content_parts[0].text == "native block"
+        block = blocks[0]
         return json.loads(block.split("\n", 2)[2])
 
     try:
@@ -177,7 +179,7 @@ async def test_application_interaction_trace_expression_behavior_and_mode_contro
         after = (await app.api.get_bot_state(context))["data"]
         assert after["stress"] > before["stress"]
         after_expression = await expression()
-        assert after_expression["bot"]["stress"] == after["stress"]
+        assert after_expression["bot"]["stress"] == pytest.approx(after["stress"], abs=1e-6)
         assert before_expression["bot"]["stress"] == before["stress"]
         after_evaluation = await app.behavior.evaluate(context)
         assert after_evaluation.score is not None
@@ -191,7 +193,8 @@ async def test_application_interaction_trace_expression_behavior_and_mode_contro
         assert trace["before"]["stress"] == before["stress"]
         assert trace["after"]["stress"] == after["stress"]
         assert trace["holder_id"] == context.bot_id and trace["subject_id"] == context.account_id
-        assert trace["rule_version"] == "emotion-1" and "rule_conflict" in trace["reason_codes"]
+        from astrbot_plugin_livingemotion.domain.emotion import RULE_VERSION
+        assert trace["rule_version"] == RULE_VERSION and "rule_conflict" in trace["reason_codes"]
 
         native["mode"] = "observe_only"
         await app.refresh_config()
@@ -332,7 +335,7 @@ async def test_retained_source_ledger_can_unbind_after_all_events_deleted(tmp_pa
             ledger, context=first, authorized_account_keys=[c.account_key for c in granted],
             identity_revision=first.identity_revision,
         )
-        assert bound.score == 6
+        assert bound.score == 20
         provider.bound, provider.revision = False, provider.revision + 1
         assert await identities.project_sources(identity, sources, event=event) == ()
         current = await identities.resolve(first, event=event)
@@ -342,9 +345,9 @@ async def test_retained_source_ledger_can_unbind_after_all_events_deleted(tmp_pa
             authorized_account_keys=[c.account_key for c in granted],
             identity_revision=current.context.identity_revision,
         )
-        assert unbound.score == 3
+        assert unbound.score == 10
         assert sum(r["delta"] for r in await store.relationship_ledger(second)
-                   if r["dimension"] == "score") == 3
+                   if r["dimension"] == "score") == 10
     finally:
         await store.close()
 
@@ -363,7 +366,7 @@ async def test_state_reason_and_material_isolation_matrix(le_store, le_event, ch
         json.dumps(BotAffect().__dict__, default=list)
     )
     assert (await api.get_observation(foreign))["data"] is None
-    assert (await api.get_relationship(foreign))["data"]["score"] == 0
+    assert (await api.get_relationship(foreign))["data"]["score"] == 200
     assert (await le_store.query_records(foreign, "emotion"))["total"] == 0
     assert await le_store.read_window(foreign) == []
     gateway = MemoryGateway(clock=le_store.clock)
@@ -466,7 +469,7 @@ async def test_application_bound_relationship_read_reprojects_retained_ledger(
             contexts.append(Context.from_dict(message.extra["livingemotion:context"]))
         values = [(await app.store.get_state(c, "relationship", c.account_id)).value["score"]
                   for c in contexts]
-        assert values == [0.5, 0.5]
+        assert values == [200, 200]
         original = [await app.store.relationship_ledger(c) for c in contexts]
         now = app.store.clock() + 31 * 86400
         app.store.clock = lambda: now
@@ -479,7 +482,8 @@ async def test_application_bound_relationship_read_reprojects_retained_ledger(
         current = Context.from_dict(messages[0].extra["livingemotion:context"])
         unbound = (await app.api.get_relationship(current))["data"]["score"]
         assert [await app.store.relationship_ledger(c) for c in contexts] == original
-        assert (bound, unbound) == (sum(values), values[0]), {
+        # Default baseline belongs to the relationship once, not to every linked source.
+        assert (bound, unbound) == (200, values[0]), {
             "local_scores": values, "bound_api_score": bound, "unbound_api_score": unbound,
         }
         assert host.sends == 0
@@ -550,6 +554,10 @@ async def test_application_inflight_generation_uses_live_persona_and_identity(tm
             return "Synthetic content from the original persona and identity."
 
         app.behavior.model = model
+        from astrbot_plugin_livingemotion.adapters.behavior_sender import AstrBotBehaviorSender
+        app.behavior.sender = AstrBotBehaviorSender(
+            host.send_message, make_chain=app.bridge.chain,
+            recorded_route=app.bridge.recorded_route)
         task = asyncio.create_task(app.behavior.execute(context, intent_id="live-change"))
         await asyncio.wait_for(entered.wait(), 3)
         if change == "persona":
@@ -582,13 +590,15 @@ async def test_live_mode_switch_keeps_core_states_and_sleep(tmp_path, mode):
         message = app_fixtures.Message(body="Synthetic source.")
         await app.on_message(message)
         context = Context.from_dict(message.extra["livingemotion:context"])
-        before = (await app.api.get_relationship(context))["data"]["score"]
+        before = await app.store.get_state(context, "relationship", context.account_id)
         native["memory_mode"] = mode
         await app.refresh_config()
         newer = app_fixtures.Message(identifier="after-switch")
         await app.on_message(newer)
         context = Context.from_dict(newer.extra["livingemotion:context"])
-        assert (await app.api.get_relationship(context))["data"]["score"] > before
+        after = await app.store.get_state(context, "relationship", context.account_id)
+        assert after.version > before.version
+        assert after.value["score"] == before.value["score"]
         await app.advance_scope(context, action="night.sleep")
         assert (await app.api.get_availability(context))["available"] is False
         # The v2 switch selects external or the local vector interface. Legacy

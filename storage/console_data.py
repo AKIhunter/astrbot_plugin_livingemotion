@@ -309,10 +309,12 @@ async def query_relationships(store, instance_id, selection, *, page=1, page_siz
             graph = [*matched, *(n for n in nodes if n["id"] in neighbors)]
         visible = graph[:limit]
         visible_ids = {n["id"] for n in visible}
+        # 列表先按亲近阶段降序再分页；同阶段保留原顺序，不改变关系图。
+        table = sorted(matched, key=lambda n: n["stage_index"], reverse=True)
         return {"center": center, "nodes": visible,
                 "edges": [{"source": center["id"], "target": n["id"], "score": n["score"]}
                           for n in visible],
-                "items": matched[(page - 1) * page_size:page * page_size],
+                "items": table[(page - 1) * page_size:page * page_size],
                 "total": len(matched), "displayed": len(visible), "page": page,
                 "page_size": page_size,
                 "graph_scope": graph_scope, "focus_ids": list(n["id"] for n in matched) if term else [],

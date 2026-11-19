@@ -25,9 +25,15 @@ def _private_route(event) -> str | None:
 
 
 @register("astrbot_plugin_livingemotion", "AKIhunter",
-          "Independent source-scoped bot state", "0.4.1")
+          "Independent source-scoped bot state", "0.4.2")
 class LivingEmotionPlugin(Star):
     api_version = 1
+
+    def get_prompt_snapshot(self):
+        """Read-only runtime contract; peer plugins never read our config file."""
+        from .prompt_bundle import variant_for, DATA
+        return {"contract": DATA["contract"], "release": DATA["release"],
+                "variant": variant_for(self.application.config.character_preset)}
 
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context, config)

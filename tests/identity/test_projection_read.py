@@ -57,12 +57,12 @@ async def test_read_reprojects_after_body_and_events_expire_without_copying(proj
     try:
         assert (await store.health())["counts"]["events"] == 0
         result = await read_relationship_projection(store, identities, identity, event=event)
-        assert result.score == 1
+        assert result.score == 200
         provider.bound, provider.revision = False, provider.revision + 1
         assert await read_relationship_projection(store, identities, identity, event=event) is None
         current = await identities.resolve(first, event=event)
         result = await read_relationship_projection(store, identities, current, event=event)
-        assert result.score == 0.5
+        assert result.score == 200
         assert result.identity_revision == current.context.identity_revision
         assert [await store.relationship_ledger(source) for source in (first, second)] == before
         assert [(await store.get_state(source, "relationship", source.account_id)).version
@@ -103,7 +103,7 @@ async def test_no_registry_source_is_inferred_from_bound_account(projection_case
 
     monkeypatch.setattr(store, "list_contexts", current_only)
     result = await read_relationship_projection(store, identities, identity, event=event)
-    assert result.score == 0.5
+    assert result.score == 200
 
 
 async def test_truncated_context_inventory_is_not_reported_as_complete(
@@ -140,7 +140,7 @@ async def test_manual_freeze_survives_projection_without_changing_sources(projec
         actor_id="synthetic-admin", reason="synthetic-freeze", frozen=True,
     )).accepted
     result = await read_relationship_projection(store, identities, identity, event=event)
-    assert result.score == 1
+    assert result.score == 200
     assert result.frozen
 
 

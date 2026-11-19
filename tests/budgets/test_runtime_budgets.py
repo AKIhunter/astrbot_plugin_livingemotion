@@ -61,7 +61,8 @@ async def test_token_boundaries_each_purpose(rig, purpose, record_property):
         return "ok"
 
     for i, (tokens, output, reason) in enumerate((
-        (4097, 1, "token_limit"), (1, 1025, "token_limit"),
+        (rig.config.model_input_tokens + 1, 1, "token_limit"),
+        (1, (8192 if purpose in ("diary", "dream") else rig.config.model_output_tokens) + 1, "token_limit"),
         (True, 1, "token_limit"), (1, -1, "token_limit"),
         (1, 0, "missing_token_budget"),
     )):

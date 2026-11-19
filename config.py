@@ -16,6 +16,7 @@ from .domain.relationship import (
     stage_names as migrate_stage_names,
 )
 from .domain.dreaming import DEFAULT_THEMES, theme_pool
+from .prompt_injection import DEFAULTS as PROMPT_DEFAULTS, validate as validate_prompts
 
 RELATIONSHIP_STAGE_NAMES_DEFAULT = json.dumps(RELATIONSHIP_STAGE_NAMES, ensure_ascii=False, separators=(",", ":"))
 RELATIONSHIP_STAGE_NAMES_FIELD = "relationship_stage_names"
@@ -191,11 +192,29 @@ class Config:
         "刚醒，我看看之前你们说了什么。|我醒了，先把这几小时翻一翻。|醒了…看看都说了什么。")
     # 好感是可改写的敏感数据：默认只读，只有管理员在设置里显式打开才出现编辑入口。
     relationship_edit_enabled: bool = False
+    tone_prompt_enabled: bool = False
+    tone_prompt_text: str = PROMPT_DEFAULTS["tone_prompt"]
+    relationship_prompt_enabled: bool = False
+    relationship_prompt_text: str = PROMPT_DEFAULTS["relationship_prompt"]
+    night_prompt_enabled: bool = False
+    night_prompt_text: str = PROMPT_DEFAULTS["night_prompt"]
+    prompt_core_enabled: bool = True
+    character_prompt_enabled: bool = False
+    character_preset: str = "sarcastic"
+    character_custom_text: str = ""
+    # Flat native field; the console renders separate drafts, never a nested config group.
+    character_preset_texts: str = "{}"
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "Config":
         known = {item.name for item in fields(cls)}
         data = {key: val for key, val in value.items() if key in known}
+        # Only explicitly named legacy character text belongs to the custom draft.
+        # tone_prompt_text also contains action/sleep rules and must not be migrated as personality.
+        if "character_preset" not in value and isinstance(value.get("character_prompt_text"), str):
+            data["character_preset"] = "custom"
+            data.setdefault("character_custom_text", value["character_prompt_text"])
+            data.setdefault("character_prompt_enabled", value.get("character_prompt_enabled", False))
         # 旧版允许 8000；升级只收窄正文长度，保留其余原配置。
         if type(data.get("experience_body_chars")) is int:
             data["experience_body_chars"] = min(2000, data["experience_body_chars"])
@@ -211,6 +230,9 @@ class Config:
         return cls(**data)
 
     def __post_init__(self) -> None:
+        from .prompt_injection import validate_character
+        validate_character(self)
+        validate_prompts(self)
         for name in IMAGE_REFUSAL_FIELDS:
             if type(getattr(self, name)) is not int or not 0 <= getattr(self, name) <= 100:
                 raise ValueError(f"{name}: expected integer percentage 0..100")
@@ -335,7 +357,9 @@ class Config:
             ) or name in IMAGE_REFUSAL_FIELDS else 1
             if type(default) is int and (type(value) is not int or value < minimum):
                 raise ValueError(f"{name}: expected positive integer")
-            if isinstance(default, str) and (not isinstance(value, str) or len(value) > 8192):
+            string_max = (10000 if name == "character_custom_text" else
+                          180100 if name == "character_preset_texts" else 8192)
+            if isinstance(default, str) and (not isinstance(value, str) or len(value) > string_max):
                 raise ValueError(f"{name}: expected bounded string")
             if type(default) is float:
                 if (type(value) not in (int, float) or not math.isfinite(value)

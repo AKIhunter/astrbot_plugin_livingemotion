@@ -130,8 +130,8 @@ async def test_clear_invalidates_queued_event_not_only_active_projection(
         queued.set()
         return value
 
-    async def blocked(context, calculate):
-        value = await original_read(context, calculate)
+    async def blocked(context, calculate, **options):
+        value = await original_read(context, calculate, **options)
         if not entered.is_set():
             entered.set()
             await release.wait()

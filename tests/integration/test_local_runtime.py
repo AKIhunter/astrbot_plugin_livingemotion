@@ -25,7 +25,8 @@ async def test_optional_plugin_registry_cannot_disable_local_reply(tmp_path):
         host.get_registered_star = registry
         request = SimpleNamespace(extra_user_content_parts=[])
         await app.on_llm_request(message, request)
-        assert len(request.extra_user_content_parts) == 1
+        from astrbot_plugin_livingemotion.runtime.application import SUFFIX
+        assert sum(part.text.startswith(SUFFIX) for part in request.extra_user_content_parts) == 1
         assert (await app.api.get_capabilities())["mode"] == "active"
         assert all("memory" in name.lower() or "hello" in name.lower() or "at_guard" in name
                    for name in lookups)

@@ -63,7 +63,9 @@ def hooks(monkeypatch):
 
 
 def plugin_for(app, host, hooks):
+    from astrbot_plugin_livingemotion.runtime.reply_alert import ReplyBlockAlert
     plugin = object.__new__(hooks)
+    plugin.reply_alert = ReplyBlockAlert()
     plugin.application, plugin.api = app, app.api
     plugin.context = host
     original = host.get_registered_star

@@ -28,11 +28,23 @@ async def proactive_app(tmp_path, *, draw=0):
     native.update(
         diary_enabled=False, dream_enabled=False, autonomy_enabled=True,
         autonomy_scopes=context.scope_key, behavior_random_min_minutes=30,
-        behavior_random_max_minutes=30,
+        behavior_random_max_minutes=30, relationship_edit_enabled=True,
     )
     await app.refresh_config()
+    from astrbot_plugin_livingemotion.adapters.behavior_sender import AstrBotBehaviorSender
+    # Native QQ transport has separate tests; this host fixture returns a bool.
+    app.behavior.sender = AstrBotBehaviorSender(
+        host.send_message, make_chain=app.bridge.chain,
+        recorded_route=app.bridge.recorded_route)
     app._proactive_random = RandomDraws(draw)
     return app, host, native, context, binding, clock
+
+
+def host_sender(app, host):
+    from astrbot_plugin_livingemotion.adapters.behavior_sender import AstrBotBehaviorSender
+    app.behavior.sender = AstrBotBehaviorSender(
+        host.send_message, make_chain=app.bridge.chain,
+        recorded_route=app.bridge.recorded_route)
 
 
 async def drain(app):
@@ -50,7 +62,7 @@ async def test_random_timer_uses_memory_relationship_mood_and_unknown_never_retr
         clock[0] += 1800
         await asyncio.gather(app.tick(), app.tick(), app.tick())
         await drain(app)
-        assert host.sends == len(binding.calls) == 1
+        assert host.sends == len(binding.calls) == 1, await read_schedule(app.store, context)
         prompt, data, *_ = binding.calls[0]
         data = json.loads(data)
         assert "initiating a natural conversation" in prompt
@@ -204,11 +216,12 @@ async def test_group_uses_latest_speaker_once_and_never_private_material(tmp_pat
         group = Context.from_dict(second.extra["livingemotion:context"])
         native.update(autonomy_scopes=group.scope_key, group_autonomy_enabled=True)
         await app.refresh_config()
+        host_sender(app, host)
         await app.tick()
         clock[0] += 1800
         await app.tick()
         await drain(app)
-        assert host.sends == len(binding.calls) == 1
+        assert host.sends == len(binding.calls) == 1, await read_schedule(app.store, group)
         data = json.loads(binding.calls[0][1])
         assert data["scene"] == "group"
         assert data["motive"] != "分享心情"

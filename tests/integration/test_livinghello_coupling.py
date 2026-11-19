@@ -22,20 +22,22 @@ def install_guard(host, flags):
 
 
 @pytest.mark.asyncio
-async def test_closed_coupling_removes_stale_blocks_without_reading_or_catchup(tmp_path):
+async def test_closed_coupling_keeps_local_hooks_and_replaces_stale_blocks(tmp_path):
     app, host, _ = await application(tmp_path)
     flags = {"livingemotion":False,"livingmemory":False}
     install_guard(host, flags)
     try:
         app._prepare_catchup = AsyncMock()
-        app.on_message = AsyncMock()
         req = SimpleNamespace(extra_user_content_parts=[
             SimpleNamespace(text=SUFFIX+"old"), SimpleNamespace(text=CATCHUP_SUFFIX+"old"),
             SimpleNamespace(text="当前问题")])
-        await app.on_llm_request(Message(), req)
-        app.on_message.assert_not_awaited()
-        app._prepare_catchup.assert_not_awaited()
-        assert [p.text for p in req.extra_user_content_parts] == ["当前问题"]
+        message = Message()
+        await app.on_llm_request(message, req)
+        assert message.get_extra("livingemotion:ingest") == "accepted"
+        app._prepare_catchup.assert_awaited_once()
+        assert sum(p.text.startswith(SUFFIX) for p in req.extra_user_content_parts) == 1
+        assert "当前问题" in [p.text for p in req.extra_user_content_parts]
+        assert not any(p.text in (SUFFIX+"old", CATCHUP_SUFFIX+"old") for p in req.extra_user_content_parts)
     finally:
         await app.terminate()
 
@@ -57,7 +59,7 @@ async def test_enabled_coupling_injects_local_state_relationship_and_catchup(tmp
         await app.on_llm_request(message, req)
         app._prepare_catchup.assert_awaited_once()
         app._inject_recalled_memory.assert_not_awaited()
-        assert len(req.extra_user_content_parts) == 1
+        assert sum(p.text.startswith(SUFFIX) for p in req.extra_user_content_parts) == 1
         state = json.loads(req.extra_user_content_parts[0].text.split("\n")[-1])
         assert "relationship" in state and "raw_score" in state["relationship"]
         assert "daily_emotions" in state
@@ -82,7 +84,7 @@ async def test_local_observe_only_preserves_empty_injection(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_disabled_coupling_preserves_chat_even_when_emotion_scope_is_sleeping(tmp_path, hooks):
+async def test_disabled_coupling_keeps_local_sleep_gate(tmp_path, hooks):
     app, host, _ = await application(tmp_path, {"night_block_chat":True})
     plugin = plugin_for(app, host, hooks)
     install_guard(host, {"livingemotion":False,"livingmemory":False})
@@ -97,8 +99,8 @@ async def test_disabled_coupling_preserves_chat_even_when_emotion_scope_is_sleep
         await plugin.buffer_final_request(message, req)
         app.on_reply_submitted = AsyncMock(return_value=False)
         await plugin.submit_reply(message)
-        app.on_reply_submitted.assert_not_awaited()
-        assert not message.stopped and req.extra_user_content_parts == []
-        assert "enable_streaming" not in message.extra
+        app.on_reply_submitted.assert_awaited_once_with(message)
+        assert message.stopped and req.extra_user_content_parts == []
+        assert message.extra["enable_streaming"] is False
     finally:
         await app.terminate()

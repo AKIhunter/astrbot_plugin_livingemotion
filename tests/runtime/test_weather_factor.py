@@ -46,7 +46,12 @@ class Stub:
         self.forecast_calls += 1
         if self.forecast_error is not None:
             raise self.forecast_error
-        return {DAY: WeatherReport(city, DAY, zone, "ok", f"code-{self.code}", code=self.code)}
+        from datetime import timedelta
+        return {
+            day: WeatherReport(city, day, zone, "ok", f"code-{self.code}", code=self.code)
+            for day in ((datetime.fromtimestamp(NOW, ZoneInfo(ZONE)) + timedelta(days=i))
+                        .date().isoformat() for i in range(days))
+        }
 
 
 class Clock:
@@ -83,7 +88,7 @@ def test_schedule_outside_window_waits_for_next_start():
 
 
 def test_schedule_counts_slots_inside_window():
-    """06:00–01:00 窗口内：4 小时 5 次，1 小时 20 次，都远低于限频。"""
+    """06:00–01:00 窗口内，排除本日起点，包含次日 00:00。"""
     def slots(interval):
         cfg = config(weather_poll_seconds=interval)
         factor, _, clock = build(61, cfg=cfg)
@@ -93,7 +98,7 @@ def test_schedule_counts_slots_inside_window():
             cursor = factor._next_slot(cursor, cfg, ZONE)
             points.append(cursor - base)
             clock.value = cursor
-        return [p for p in points if p < 24 * 3600]
+        return [p for p in points if p <= 24 * 3600]
     assert len(slots(14400)) == 5
     assert len(slots(3600)) == 20
 

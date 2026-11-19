@@ -9,6 +9,13 @@
   --z-sticky: 2; --z-cover: 3; --z-editor: 4; --z-skip: 5;
   color-scheme: light;
 }
+/* 功能文案只读；普通文案平铺，沿用现有主题与控件。 */
+.prompt-entry { margin: 14px 0; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.prompt-entry h4 { margin: 0 0 4px; }
+.prompt-readonly { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; font: inherit; padding: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; }
+.prompt-entry textarea { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; }
+.prompt-switch { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-weight: 600; }
+.prompt-switch input { width: 18px; height: 18px; }
 /* 真实发送与测试发送并排；空出的右侧给承诺列表。 */
 .behavior-action-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 @media (max-width: 720px) { .behavior-action-row { grid-template-columns: 1fr; } }
@@ -17,13 +24,32 @@
 .promise-list { display: grid; gap: 10px; }
 .promise-card {
   border: 1px solid var(--line); border-left: 3px solid var(--accent);
-  border-radius: 8px; padding: 10px 12px; background: var(--surface);
+  border-radius: 8px; background: var(--surface);
 }
-.promise-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
-.promise-bucket { font-size: 12px; font-weight: 600; color: var(--accent); }
-.promise-eta { font: 12px/1.6 var(--mono); opacity: .75; }
-.promise-desc { margin: 6px 0 4px; overflow-wrap: anywhere; }
+.promise-card > .promise-head {
+  display: grid; grid-template-columns: minmax(0, 1fr) 132px; gap: 4px 8px;
+  box-sizing: border-box; height: 132px; padding: 12px; color: var(--text);
+  list-style: none;
+}
+.promise-head::-webkit-details-marker { display: none; }
+.promise-meta { display: grid; gap: 4px; min-width: 0; align-content: start; font-size: 12px; line-height: 18px; }
+.promise-status { font-weight: 600; color: var(--accent); }
+.promise-created { color: var(--muted); font-variant-numeric: tabular-nums; }
+.promise-target { overflow-wrap: anywhere; }
+.promise-when { text-align: right; font-size: 12px; line-height: 18px; color: var(--muted); }
+.promise-at { display: block; color: var(--text); font: 12px/18px var(--mono); overflow-wrap: anywhere; }
+.promise-brief { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.promise-preview { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.promise-expand, .promise-collapse { flex: none; font-size: 12px; color: var(--accent); }
+.promise-collapse, .promise-card[open] .promise-expand { display: none; }
+.promise-card[open] .promise-collapse { display: inline; }
+.promise-body { padding: 0 12px 12px; }
+.promise-desc { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.promise-reason { margin: 8px 0 0; color: var(--warning); font-size: 12px; }
 .promise-card .hint { margin: 0; font-size: 12px; }
+@media (max-width: 420px) {
+  .promise-card > .promise-head { grid-template-columns: minmax(0, 1fr) 104px; }
+}
 /* 六列发送日志，在窄屏按相同字段纵向排列。 */
 #behavior-log-query { width: 100%; margin-bottom: 12px; }
 .behavior-log-table { width: 100%; table-layout: fixed; }

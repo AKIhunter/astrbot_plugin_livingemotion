@@ -40,9 +40,20 @@ class Host:
         return True
 
 
+class TextPart:
+    """Match the host's temporary-content contract in offline tests."""
+    def __init__(self, text):
+        self.text = text
+        self.temporary = False
+
+    def mark_as_temp(self):
+        self.temporary = True
+        return self
+
+
 class TestBridge(AstrBotBridge):
     __test__ = False
-    text_part = staticmethod(lambda text: SimpleNamespace(text=text))
+    text_part = staticmethod(TextPart)
     chain = staticmethod(lambda text: text)
 
 
@@ -222,9 +233,12 @@ async def test_default_chat_without_model_and_unique_suffix(tmp_path):
         request = SimpleNamespace(extra_user_content_parts=[SimpleNamespace(text="host block")])
         await app.on_llm_request(message, request)
         await app.on_llm_request(message, request)
-        assert len(request.extra_user_content_parts) == 2
-        assert request.extra_user_content_parts[-1].text.startswith(SUFFIX)
-        assert host.prompt not in request.extra_user_content_parts[-1].text
+        blocks = [part for part in request.extra_user_content_parts if part.text.startswith(SUFFIX)]
+        assert len(blocks) == 1 and blocks[0].temporary
+        assert request.extra_user_content_parts[0].text == "host block"
+        assert host.prompt not in blocks[0].text
+        texts = [part.text for part in request.extra_user_content_parts]
+        assert len(texts) == len(set(texts))
         state = await app.console_state()
         assert state["observation"]["subject"] == "human"
         assert state["bot_state"]["dimensions"]["pleasure"] >= 0.5
@@ -530,7 +544,7 @@ async def generation_app(tmp_path):
     context = Context.from_dict(message.extra["livingemotion:context"])
     binding = Binding()
 
-    async def model_binding(source):
+    async def model_binding(source, *, delivery=None):
         if not await app.validate_context(source):
             raise ValueError("context_changed")
         return binding

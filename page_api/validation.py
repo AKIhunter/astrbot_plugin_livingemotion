@@ -9,6 +9,8 @@ from ..config import Config
 from .errors import ConsoleError
 
 MAX_BODY_BYTES = 32 * 1024
+# Character config may carry four 10000-Unicode-character drafts in one atomic save.
+MAX_CONFIG_BYTES = 512 * 1024
 SCOPE_FIELDS = frozenset({"persona_id", "view_scope", "context_id", "platform"})
 KINDS = frozenset({"emotion", "behavior", "diary", "dream"})
 ACTIONS = frozenset({
@@ -182,7 +184,9 @@ def validate_patch(patch) -> dict:
                 type(default) is not float and type(value) is not type(default)):
             invalid()
         if isinstance(value, str):
-            text(value, 8192, required=False)
+            maximum = (10000 if key == "character_custom_text" else
+                       180100 if key == "character_preset_texts" else 8192)
+            text(value, maximum, required=False)
         if type(default) is float:
             try:
                 if not math.isfinite(value):
@@ -199,7 +203,8 @@ async def body_parameters(operation: str, request) -> dict:
     if media_type != "application/json":
         invalid()
     # 图片走 base64 JSON，单次上限单独放宽；其余接口仍然只有 32 KB。
-    limit = MAX_IMAGE_BYTES + 32 * 1024 if operation == "emotion-image-save" else MAX_BODY_BYTES
+    limit = (MAX_IMAGE_BYTES + 32 * 1024 if operation == "emotion-image-save" else
+             MAX_CONFIG_BYTES if operation == "config" else MAX_BODY_BYTES)
     lengths = request.headers.getlist("Content-Length")
     if len(lengths) > 1:
         invalid()

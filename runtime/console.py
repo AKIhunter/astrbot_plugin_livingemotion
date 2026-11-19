@@ -94,6 +94,7 @@ SETTINGS_GROUPS = (
     ("relationship", "关系"), ("behavior", "主动行为"), ("promise", "承诺代办"),
     ("night", "长夜"), ("experience", "日记与梦境"), ("memory", "记忆"),
     ("coupling", "功能耦合"),
+    ("prompt_injection", "提示词注入"),
 )
 
 # 「长夜」原来把作息、唤醒、精力、醒后补课、睡前晚安混在同一张表里，27 项一眼看不出
@@ -212,7 +213,19 @@ FIELD_LABELS = {
 }
 
 
+from ..prompt_injection import PRESETS as PROMPT_PRESETS
+FIELD_LABELS.update({"prompt_core_enabled": "通用说明 · 只读",
+                    "character_prompt_enabled": "人物性格", "character_preset": "人物性格预置",
+                    "character_custom_text": "自定义性格", "character_preset_texts": "预置编辑稿"})
+for _stem, _title, _default in PROMPT_PRESETS:
+    FIELD_LABELS[_stem + "_enabled"] = _title
+    FIELD_LABELS[_stem + "_text"] = _title + " · 提示词"
+
+
 def field_section(name):
+    from ..prompt_injection import KEYS
+    if name in KEYS:
+        return "prompt_injection"
     if name in ("enabled", "mode", "timezone", "provider_id", "fallback_provider_id"):
         return "quick_start"
     for prefixes, group in (
@@ -464,6 +477,7 @@ class Console:
             raise ApplicationError("validation_error", "An authenticated actor and reason are required")
 
     def config_dto(self, options=None):
+        from ..prompt_injection import PRESETS, KEYS as PROMPT_KEYS, CHARACTER_KEYS, catalog as prompt_catalog
         enums = {"mode": ["active", "observe_only"], "memory_mode": ["none", "local_lite", "external"],
                  "persona_mode": ["follow", "explicit", "none"], "wake_mode": ["chat", "never", "both"],
                  "behavior_style": ["gentle", "balanced", "lively"],
@@ -489,12 +503,33 @@ class Console:
                              else "float" if type(f.default) is float else "string"),
                     "advanced": f.name.startswith(("model_", "window_", "body_", "event_"))
                     or f.name == "scheduler_seconds"}
+            if f.name in PROMPT_KEYS - CHARACTER_KEYS:
+                stem = f.name.rsplit("_", 1)[0]
+                title = next(title for key, title, _ in PRESETS if key == stem)
+                item.update(label=title if f.name.endswith("_enabled") else title + " · 提示词",
+                            advanced=False, parent="", level=0,
+                            description="开启后在「设置 → 提示词注入」编辑；仅追加普通主回复表达要求，关闭保留文本，功能协议仍生效。")
+                if f.name.endswith("_text"):
+                    item.update(type="text", max_chars=2000)
             subsection = night_subsection(f.name)
             if subsection:
                 item["subsection"] = subsection
                 item["subsection_label"] = NIGHT_SUBSECTION_LABELS[subsection]
             parent, level = field_parent(f.name)
             item.update(field_help(f.name), parent=parent, level=level)
+            if f.name in PROMPT_KEYS:
+                item.update(parent="", level=0,
+                            description="开启后在「设置 → 提示词注入」编辑并保存；仅追加普通主回复表达要求，关闭保留文本，功能协议仍生效。")
+            if f.name in CHARACTER_KEYS:
+                item.update(advanced=False, parent="", level=0,
+                            description="在「设置 → 提示词注入」选择和编辑；开启注入当前文字，关闭保留各自草稿。关系动态描述始终独立生效。")
+                if f.name == "character_preset":
+                    item.update(type="enum", options=[{"value": value, "label": label} for value, label in
+                                (("sarcastic", "毒舌"), ("cute", "可爱"), ("gentle", "温柔"), ("custom", "自定义"))])
+                elif f.name == "character_custom_text":
+                    item.update(type="text", max_chars=10000)
+                elif f.name == "character_preset_texts":
+                    item.update(type="text", max_chars=180100, hidden=True)
             if f.name == "experience_body_chars":
                 item.update(min=1, max=2000)
             if f.name in enums:
@@ -538,6 +573,7 @@ class Console:
             "subsections": {group: [{"id": key, "label": label}
                                     for key, label in NIGHT_SUBSECTIONS]
                             for group in ("night",)},
+            "prompt_injection": prompt_catalog(self.config),
             "readonly": [{"key": "energy_max", "label": "总精力", "type": "float",
                           "value": 100.0, "step": 0.1, "unit": "点", "readonly": True,
                           "section": "night", "subsection": "energy",
@@ -1209,16 +1245,34 @@ class Console:
                 except Exception:
                     scope_key = ""
             try:
-                limit = int(getattr(self.config, "promise_max_active", 3) or 3)
+                # 追踪上限不能截断管理列表；暂停任务也必须完整可见。
                 rows = await self._promises().promises.active(
-                    scope_key=scope_key, limit=limit)
+                    scope_key=scope_key, limit=None)
             except Exception as exc:
                 import logging
                 logging.getLogger("astrbot_plugin_livingemotion.promise").warning(
                     "[LE-promise] 面板查询失败 %r", exc)
                 rows = []
+            # 全局面板不能拿当前查看对象当收件人；按任务自己的会话还原发送目标。
+            def read_targets(db):
+                import json
+                targets = {}
+                for row in rows:
+                    account = row.get("handoff_account_key") or ""
+                    source = db.execute(
+                        "SELECT context_json FROM source_contexts WHERE scope_key=? "
+                        "AND (?='' OR context_id=?) ORDER BY updated_at DESC LIMIT 1",
+                        (row["scope_key"], account, account)).fetchone()
+                    if source:
+                        targets[row["promise_id"]] = Context.from_dict(json.loads(source[0]))
+                return targets
+
+            # 定点查询每条任务的会话，老任务也不会因最近会话列表的 512 项上限丢失对象。
+            targets = await self.store._run(read_targets) if rows else {}
             now = self.store.clock()
             for row in rows:
+                target = targets.get(row["promise_id"])
+                group = target is not None and target.scene_kind == "group"
                 items.append({
                     "promise_id": row["promise_id"],
                     "description": row["description"],
@@ -1227,12 +1281,19 @@ class Console:
                     "eta_seconds": None if row["status"] == "waiting" else max(0, int(row["due_at"] - now)),
                     "reason": row.get("last_error", ""),
                     "advance_count": int(row.get("advance_count") or 0),
+                    "created_at": row["created_at"],
+                    "due_at": row["due_at"],
+                    "original_due_at": row["original_due_at"],
+                    # 发送路由以 scene_id 为目的地：群任务应显示群号，不能显示发起人的 QQ。
+                    "target_id": target.scene_id if target else "",
+                    "target_label": ("QQ群号" if group else "QQ号") if target and target.platform == "qq"
+                                    else ("群 ID" if group else "用户 ID"),
                 })
         import logging
         # 页面每 8 秒轮询一次 records，这条只能是 debug，否则日志会被刷屏。
         logging.getLogger("astrbot_plugin_livingemotion.promise").debug(
             "[LE-promise] 面板挂载 enabled=%s items=%d", enabled, len(items))
-        return {"enabled": enabled, "items": items}
+        return {"enabled": enabled, "items": items, "total": len(items)}
 
     async def console_records(self, context_id="", kind="", page=1, page_size=10, query="",
                               persona_id="", view_scope="", platform=""):

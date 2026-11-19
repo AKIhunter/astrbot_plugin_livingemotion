@@ -85,7 +85,8 @@ async def test_token_limits_reject_before_work(le_store, le_context):
     await runtime.start()
     try:
         assert (await runtime.submit("1", le_context, 0, work, model=True, purpose="emotion",
-                                     input_tokens=5000, output_tokens=10))["reason_code"] == "token_limit"
+                                     input_tokens=runtime.config.model_input_tokens + 1,
+                                     output_tokens=10))["reason_code"] == "token_limit"
     finally:
         await runtime.stop()
 
@@ -138,7 +139,7 @@ async def test_facade_r9_and_admin_is_not_authorization(le_store, le_context, le
     assert (await api.ingest_event(le_event))["status"] == "duplicate"
     assert (await api.get_bot_state(le_context))["type"] == "bot"
     assert (await api.get_observation(le_context))["type"] == "observation"
-    assert (await api.get_relationship(le_context))["data"]["normalized"] == 0
+    assert (await api.get_relationship(le_context))["data"]["normalized"] == 0.2
     availability = await api.get_availability(le_context)
     assert availability["block_chat"] is False
     preview = await api.preview_behavior(le_context)

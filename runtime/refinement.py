@@ -11,7 +11,7 @@ from ..domain.emotion import apply_control, apply_emotion, decay_affect, emotion
 from ..domain.appraisal import parse_suggestion
 from ..domain.relationship import apply_relationship, RelationshipPolicy
 from ..ports.memory import MemoryRequest
-from .projector import account_affect_token, encode_account_runtime
+from .projector import account_affect_token, encode_account_runtime, encode_account_state
 from .state_scope import source_affect
 
 
@@ -275,8 +275,8 @@ class Refinement:
                 **to_dict(relation["relationship"]), "_runtime": relation["runtime"],
                 "_relationship_override_version": seed.get("override_version", 0),
                 "_account_affect": {"context": account_affect_token(context),
-                                    "state": to_dict(decay_affect(
-                                        personal["affect"], now=self.store.clock())),
+                                    "state": encode_account_state(to_dict(decay_affect(
+                                        personal["affect"], now=self.store.clock()))),
                                     "runtime": encode_account_runtime(personal["runtime"])},
             }, relation_version, context.account_id, owner)
             relation_trace = {"kind": "relationship", **relation["trace"],

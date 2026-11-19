@@ -33,7 +33,8 @@ async def test_contract_allows_immediate_image_tool_and_forbids_mark(tmp_path):
     text = await contract_text(tmp_path)
     # 即时路径的三个关键口径都要在。
     assert "直接做" in text and "绝对不写记账指令" in text
-    assert "随便用" in text or "没有任何限制" in text
+    assert "本轮新生图请求许可" in text
+    assert "行动仍按本轮许可处理" in text
     # 旧版的绝对禁令必须消失：它会把即时生图一起禁掉。
     assert "绝对不要调用生图" not in text
     assert "还不到时候" not in text

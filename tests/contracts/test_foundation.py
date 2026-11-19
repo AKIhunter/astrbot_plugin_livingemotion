@@ -17,7 +17,10 @@ def test_safe_config_and_schema_defaults_match():
     schema = json.loads((root / "_conf_schema.json").read_text())
     defaults = Config()
     assert {field.name for field in fields(defaults)} - LEGACY_FIELDS == set(schema)
-    assert all(getattr(defaults, key) == value["default"] for key, value in schema.items())
+    assert all(
+        (json.loads(getattr(defaults, key)) == json.loads(value["default"])
+         if key == "dream_theme_pool" else getattr(defaults, key) == value["default"])
+        for key, value in schema.items())
     current_native = Config.from_mapping({key: value["default"] for key, value in schema.items()})
     assert current_native.night_policy_version == 2
     assert Config.from_mapping({}).night_policy_version == 1

@@ -191,7 +191,7 @@ async def test_projector_reuses_converted_snapshots_without_aliasing(
         write = next(write for write in result.writes if write.kind == kind)
         trace = next(trace for trace in result.traces if trace["kind"] == trace_kind)
         assert {key: value for key, value in write.value.items()
-                if key != "_runtime"} == trace["after"]
+                if not key.startswith("_")} == trace["after"]
         write.value["reason_codes"].append("write-only")
         assert "write-only" not in trace["after"]["reason_codes"]
         if write.value.get("evidence"):

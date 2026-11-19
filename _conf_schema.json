@@ -732,5 +732,73 @@
     "type": "int",
     "default": 120,
     "description": "补觉最长时长1–1440分钟，默认120；在本区关闭“补觉按起床时间截止”后生效。从补觉开始计算，恢复100%提前结束；到期按精力退出，不强制回满，重新计算30分钟静默。仅影响新周期。"
+  },
+  "tone_prompt_enabled": {
+    "type": "bool",
+    "default": false,
+    "description": "情绪与毒舌：开启后在“设置 → 提示词注入”编辑并保存，仅普通主回复追加动态语气要求；关闭保留文本，不移除原情绪数据和功能协议。"
+  },
+  "tone_prompt_text": {
+    "type": "string",
+    "description": "情绪与毒舌 · 提示词；最多2000字，开启时不能为空。",
+    "default": "保留人设的尖刻和粗口风格，根据当前情绪、关系和对方语气调整强度，不机械套用骂句。兴奋、抱怨处境和攻击对方要分清。普通分歧、拒绝建议和指出错误不等于挑衅；明确挑衅时可以尖刻反击。亲近关系允许自然调侃，温柔和撒娇不必强行带刺。人设玩笑被点破时可以认下并反问；实际事实错误应纠正"
+  },
+  "relationship_prompt_enabled": {
+    "type": "bool",
+    "default": false,
+    "description": "关系与行动边界：开启后在“设置 → 提示词注入”编辑并保存，普通主回复追加关系与行动表达协调要求；关闭保留文本，生图许可、拒绝概率和承诺兑现仍执行。"
+  },
+  "relationship_prompt_text": {
+    "type": "string",
+    "description": "关系与行动边界 · 提示词；最多2000字，开启时不能为空。",
+    "default": "当前关系决定亲疏和请求边界，当前情绪调整措辞，不额外抽取拒绝结果。新生图请求以本轮许可和工具预检为准，婉拒后不登记同一请求的待办，也不转定时任务绕过。明确接受且能力支持的后续事项按现有待办机制处理，登记成功后再确认。已经接受的任务按实际进度继续履行，不反复承诺，不虚报完成"
+  },
+  "night_prompt_enabled": {
+    "type": "bool",
+    "default": false,
+    "description": "作息与收尾：开启后在“设置 → 提示词注入”编辑并保存，仅普通主回复追加作息与收尾表达；关闭保留文本，原睡眠拦截和主动行为权限仍执行。"
+  },
+  "night_prompt_text": {
+    "type": "string",
+    "description": "作息与收尾 · 提示词；最多2000字，开启时不能为空。",
+    "default": "作息状态以插件提供的当前状态为准，不自行编造睡醒和离线经历。疲倦时表达更短、更少，不反复演困。醒后阅读的是历史消息，不假装仍在当时现场。对方忙、道别或要求停止时，不继续追问和催促。主动联系遵循当前授权、作息和冷却规则，不因未获回复演被冷落"
+  },
+  "prompt_core_enabled": {
+    "type": "bool",
+    "default": true,
+    "description": "通用说明 · 只读",
+    "hint": "在提示词注入页调整；开启注入共享说明，关闭不注入。动态状态和关系描述始终独立保留。"
+  },
+  "character_prompt_enabled": {
+    "type": "bool",
+    "default": false,
+    "description": "人物性格",
+    "hint": "在「设置 → 提示词注入」选择并编辑；开启注入所选文字，关闭保留各自草稿。"
+  },
+  "character_preset": {
+    "type": "string",
+    "default": "sarcastic",
+    "description": "人物性格预置",
+    "hint": "毒舌沿用原生性格与毒舌表达，可爱、温柔采用已选预置；自定义由你填写。",
+    "options": [
+      "sarcastic",
+      "cute",
+      "gentle",
+      "custom"
+    ]
+  },
+  "character_custom_text": {
+    "type": "string",
+    "default": "",
+    "description": "自定义性格",
+    "hint": "在「设置 → 提示词注入」选择自定义后填写；最多10000字，开启时不能为空。",
+    "max_chars": 10000
+  },
+  "character_preset_texts": {
+    "type": "string",
+    "default": "{}",
+    "description": "预置编辑稿",
+    "hint": "各预置草稿分别保存；在「设置 → 提示词注入」可视化编辑，每份最多10000字。",
+    "max_chars": 180100
   }
 }

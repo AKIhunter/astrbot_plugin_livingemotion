@@ -375,22 +375,25 @@ class PromiseStore:
 
         return await self.store._run(read)
 
-    async def active(self, *, scope_key: str = "", limit: int = 3) -> list[dict[str, Any]]:
-        """待兑现的承诺：按到期时间排，最多 limit 条。
+    async def active(self, *, scope_key: str = "", limit: int | None = 3) -> list[dict[str, Any]]:
+        """待兑现的承诺：按到期时间排，limit=None 时完整展示。
 
         只给页面只读展示用；真正调度走 due()。
         """
         await self.ensure()
 
         def read(db):
-            sql = ("SELECT promise_id,description,status,bucket,due_at,advance_count,last_error "
+            sql = ("SELECT promise_id,scope_key,description,status,bucket,due_at,original_due_at,"
+                   "created_at,handoff_account_key,advance_count,last_error "
                    "FROM promises WHERE status IN ('scheduled','running','waiting')")
             args: list[Any] = []
             if scope_key:
                 sql += " AND scope_key=?"
                 args.append(scope_key)
-            sql += " ORDER BY due_at ASC LIMIT ?"
-            args.append(max(1, min(50, int(limit))))
+            sql += " ORDER BY due_at ASC,promise_id ASC"
+            if limit is not None:
+                sql += " LIMIT ?"
+                args.append(max(1, min(50, int(limit))))
             return [dict(row) for row in db.execute(sql, args)]
 
         return await self.store._run(read)

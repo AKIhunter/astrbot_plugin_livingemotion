@@ -84,7 +84,8 @@ def snapshot(record: StateRecord | None, cls, **defaults):
     value = {key: val for key, val in record.value.items() if not key.startswith("_")}
     if "evidence" in value:
         value["evidence"] = tuple(
-            EvidenceRef(**{**ref, "context": Context.from_dict(ref["context"])})
+            EvidenceRef(**{**ref, "context": Context.from_dict(ref["context"]),
+                           "source_ids": tuple(ref.get("source_ids", ()))})
             for ref in value["evidence"]
         )
     for key in ("labels", "reason_codes"):
@@ -133,6 +134,14 @@ def decode_account_runtime(runtime):
     return value
 
 
+def encode_account_state(state):
+    """Keep scalar readings while bounding repeated evidence context on disk."""
+    result = dict(state)
+    if result.get("evidence"):
+        result["_evidence"] = encode_account_runtime({"items": result.pop("evidence")})
+    return result
+
+
 def account_affect(record: StateRecord | None, context: Context):
     """Read only this source account's local-rule affect, never shared numbers."""
     if record is None or not context.account_id or record.record_key != context.account_id:
@@ -144,6 +153,9 @@ def account_affect(record: StateRecord | None, context: Context):
         raw, runtime = value["state"], decode_account_runtime(value["runtime"])
         if not isinstance(raw, dict) or not isinstance(runtime, dict):
             return None
+        if "_evidence" in raw:
+            raw = dict(raw)
+            raw["evidence"] = decode_account_runtime(raw.pop("_evidence"))["items"]
         affect = snapshot(StateRecord("bot", raw, record.version, record.generation,
                                       record.updated_at), BotAffect)
         if any(ref.context.account_key != context.account_key for ref in affect.evidence):
@@ -286,7 +298,7 @@ class Projector:
             if account is not None or personal["applied"]:
                 payload["_account_affect"] = {
                     "context": account_affect_token(context),
-                    "state": personal["trace"]["after"],
+                    "state": encode_account_state(personal["trace"]["after"]),
                     "runtime": encode_account_runtime(personal["runtime"]),
                 }
             write("relationship", relation["relationship"], relation["runtime"],

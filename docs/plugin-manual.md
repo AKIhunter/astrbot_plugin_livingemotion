@@ -2,7 +2,7 @@
 
 开发者：[AKIhunter](https://github.com/AKIhunter)。
 插件仓库：[AKIhunter/astrbot_plugin_livingemotion](https://github.com/AKIhunter/astrbot_plugin_livingemotion)。
-版本：0.4.1；适用 AstrBot 4.29.1–4.29.4，Python 3.12 及以上。
+版本：0.4.2；适用 AstrBot 4.29.1–4.29.4，Python 3.12 及以上。
 这是 LivingEmotion 插件的使用手册，宿主安装与账号管理请查 AstrBot 自身文档。
 
 ## 第一次使用
