@@ -15,7 +15,7 @@ SCOPE_FIELDS = frozenset({"persona_id", "view_scope", "context_id", "platform"})
 KINDS = frozenset({"emotion", "behavior", "diary", "dream"})
 ACTIONS = frozenset({
     "night.sleep", "night.wake", "diary.generate", "dream.generate", "behavior.send",
-    "experience.pin",
+    "experience.pin", "promise.cancel",
 })
 QUERY_FIELDS = {
     "state": SCOPE_FIELDS,
@@ -35,7 +35,7 @@ BODY_FIELDS = {
     "config": frozenset({"context_id", "expected_revision", "patch", "reason", "receipt"}),
     "preview": frozenset({"context_id"}),
     "action": frozenset({"context_id", "action", "expected_revision", "reason", "confirmed",
-                         "entry_id", "pinned", "expected_pinned"}),
+                         "entry_id", "pinned", "expected_pinned", "promise_id"}),
     "relationship": frozenset({"persona_id", "platform", "account_id", "context_id",
                                "score", "frozen", "note", "expected_version", "reason"}),
     "memory-sync": frozenset({"context_id"}),
@@ -317,5 +317,9 @@ async def body_parameters(operation: str, request) -> dict:
         result.update(entry_id=text(values.get("entry_id"), 512),
                       pinned=pinned, expected_pinned=expected)
     elif values.keys() & {"entry_id", "pinned", "expected_pinned"}:
+        invalid()
+    if action == "promise.cancel":
+        result["promise_id"] = text(values.get("promise_id"), 128)
+    elif "promise_id" in values:
         invalid()
     return result

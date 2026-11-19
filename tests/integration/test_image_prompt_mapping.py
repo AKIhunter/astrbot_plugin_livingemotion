@@ -61,6 +61,43 @@ def proposal(source="blouse", target="shirt", **changes):
     return json.dumps({"changes_scene": False, "substitutions": [{"from": source, "to": target}], **changes})
 
 
+@pytest.mark.parametrize("le_limit,lh_limit,expected", [
+    (0, 10, 0), (10, 0, 0), (3, 10, 3), (10, 2, 2), (10, 10, 10)])
+async def test_prompt_retry_budget_is_actual_configured_minimum(mapping, le_limit, lh_limit, expected):
+    s = mapping
+    s.app.config.promise_retry_limit = le_limit
+    s.image_values["prompt_guard_retry_limit"] = lh_limit
+    words = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta",
+             "eta", "theta", "iota", "kappa", "lambda"]
+    s.app.purpose_model.side_effect = [words[0]] + [
+        proposal(words[i], words[i+1]) for i in range(expected)]
+    pid = await add(s)
+    await s.service.run_due()
+    row = await s.service.promises.get(pid)
+    assert row["status"] == "waiting"
+    assert s.peer.calls == expected + 1
+    assert json.loads(row["action_result_json"])["prompt_retry_count"] == expected
+    s.service = PromiseService(s.service.store, s.app)
+    s.clock[0] += 301
+    await s.service.run_due()
+    assert s.peer.calls == expected + 1
+
+
+async def test_delay_retry_and_prompt_retry_share_le_budget(mapping):
+    s = mapping
+    s.app.config.promise_retry_limit = 3
+    s.image_values["prompt_guard_retry_limit"] = 10
+    pid = await add(s)
+    await s.service.store._run(lambda db: db.execute(
+        "UPDATE promises SET retry_count=2 WHERE promise_id=?", (pid,)))
+    s.app.purpose_model.side_effect = ["alpha", proposal("alpha", "beta")]
+    await s.service.run_due()
+    row = await s.service.promises.get(pid)
+    assert row["retry_count"] == 2
+    assert json.loads(row["action_result_json"])["prompt_retry_count"] == 1
+    assert s.peer.calls == 2
+
+
 async def test_explicit_rejection_retries_same_scene_then_learns(mapping):
     s = mapping
     initial = s.peer.generate_deferred_image.side_effect

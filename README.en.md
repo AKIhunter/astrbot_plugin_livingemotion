@@ -2,7 +2,7 @@
 
 ![livingEmotion wordmark and state lines](.github/img/Banner.png)
 
-[![Version](https://img.shields.io/badge/version-0.6.0-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.6.1-3a8060)](CHANGELOG.md)
 
 [简体中文](README.md) · **English**
 

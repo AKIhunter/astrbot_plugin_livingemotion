@@ -11,6 +11,7 @@ npm --prefix tests/ui run build
 npm --prefix tests/ui test
 npm --prefix tests/ui run test:browser
 node tests/ui/sleep-master-browser.test.mjs
+node tests/ui/promise-cancel-browser.test.mjs
 ```
 
 ## 检查分层

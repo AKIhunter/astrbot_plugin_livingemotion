@@ -412,9 +412,10 @@ class LivingEmotionAPI:
                 if isinstance(value, str) and len(value) <= (200 if key == "notice" else 4000):
                     metadata[key] = value
             count = failure.get("prompt_retry_count", 0)
-            metadata["prompt_retry_count"] = count if type(count) is int and 0 <= count <= 2 else 2
+            metadata["prompt_retry_count"] = count if type(count) is int and 0 <= count <= 10 else 10
             metadata["auto_prompt_retry"] = bool(
-                policy.get("enabled") and policy.get("retry_limit", 0) > metadata["prompt_retry_count"]
+                policy.get("enabled") and min(policy.get("retry_limit", 0),
+                                              app._promises().retry_limit) > metadata["prompt_retry_count"]
                 and failure["kind"] in {"content_rejected", "prompt_too_long"}
                 and not failure["use_reference"])
             result = await app._promises().promises.accept_image_handoff(
@@ -422,7 +423,7 @@ class LivingEmotionAPI:
                 failure={k: failure[k] for k in
                          ("request_id", "prompt", "kind", "reason", "use_reference")}
                 | metadata,
-                max_active=app._promises().max_active)
+                max_active=app._promises().max_active, retry_limit=app._promises().retry_limit)
             return self._result("ok", "image_failure_handoff",
                                 contract="livingemotion.image-followup.v1", data=result)
         except Exception:
@@ -434,7 +435,9 @@ class LivingEmotionAPI:
             app = self._application
             return self._result("ok", "image_prompt_retry_policy",
                 contract="livingemotion.image-prompt-retry.v1",
-                data={"allowed": bool(app.config.promise_enabled and app.promise_actions_active())})
+                data={"allowed": bool(app.config.promise_enabled and app.promise_actions_active()
+                                      and app._promises().retry_limit > 0),
+                      "retry_limit": app._promises().retry_limit})
         except Exception:
             return self._result("unavailable", "image_prompt_retry_unavailable")
 
@@ -523,7 +526,7 @@ class LivingEmotionAPI:
                     policy.get("status") == "ok" and policy.get("data", {}).get("allowed"))}
             service = self._application._promises()
             data = await service.promises.settle_image_request(
-                scope, receipt, ttl_seconds=service._trace_ttl())
+                scope, receipt, ttl_seconds=service._trace_ttl(), retry_limit=service.retry_limit)
             return self._result("ok", "image_promise_receipt",
                                 contract="livingemotion.image-result.v1", data=data)
         except Exception:

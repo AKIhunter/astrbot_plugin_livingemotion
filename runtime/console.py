@@ -194,6 +194,8 @@ FIELD_LABELS = {
     "wake_greeting_texts": "刚醒招呼候选句子",
     "promise_enabled": "记住答应过的事",
     "promise_max_active": "同时追踪的承诺条数",
+    "promise_retry_limit": "失败后自动重试次数",
+    "promise_wait_timeout_hours": "失败后最长等待",
     "promise_max_depth": "单条承诺最多拆几层",
     "promise_advance_limit": "每轮最多推进几条",
     "promise_tick_seconds": "承诺推进间隔",
@@ -536,6 +538,10 @@ class Console:
                 item.update(min=1, max=2000)
             if f.name == "promise_max_active":
                 item.update(min=1, max=10)
+            if f.name == "promise_retry_limit":
+                item.update(min=0, max=10, step=1, unit="次")
+            if f.name == "promise_wait_timeout_hours":
+                item.update(min=1, max=168, step=1, unit="小时")
             if f.name in enums:
                 # gentle 在主动节奏里是「轻柔」，在情绪强度里是「保守」，按字段取标签。
                 label_of = ({"gentle": "保守", "normal": "平常", "intense": "激进"}
@@ -551,6 +557,8 @@ class Console:
                 item.update(step=0.1 if type(f.default) is float else 1, unit=unit)
             if f.name == "promise_trace_ttl_hours":
                 item.update(min=1, max=168, step=0.1, unit="小时")
+            if f.name == "promise_wait_timeout_hours":
+                item.update(min=1, max=168, step=1, unit="小时")
             if f.name == "weather_transition_seconds":
                 item.update(min=0, max=7200, step=1, unit="秒")
             if f.name.endswith("provider_id"):
@@ -1267,7 +1275,7 @@ class Console:
         """「主动行为」页顶部的承诺挂载区：开关状态 + 待兑现清单。"""
         enabled = bool(getattr(self.config, "promise_enabled", False))
         items: list[dict] = []
-        if enabled:
+        if enabled or await self._promises().promises.active(limit=1):
             scope_key = ""
             if context_id:
                 try:
@@ -1303,17 +1311,31 @@ class Console:
             for row in rows:
                 target = targets.get(row["promise_id"])
                 group = target is not None and target.scene_kind == "group"
+                import json
+                try:
+                    artifact = json.loads(row["action_result_json"])
+                    prompt_retries = int(artifact.get("prompt_retry_count") or 0)
+                except (ValueError, TypeError, AttributeError):
+                    prompt_retries = 0
                 items.append({
                     "promise_id": row["promise_id"],
                     "description": row["description"],
                     "status": row["status"],
                     "bucket_label": row.get("bucket") or "",
-                    "eta_seconds": None if row["status"] == "waiting" else max(0, int(row["due_at"] - now)),
+                    "eta_seconds": None if row["status"] in ("waiting", "unknown") else max(0, int(row["due_at"] - now)),
                     "reason": row.get("last_error", ""),
                     "advance_count": int(row.get("advance_count") or 0),
                     "created_at": row["created_at"],
                     "due_at": row["due_at"],
                     "original_due_at": row["original_due_at"],
+                    "context_id": target.account_key if target else "",
+                    "can_cancel": target is not None and row["status"] != "running",
+                    "retry_count": row["retry_count"],
+                    "prompt_retry_count": prompt_retries,
+                    "retry_limit": self._promises().retry_limit,
+                    "waiting_deadline": ((row["waiting_since"] or row["updated_at"])
+                                         + self._promises().wait_timeout
+                                         if row["status"] in ("waiting", "unknown") else None),
                     # 发送路由以 scene_id 为目的地：群任务应显示群号，不能显示发起人的 QQ。
                     "target_id": target.scene_id if target else "",
                     "target_label": ("QQ群号" if group else "QQ号") if target and target.platform == "qq"
@@ -1813,13 +1835,42 @@ class Console:
         return await simulate(self, context_id, persona_id, emotion, request_id, actor_id=actor_id)
 
     async def console_action(self, context_id, action, *, expected_revision, reason,
-                             actor_id, confirmed, entry_id="", pinned=None, expected_pinned=None):
+                             actor_id, confirmed, entry_id="", pinned=None, expected_pinned=None,
+                             promise_id=""):
         self._open()
         self._actor(actor_id, reason)
         if confirmed is not True:
             raise ApplicationError("validation_error", "Explicit confirmation is required")
         if expected_revision != self.revision:
             raise ApplicationError("version_conflict", "Configuration changed; refresh first")
+        if action == "promise.cancel":
+            if (not isinstance(promise_id, str) or not 1 <= len(promise_id) <= 128
+                    or entry_id or pinned is not None or expected_pinned is not None):
+                raise ApplicationError("validation_error", "Invalid promise cancellation")
+            context = self._contexts.get(context_id)
+            if context is None:
+                # 跨重启取消只读持久会话，不恢复模型或发送链路。
+                import json
+                source = await self.store._run(lambda db: db.execute(
+                    "SELECT context_json FROM source_contexts WHERE context_id=?",
+                    (context_id,)).fetchone())
+                context = Context.from_dict(json.loads(source[0])) if source else None
+            if context is None:
+                raise ApplicationError("validation_error", "Unknown context")
+            async with self._config_lock:
+                if expected_revision != self.revision:
+                    raise ApplicationError("version_conflict", "Configuration changed")
+                result = await self._promises().promises.cancel_many([promise_id], context=context)
+            if result["status"] != "ok":
+                raise ApplicationError("version_conflict", "Promise changed or is executing")
+            await self.store.append_audit(
+                action=action, actor_id=actor_id, reason=reason, context=context,
+                value={"promise_id": promise_id, "status": "cancelled"})
+            return {"api_version": 1, "status": "cancelled", "model_calls": 0, "sends": 0,
+                    "reason": "已停止后续处理，保留原请求记录；不表示上游请求已撤回。",
+                    "upstream_cancellation_confirmed": False}
+        if promise_id:
+            raise ApplicationError("validation_error", "Promise ID requires cancellation")
         if action == "experience.pin":
             private_entry = await self.store.load_experience(entry_id) if entry_id else None
             private_archive = bool(private_entry and private_entry[0].context.platform == "console")

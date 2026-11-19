@@ -150,6 +150,8 @@ class Config:
     promise_max_depth: int = 3
     promise_advance_limit: int = 3
     promise_tick_seconds: int = 15
+    promise_retry_limit: int = 3
+    promise_wait_timeout_hours: int = 24
     # 承诺兑现的片段缓存：兑现后一段时间内，用户追问直接读这份快照，
     # 不再走向量检索。默认一天；到期即释放，回到正常检索。
     promise_trace_ttl_hours: float = 24.0
@@ -295,6 +297,10 @@ class Config:
             raise ValueError("invalid coupling promise actions mode")
         if type(self.promise_max_active) is not int or not 1 <= self.promise_max_active <= 10:
             raise ValueError("promise_max_active: expected 1-10")
+        if type(self.promise_retry_limit) is not int or not 0 <= self.promise_retry_limit <= 10:
+            raise ValueError("promise_retry_limit: expected 0-10")
+        if type(self.promise_wait_timeout_hours) is not int or not 1 <= self.promise_wait_timeout_hours <= 168:
+            raise ValueError("promise_wait_timeout_hours: expected 1-168")
         if (not isinstance(self.promise_trace_ttl_hours, (int, float))
                 or isinstance(self.promise_trace_ttl_hours, bool)
                 or not 1 <= float(self.promise_trace_ttl_hours) <= 168):
@@ -366,6 +372,7 @@ class Config:
                 "closing_lead_minutes", "emotion_quiet_start_hour", "emotion_quiet_end_hour",
                 # 天气0秒表示立即采用目标权重。
                 "weather_transition_seconds",
+                "promise_retry_limit",
             ) or name in IMAGE_REFUSAL_FIELDS else 1
             if type(default) is int and (type(value) is not int or value < minimum):
                 raise ValueError(f"{name}: expected positive integer")

@@ -1,6 +1,6 @@
 # LivingEmotion 当前文档
 
-适用0.6.0，2026-11-19核对。历史变更统一见[CHANGELOG](../CHANGELOG.md)；
+适用0.6.1，2026-11-19核对。历史变更统一见[CHANGELOG](../CHANGELOG.md)；
 旧测试报告仅证明当时范围，不替代当前代码或生产状态。
 
 | 用途 | 权威入口 | 依据 |
@@ -17,6 +17,7 @@
 | 精力、睡眠与票据 | [睡眠规则](sleep-energy-rules.md) | domain/night、runtime/night、storage/night |
 | 模型、素材和体验 | [日记梦境](experience.md)、[记忆](memory.md) | 实际生成与来源许可 |
 | 开发测试与显式宿主分层 | [交付分层](delivery-notes.md)、[独立运行](local-runtime.md) | pytest、宿主、浏览器与双插件入口 |
+| 承诺重试、等待期限与取消 | [重试与收尾](promise-retry.md) | 配置预算、旧任务迁移和未知结果保护 |
 
 每项文档由对应功能修改者维护；配置字段每次提交自动校验，其他操作与原理每次行为变更更新，
 90天复核。超过周期或源码改变未更新时标记stale。README只作为当前产品入口。

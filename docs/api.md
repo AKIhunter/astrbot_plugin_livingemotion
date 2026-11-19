@@ -1,6 +1,6 @@
 # API v1
 
-适用0.6.0；按api.py、page_api/routes.py、validation.py和Console核对。
+适用0.6.1；按api.py、page_api/routes.py、validation.py和Console核对。
 本页同时列出公开进程内门面和全部21项注册管理路由。
 注册不等于应用已接通：emotion-image-save当前缺少应用入口，返回503。
 
@@ -46,7 +46,7 @@ TA 概览迁为九项情绪谱，Console 不再返回已移除的 `emotion_curve
 
 ## 生图绑定与回执
 
-LH 2.9.0在同一受信事件extra写入受控结构，再调用公开门面：
+LH 2.9.2在同一受信事件extra写入受控结构，再调用公开门面：
 
 ```json
 {"promise_id":"原事项ID","request_id":"原请求ID","prompt":"窗边的猫","use_reference":false}
@@ -96,7 +96,7 @@ global汇总真实来源，不创建全局发送路由。state/configuration可�
 | GET records | S、kind=emotion/behavior/diary/dream、分页/query | items/total；行为含完整promises与总数，私人体验含正文/来源 |
 | POST config | patch、expected_revision；可选context_id/reason/receipt=state或config | 原生保存、运行态替换与回执 |
 | POST preview | context_id | 行为资格预览，0模型/0发送 |
-| POST action | context_id/action/expected_revision/confirmed=true；可选reason及置顶字段 | 下述动作；最终复核业务守卫 |
+| POST action | context_id/action/expected_revision/confirmed=true；可选reason、置顶字段或promise_id | 下述动作；最终复核业务守卫 |
 | GET relationships | S、分页/query、limit、graph_scope=matched/all | 分页关系及nodes/edges/displayed |
 | POST relationship | persona_id/platform/account_id或context_id、expected_version、score/frozen/note、reason | CAS编辑好感；需编辑许可 |
 | GET energy | S、分页、event_type | 精力事件与曲线 |
@@ -112,11 +112,14 @@ global汇总真实来源，不创建全局发送路由。state/configuration可�
 | POST experience-generate | request_id/persona_id/kind=diary或dream | 接受或复用后台私人任务 |
 | GET experience-task | request_id | 同人格任务状态，查询不再次派发模型 |
 
-action白名单是night.sleep/night.wake/diary.generate/dream.generate/behavior.send/experience.pin。
+action白名单是night.sleep/night.wake/diary.generate/dream.generate/behavior.send/experience.pin/promise.cancel。
 睡眠动作仍需allow_sleep及当前可用动作；唤醒不加精力。
 behavior.send跳过时机/冷却等软条件，保留硬闸门；它会真实发送。
 experience.pin需entry_id、pinned与相反的expected_pinned；无模型、无发送。
-当前没有promise.cancel、clear_context、全库删除或local_lite录入HTTP端点。
+promise.cancel需promise_id；仅取消当前目标、同代次的scheduled/awaiting/waiting/unknown任务。
+事务中核对身份与状态，running拒绝取消；返回cancelled且model_calls=0/sends=0。
+取消只停止后续处理，不撤销上游请求、不补发未知图片。页面成功后自动读回。
+当前没有clear_context、全库删除或local_lite录入HTTP端点。
 
 ## 配置保存与任务幂等
 

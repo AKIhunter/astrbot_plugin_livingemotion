@@ -3,7 +3,7 @@
 ![livingEmotion 原创字标与状态线](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-4.29.1–4.29.4-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.6.0-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.6.1-3a8060)](CHANGELOG.md)
 
 **简体中文** · [English](README.en.md)
 

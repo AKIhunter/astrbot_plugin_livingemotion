@@ -70,6 +70,7 @@ MIGRATIONS = (
     "ALTER TABLE promises ADD COLUMN adjustment_notice_state TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE promises ADD COLUMN adjustment_notice_attempt INTEGER NOT NULL DEFAULT 0",
     "ALTER TABLE promises ADD COLUMN adjustment_notice_retry_at REAL NOT NULL DEFAULT 0",
+    "ALTER TABLE promises ADD COLUMN waiting_since REAL NOT NULL DEFAULT 0",
 )
 
 # 允许的状态转换；越界的写入一律拒绝，避免状态机被绕过。
@@ -82,13 +83,20 @@ TRANSITIONS = {
     "sent": set(),
     "failed": set(),
     "cancelled": set(),
-    "unknown": set(),
+    # 只结束后续处理；未知副作用不能自动恢复执行。
+    "unknown": {"cancelled", "failed"},
     "delegated": set(),
     # waiting 与旧 awaiting 不同：等待需求调整或结果核对，tick/heal 绝不能自动释放。
     "waiting": {"scheduled", "cancelled", "failed"},
 }
 
-ACTIVE = ("scheduled", "running", "waiting", "awaiting")
+ACTIVE = ("scheduled", "running", "waiting", "awaiting", "unknown")
+NOTICE_KINDS = (
+    "content_rejected", "prompt_too_long", "prompt_adjustment_required",
+    "provider_error", "result_unknown", "delivery_unknown", "quota_exhausted",
+    "rate_limited", "image_action_unknown", "action_interrupted",
+    "image_rejected", "image_unavailable",
+)
 
 # 「刚发过就别再建」的判定窗口（秒）。
 # 这条规则只用来挡住**同一条回复被重复提交**造成的双份任务，
@@ -145,6 +153,9 @@ class PromiseStore:
                     pass  # 字段已存在
             db.execute("CREATE UNIQUE INDEX IF NOT EXISTS promises_handoff "
                        "ON promises(scope_key,handoff_key) WHERE handoff_key!=''")
+            # 旧暂停项沿用原时间，不因升级重新获得等待期限。
+            db.execute("UPDATE promises SET waiting_since=updated_at "
+                       "WHERE status IN ('waiting','unknown') AND waiting_since=0")
 
         await self.store._run(create)
         self._ready = True
@@ -189,10 +200,10 @@ class PromiseStore:
                 row = db.execute(
                     """SELECT promise_id, due_at, status FROM promises
                        WHERE scope_key=? AND fingerprint=?
-                         AND status IN ('scheduled','running','waiting','awaiting')""",
+                         AND status IN ('scheduled','running','waiting','awaiting','unknown')""",
                     (scope, fp)).fetchone()
                 if row:
-                    if row["status"] in ("waiting", "awaiting"):
+                    if row["status"] in ("waiting", "awaiting", "unknown"):
                         # 暂停或等待合并交付的同一项只复用，不通过重复标记释放暂停。
                         return {"status": "duplicate", "promise_id": row["promise_id"]}
                     if due_at < row["due_at"]:
@@ -213,7 +224,7 @@ class PromiseStore:
                             "age": int(now - float(recent["sent_at"] or now))}
                 active = db.execute(
                     "SELECT COUNT(*) FROM promises WHERE scope_key=? "
-                    "AND status IN ('scheduled','running','waiting','awaiting')",
+                    "AND status IN ('scheduled','running','waiting','awaiting','unknown')",
                     (scope,)).fetchone()[0]
                 # 去重/同源复用优先；名额检查和 INSERT 同事务，最后一个名额不会被并发抢穿。
                 if max_active is not None and active >= max_active:
@@ -238,7 +249,7 @@ class PromiseStore:
 
     async def accept_image_handoff(self, context: Context, *, request_id: str,
                                    source_event_id: str, failure: dict,
-                                   max_active: int | None = None) -> dict:
+                                   max_active: int | None = None, retry_limit: int = 3) -> dict:
         """同一请求只交接一次；创建与动作状态在同一事务中落盘。"""
         if max_active is not None and (type(max_active) is not int or not 1 <= max_active <= 10):
             raise ValueError("promise_max_active: expected 1-10")
@@ -248,7 +259,7 @@ class PromiseStore:
         pid = stable_key("image-followup", context.scope_key, request_id)
         payload = json.dumps({**failure, "source_context": to_dict(context)}, ensure_ascii=False)
         notice = "sent" if failure.get("adjustment_asked") is True else ""
-        ready = not failure.get("use_reference") and (
+        ready = retry_limit > 0 and not failure.get("use_reference") and (
             failure["kind"] == "rate_limited" or failure.get("auto_prompt_retry") is True
             and failure["kind"] in {"content_rejected", "prompt_too_long"})
         status, action = ("scheduled", "retry_ready") if ready else ("waiting", "held")
@@ -291,17 +302,18 @@ class PromiseStore:
                            due_at=?,original_due_at=?,original_bucket=?,updated_at=?,context_summary=?,
                            action_state=?,action_result_json=?,handoff_key=?,last_error=?,
                            handoff_account_key=?,adjustment_notice_state=?,
-                           adjustment_notice_attempt=0,adjustment_notice_retry_at=0
+                           adjustment_notice_attempt=0,adjustment_notice_retry_at=0,
+                           waiting_since=?
                            WHERE promise_id=? AND status='scheduled'""",
                         (status, bucket, fingerprint(context.scope_key, description), description,
                          failure["prompt"], now + 300, now + 300, bucket, now, failure["reason"],
                          action, payload, request_id, failure["kind"], context.account_key,
-                         notice, original["promise_id"]))
+                         notice, now if status == "waiting" else 0, original["promise_id"]))
                     return {"status": "accepted", "promise_id": original["promise_id"],
                             "task_status": status}
                 active = db.execute(
                     "SELECT COUNT(*) FROM promises WHERE scope_key=? "
-                    "AND status IN ('scheduled','running','waiting','awaiting')",
+                    "AND status IN ('scheduled','running','waiting','awaiting','unknown')",
                     (context.scope_key,)).fetchone()[0]
                 if max_active is not None and active >= max_active:
                     return {"status": "limit_reached", "active": active, "max_active": max_active}
@@ -310,13 +322,13 @@ class PromiseStore:
                        (promise_id,scope_key,generation,status,bucket,fingerprint,description,note,
                         due_at,original_due_at,original_bucket,depth,created_at,updated_at,
                         context_summary,source_event_id,action_state,action_result_json,handoff_key,
-                        last_error,handoff_account_key,adjustment_notice_state)
-                       VALUES(?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?)""",
+                        last_error,handoff_account_key,adjustment_notice_state,waiting_since)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?,?)""",
                     (pid, context.scope_key, generation, status, bucket,
                      fingerprint(context.scope_key, description), description, failure["prompt"],
                      now + 300, now + 300, bucket, now, now,
                      failure["reason"], source_event_id, action, payload, request_id, failure["kind"],
-                     context.account_key, notice))
+                     context.account_key, notice, now if status == "waiting" else 0))
                 return {"status": "accepted", "promise_id": pid, "task_status": status}
             return self.store._transaction(db, mutate)
         return await self.store._run(write)
@@ -358,7 +370,7 @@ class PromiseStore:
                        action_result_json=?,description=?,note=?,fingerprint=?,due_at=?,
                        bucket='马上',updated_at=?,generation=?,last_error='',source_event_id=?,
                        adjustment_notice_state='',adjustment_notice_attempt=0,
-                       adjustment_notice_retry_at=0
+                       adjustment_notice_retry_at=0,waiting_since=0
                        WHERE promise_id=? AND status='waiting'""",
                     (json.dumps(failure, ensure_ascii=False), description, prompt,
                      fingerprint(context.scope_key, description), now + 20, now, generation,
@@ -410,7 +422,7 @@ class PromiseStore:
         return await self.store._run(write)
 
     async def settle_image_request(self, context: Context, receipt: dict, *,
-                                   ttl_seconds: float = 86400) -> dict:
+                                   ttl_seconds: float = 86400, retry_limit: int = 3) -> dict:
         """请求、代次与来源一致才结算；成功事实和 trace 在同一事务提交。"""
         await self.ensure()
         generation, now = await self.store.get_generation(context), self.store.clock()
@@ -440,7 +452,7 @@ class PromiseStore:
                 sent = receipt["status"] == "sent"
                 kind = str(receipt.get("kind") or "result_unknown")
                 # 新映射可重试的确定失败仍走原调度链路；未知结果始终暂停。
-                ready = not sent and receipt["status"] == "failed" and (
+                ready = retry_limit > 0 and not sent and receipt["status"] == "failed" and (
                     kind == "rate_limited" or receipt.get("auto_prompt_retry") is True
                     and kind in {"content_rejected", "prompt_too_long"})
                 status = "sent" if sent else "scheduled" if ready else "waiting"
@@ -452,7 +464,8 @@ class PromiseStore:
                 db.execute(
                     """UPDATE promises SET status=?,action_state=?,action_result_json=?,
                        delivered_text=?,sent_at=?,last_error=?,bucket=?,handoff_key=?,
-                       adjustment_notice_state=?,updated_at=?,due_at=? WHERE promise_id=?""",
+                       adjustment_notice_state=?,updated_at=?,due_at=?,waiting_since=?
+                       WHERE promise_id=?""",
                     (status, action, json.dumps(artifact, ensure_ascii=False),
                      text if sent else "", now if sent else None, "" if sent else kind,
                      row["bucket"] if sent else "等待重试" if ready else (
@@ -460,7 +473,8 @@ class PromiseStore:
                                                "prompt_adjustment_required"} else "等待核对"),
                      row["handoff_key"] or receipt["request_id"],
                      "sent" if receipt.get("adjustment_asked") is True else row["adjustment_notice_state"],
-                     now, now + 300 if ready else row["due_at"], pid))
+                     now, now + 300 if ready else row["due_at"],
+                     (row["waiting_since"] or now) if status == "waiting" else 0, pid))
                 if sent:
                     db.execute(
                         """INSERT INTO promise_traces(trace_id,scope_key,promise_id,kind,summary,
@@ -511,7 +525,7 @@ class PromiseStore:
         await self.ensure()
         return await self.store._run(lambda db: db.execute(
             "SELECT COUNT(*) FROM promises WHERE scope_key=? "
-            "AND status IN ('scheduled','running','waiting','awaiting')",
+            "AND status IN ('scheduled','running','waiting','awaiting','unknown')",
             (context.scope_key,)).fetchone()[0])
 
     async def due(self, *, now: float, limit: int = 12) -> list[dict[str, Any]]:
@@ -537,7 +551,7 @@ class PromiseStore:
         def read(db):
             sql = ("SELECT promise_id,scope_key,description,status,bucket,due_at,original_due_at,"
                    "created_at,handoff_account_key,advance_count,last_error "
-                   "FROM promises WHERE status IN ('scheduled','running','waiting','awaiting')")
+                   "FROM promises WHERE status IN ('scheduled','running','waiting','awaiting','unknown')")
             args: list[Any] = []
             if scope_key:
                 sql += " AND scope_key=?"
@@ -611,8 +625,12 @@ class PromiseStore:
                 sent_at = now if status == "sent" else None
                 db.execute(
                     """UPDATE promises SET status=?, updated_at=?, sent_at=COALESCE(?,sent_at),
-                       last_error=? WHERE promise_id=? AND status=?""",
-                    (status, now, sent_at, str(error or "")[:300], promise_id, current))
+                       last_error=?,waiting_since=CASE
+                         WHEN ? IN ('waiting','unknown') THEN
+                           CASE WHEN waiting_since>0 THEN waiting_since ELSE ? END
+                         ELSE 0 END
+                       WHERE promise_id=? AND status=?""",
+                    (status, now, sent_at, str(error or "")[:300], status, now, promise_id, current))
                 return {"status": "ok", "from": current, "to": status}
 
             return self.store._transaction(db, mutate)
@@ -702,7 +720,7 @@ class PromiseStore:
             def mutate():
                 changed = db.execute(
                     """UPDATE promises SET status='scheduled', updated_at=?
-                       WHERE promise_id=? AND status IN ('running','unknown')
+                       WHERE promise_id=? AND status='running'
                          AND action_state NOT IN ('generating','sending','unknown')""",
                     (now, promise_id))
                 return {"status": "ok" if changed.rowcount else "noop"}
@@ -747,11 +765,12 @@ class PromiseStore:
                 """UPDATE promises SET status='waiting',bucket='等待调整',
                    last_error=?,action_state='held',action_result_json=?,
                    handoff_key=?,handoff_account_key=?,adjustment_notice_state=?,
-                   adjustment_notice_attempt=0,adjustment_notice_retry_at=0,updated_at=?
+                   adjustment_notice_attempt=0,adjustment_notice_retry_at=0,updated_at=?,
+                   waiting_since=?
                    WHERE promise_id=? AND scope_key=? AND status='running'""",
                 (str(failure.get("kind") or "content_rejected"), payload, request_id, context.account_key,
                  "sent" if failure.get("adjustment_asked") is True else "",
-                 self.store.clock(), promise_id, context.scope_key))
+                 self.store.clock(), self.store.clock(), promise_id, context.scope_key))
             return changed.rowcount == 1
         return await self.store._run(write)
 
@@ -760,14 +779,58 @@ class PromiseStore:
 
         def read(db):
             rows = db.execute(
-                """SELECT * FROM promises WHERE status='waiting' AND action_state='held'
-                   AND last_error IN ('content_rejected','prompt_too_long','prompt_adjustment_required')
+                """SELECT * FROM promises WHERE status IN ('waiting','unknown')
+                   AND last_error IN ('content_rejected','prompt_too_long','prompt_adjustment_required',
+                                      'provider_error','result_unknown','delivery_unknown',
+                                      'quota_exhausted','rate_limited','image_action_unknown',
+                                      'action_interrupted','image_rejected','image_unavailable')
                    AND adjustment_notice_state IN ('','rejected')
                    AND adjustment_notice_attempt<3 AND adjustment_notice_retry_at<=?
                    ORDER BY updated_at,promise_id LIMIT ?""",
                 (now, max(1, min(100, limit)))).fetchall()
             return [dict(row) for row in rows]
         return await self.store._run(read)
+
+    async def hold_image_failure(self, context: Context, promise_id: str, failure: dict,
+                                 *, state="held", expect=("running",)) -> bool:
+        """统一失败收尾；身份/代次/状态在一个事务核验，失败请求内容仍留存。"""
+        await self.ensure()
+        now = self.store.clock()
+        def write(db):
+            def mutate():
+                row = db.execute("SELECT * FROM promises WHERE promise_id=?", (promise_id,)).fetchone()
+                if (not row or row["status"] not in expect or row["scope_key"] != context.scope_key
+                        or row["generation"] != self.store._generation(db, context)
+                        or row["handoff_account_key"] not in ("", context.account_key)):
+                    return False
+                request_id = str(failure.get("request_id") or row["handoff_key"] or stable_key(
+                    "image-failure", promise_id, failure.get("prompt")))
+                artifact = {**failure, "request_id": request_id, "source_context": to_dict(context)}
+                db.execute(
+                    """UPDATE promises SET status=?,bucket='等待核对',action_state=?,
+                       action_result_json=?,last_error=?,handoff_key=?,handoff_account_key=?,
+                       waiting_since=CASE WHEN waiting_since>0 THEN waiting_since ELSE ? END,
+                       updated_at=? WHERE promise_id=?""",
+                    ("unknown" if state == "unknown" else "waiting", state,
+                     json.dumps(artifact, ensure_ascii=False),
+                     str(failure.get("kind") or "provider_error"), request_id, context.account_key,
+                     now, now, promise_id))
+                return True
+            return self.store._transaction(db, mutate)
+        return await self.store._run(write)
+
+    async def expire_waiting(self, *, now: float, timeout_seconds: float) -> int:
+        """结束等待并释放名额；保留 action_state/请求/失败内容，不伪装已完成。"""
+        await self.ensure()
+        def write(db):
+            changed = db.execute(
+                """UPDATE promises SET status='failed',bucket='等待超时',updated_at=?,
+                   last_error='waiting_timeout'
+                   WHERE status IN ('waiting','unknown')
+                   AND CASE WHEN waiting_since>0 THEN waiting_since ELSE updated_at END<=?""",
+                (now, now - timeout_seconds))
+            return changed.rowcount
+        return await self.store._run(write)
 
     async def claim_adjustment_notice(self, context: Context, promise_id: str) -> dict | None:
         """发送前原子占位；崩溃留下 sending，重启不盲目重复追问。"""
@@ -780,9 +843,8 @@ class PromiseStore:
                 if (not row or row["scope_key"] != context.scope_key
                         or row["handoff_account_key"] not in ("", context.account_key)
                         or row["generation"] != self.store._generation(db, context)
-                        or row["status"] != "waiting" or row["action_state"] != "held"
-                        or row["last_error"] not in {"content_rejected", "prompt_too_long",
-                                                    "prompt_adjustment_required"}
+                        or row["status"] not in ("waiting", "unknown")
+                        or row["last_error"] not in NOTICE_KINDS
                         or row["adjustment_notice_state"] not in ("", "rejected")
                         or row["adjustment_notice_attempt"] >= 3
                         or row["adjustment_notice_retry_at"] > now):
@@ -800,7 +862,7 @@ class PromiseStore:
         await self.ensure()
         await self.store._run(lambda db: db.execute(
             """UPDATE promises SET adjustment_notice_retry_at=?
-               WHERE promise_id=? AND status='waiting'
+               WHERE promise_id=? AND status IN ('waiting','unknown')
                AND adjustment_notice_state IN ('','rejected')""", (retry_at, promise_id)))
 
     async def finish_adjustment_notice(self, promise_id: str, attempt: int, *,
@@ -812,7 +874,7 @@ class PromiseStore:
         def write(db):
             changed = db.execute(
                 """UPDATE promises SET adjustment_notice_state=?,adjustment_notice_retry_at=?
-                   WHERE promise_id=? AND status='waiting'
+                   WHERE promise_id=? AND status IN ('waiting','unknown')
                    AND adjustment_notice_state='sending' AND adjustment_notice_attempt=?
                    AND action_result_json=?""",
                 (state, retry_at, promise_id, attempt, payload))
@@ -837,7 +899,7 @@ class PromiseStore:
         return await self.cancel_many([promise_id])
 
     async def cancel_many(self, promise_ids, *, context: Context | None = None) -> dict[str, Any]:
-        """核对与写入共用事务；已知失败可放弃，执行中和未知交付仍受保护。"""
+        """取消后续履行，保留请求与副作用记录；执行中的任务仍不可取消。"""
         await self.ensure()
         ids = list(dict.fromkeys(promise_ids))
         now = self.store.clock()
@@ -851,12 +913,10 @@ class PromiseStore:
                     if not row:
                         return {"status": "missing"}
                     if context and (row["scope_key"] != context.scope_key
-                                    or row["handoff_account_key"] not in ("", context.account_key)):
+                                    or row["handoff_account_key"] not in ("", context.account_key)
+                                    or row["generation"] != self.store._generation(db, context)):
                         return {"status": "conflict"}
-                    known_failure = (row["status"] == "waiting" and row["last_error"] in {
-                        "content_rejected", "provider_error", "rate_limited", "quota_exhausted",
-                        "prompt_too_long", "prompt_adjustment_required"})
-                    if row["status"] not in ("scheduled", "awaiting") and not known_failure:
+                    if row["status"] not in ("scheduled", "awaiting", "waiting", "unknown"):
                         return {"status": "conflict"}
                 for pid in ids:
                     db.execute("UPDATE promises SET status='cancelled',updated_at=? "
@@ -986,7 +1046,7 @@ class PromiseStore:
         def write(db):
             def mutate():
                 stale = db.execute(
-                    """SELECT promise_id FROM promises WHERE handoff_key='' AND status IN ('sent','failed','cancelled','unknown','delegated')
+                    """SELECT promise_id FROM promises WHERE handoff_key='' AND status IN ('sent','failed','cancelled','delegated')
                        ORDER BY updated_at DESC LIMIT -1 OFFSET ?""", (keep,)).fetchall()
                 if not stale:
                     return 0

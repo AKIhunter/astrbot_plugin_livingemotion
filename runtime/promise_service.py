@@ -29,7 +29,7 @@ CANCEL = re.compile(
 MAX_ACTIVE = 3
 MAX_DEPTH = 3
 MAX_ADVANCE = 3
-# 发不出去时的重试：每次推后 5 分钟，最多 3 次，之后才落 failed。
+# 默认重试3次，可在配置中设0–10；每次推后5分钟。
 RETRY_BACKOFF = 300.0
 MAX_RETRY = 3
 # 会话不在内存时多久再试。用户一说话 source 就回来，所以不必等太久。
@@ -138,13 +138,23 @@ class PromiseService:
         value = getattr(self.app.config, "promise_max_active", MAX_ACTIVE)
         return max(1, min(10, value)) if type(value) is int else MAX_ACTIVE
 
+    @property
+    def retry_limit(self) -> int:
+        value = getattr(self.app.config, "promise_retry_limit", MAX_RETRY)
+        return max(0, min(10, value)) if type(value) is int else MAX_RETRY
+
+    @property
+    def wait_timeout(self) -> float:
+        value = getattr(self.app.config, "promise_wait_timeout_hours", 24)
+        return (max(1, min(168, value)) if type(value) is int else 24) * 3600.0
+
     async def active(self, context: Context) -> list[dict]:
         rows = await self.promises.list(context, limit=None)
         now = self.store.clock()
         for row in rows:
             row["eta_seconds"] = max(0.0, float(row["due_at"]) - now)
             row["bucket_label"] = bucket_label(row["bucket"])
-            if row["status"] == "waiting":
+            if row["status"] in ("waiting", "unknown"):
                 row["eta_seconds"] = None
                 row["bucket_label"] = row["bucket"]
         return rows
@@ -155,6 +165,8 @@ class PromiseService:
             "api_version": 1,
             "enabled": bool(getattr(self.app.config, "promise_enabled", True)),
             "max_active": self.max_active,
+            "retry_limit": self.retry_limit,
+            "wait_timeout_hours": self.wait_timeout / 3600,
             "active_count": await self.promises.count_active(context),
             "items": [{
                 "promise_id": row["promise_id"],
@@ -168,6 +180,10 @@ class PromiseService:
                 "advance_count": row["advance_count"],
                 "created_at": row["created_at"],
                 "reason": row.get("last_error", ""),
+                "retry_count": row.get("retry_count", 0),
+                "can_cancel": row["status"] != "running",
+                "waiting_deadline": ((row.get("waiting_since") or row["updated_at"]) + self.wait_timeout
+                                     if row["status"] in ("waiting", "unknown") else None),
             } for row in rows],
         }
 
@@ -304,6 +320,9 @@ class PromiseService:
     async def _run_due(self, now: float | None, *, limit: int) -> int:
         await self.heal()
         moment = self.store.clock() if now is None else float(now)
+        expired = await self.promises.expire_waiting(now=moment, timeout_seconds=self.wait_timeout)
+        if expired:
+            logger.warning("[LE-promise] 等待超时 结束=%d", expired)
         if not self.app.promise_actions_active():
             # 并轨被关掉：先前挂起等回复的承诺不会有人来取，放回队列单独发。
             released = await self.promises.release_awaiting(moment)
@@ -429,33 +448,52 @@ class PromiseService:
                     artifact = json.loads(current.get("action_result_json") or "{}")
                 except (ValueError, TypeError):
                     artifact = {}
-                await self.promises.checkpoint_action(promise_id, "unknown", artifact)
-                await self.promises.move(promise_id, status="unknown", expect=("running",),
-                                         error="image_action_unknown")
+                artifact["kind"] = ("delivery_unknown" if current.get("action_state") == "sending"
+                                    or artifact.get("stage") == "delivery"
+                                    or artifact.get("kind") == "delivery_unknown"
+                                    else "result_unknown")
+                await self.promises.hold_image_failure(context, promise_id, artifact, state="unknown")
                 return False
             if status == "waiting":
                 await self.promises.move(
                     promise_id, status="waiting", expect=("running",),
                     error=str(outcome.get("reason") or "image_result_unknown"))
-                if outcome.get("reason") in {"content_rejected", "prompt_too_long", "prompt_adjustment_required"}:
+                if outcome.get("reason"):
                     current = await self.promises.get(promise_id)
                     if current and current["status"] == "waiting":
                         await self._ask_adjustment(current)
                 return False
+            current = await self.promises.get(promise_id) or {}
+            try:
+                artifact = json.loads(current.get("action_result_json") or "{}")
+                if not isinstance(artifact, dict):
+                    artifact = {}
+            except (ValueError, TypeError):
+                artifact = {}
             await self.promises.defer(
                 promise_id, retry_at=self.store.clock() + RETRY_BACKOFF,
-                error="image_" + str(status), max_retry=MAX_RETRY)
+                error="image_" + str(status),
+                max_retry=max(0, self.retry_limit - int(artifact.get("prompt_retry_count") or 0)))
+            current = await self.promises.get(promise_id)
+            if current and current["status"] == "failed":
+                # 确定失败耗尽预算也有一次说明和取消入口，随后按等待期限结束。
+                artifact.update(kind="image_" + str(status), retry_exhausted=True)
+                if current.get("action_state") == "generated":
+                    artifact["stage"] = "delivery"
+                await self.promises.hold_image_failure(
+                    context, promise_id, artifact, expect=("failed",),
+                    state="generated" if current.get("action_state") == "generated" else "held")
             return False
         try:
             composed = await self._compose(context, row)
         except Exception as exc:
             await self.promises.defer(promise_id, retry_at=self.store.clock() + RETRY_BACKOFF,
-                                      error=f"compose:{type(exc).__name__}", max_retry=MAX_RETRY)
+                                      error=f"compose:{type(exc).__name__}", max_retry=self.retry_limit)
             return False
         text = str((composed or {}).get("text") or "").strip()
         if not text:
             await self.promises.defer(promise_id, retry_at=self.store.clock() + RETRY_BACKOFF,
-                                      error="empty", max_retry=MAX_RETRY)
+                                      error="empty", max_retry=self.retry_limit)
             return False
         # 承诺兑现不占主动行为额度：这是用户点名要的东西，不是机器人想说话。
         # 占额度会导致"聊得多的日子，答应的事直接发不出来"。
@@ -496,13 +534,14 @@ class PromiseService:
             except Exception:
                 pass
             await self.promises.defer(promise_id, retry_at=retry_at,
-                                      error=str(result), max_retry=MAX_RETRY,
-                                      no_penalty=penalty)
+                                      error=str(result), max_retry=self.retry_limit,
+                                      # penalty为True表示真实失败，不能反向传成免计数。
+                                      no_penalty=not penalty)
             logger.warning("[LE-promise] 承诺发送被拒 %s -> defer(%s)",
                            promise_id[:8], result)
             return False
         await self.promises.defer(promise_id, retry_at=self.store.clock() + RETRY_BACKOFF,
-                                  error=str(result), max_retry=MAX_RETRY)
+                                  error=str(result), max_retry=self.retry_limit)
         return False
 
     async def _scope_known(self, scope) -> bool:
@@ -540,19 +579,33 @@ class PromiseService:
         attempt = claimed["adjustment_notice_attempt"]
         pid = claimed["promise_id"]
         payload = claimed.get("action_result_json") or "{}"
-        artifact = json.loads(payload)
+        try:
+            artifact = json.loads(payload)
+        except (ValueError, TypeError):
+            artifact = {}
+        if not isinstance(artifact, dict):
+            artifact = {}
         key = stable_key("promise-adjustment", pid, artifact.get("request_id"), artifact.get("prompt"))
 
         async def still_waiting():
             current = await self.promises.get(pid) or {}
-            return (current.get("status") == "waiting"
+            return (current.get("status") in ("waiting", "unknown")
                     and current.get("adjustment_notice_state") == "sending"
                     and current.get("adjustment_notice_attempt") == attempt
                     and current.get("action_result_json") == payload)
 
         # 只说用户听得懂的情况；编号、执行状态和上游正文留在内部。
-        if artifact.get("notice"):
+        kind = artifact.get("kind") or claimed.get("last_error")
+        if kind in ("result_unknown", "image_action_unknown", "action_interrupted"):
+            text = "这张还没能确认有没有做好，我先不重复做。你想先核对一下，还是这次就算了？"
+        elif kind == "delivery_unknown" or artifact.get("stage") == "delivery":
+            text = "图片已经弄好了，但还不能确认你有没有收到。你收到这张了吗？如果这次算了，我就停止后续处理。"
+        elif kind == "quota_exhausted":
+            text = "今天的画图额度已经用完，这张还没开始。你想之后重新约时间，还是这次就算了？"
+        elif artifact.get("notice"):
             text = str(artifact["notice"])[:200] + "你想调整一下，还是这次就算了？"
+        elif kind not in ("content_rejected", "prompt_too_long", "prompt_adjustment_required"):
+            text = "这张没能弄好，我先停一下。你想调整一下描述再试，还是这次就算了？"
         elif int(artifact.get("adjustment_round") or 0) > 0:
             text = ("按你刚才改的想法又试了一下，还是没能弄好，有些内容我暂时做不了。"
                     "我先停在这里。你想再调整一下，还是这次就算了？")

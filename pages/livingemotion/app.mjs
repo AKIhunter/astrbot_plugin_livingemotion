@@ -204,6 +204,12 @@ function updateControls() {
   }
   $("content").querySelectorAll("[data-operation]").forEach(control => {
     const id = control.dataset.operation;
+    if (id === "promise.cancel") {
+      control.disabled = !canWrite() || control.dataset.canCancel !== "true"
+        || !hasRevision(state.data?.revision)
+        || state.uncertain.has(`promise.cancel:${control.dataset.promiseId}`);
+      return;
+    }
     if (id === "behavior.simulate") {
       control.disabled = !canWrite() || !state.data?.capabilities.includes("behavior.preview");
       return;
@@ -733,9 +739,9 @@ function renderPreview(root) {
   root.append(node("p", t("模型调用 0 · 消息发送 0"), "hint"));
   if (list(preview.candidates).length) root.append(clientList(list(preview.candidates), candidate, ""));
 }
-// 承诺列表：只读展示，不在这里提供写操作，避免和聊天里的取消指令抢语义。
+// 取消只停止后续履行，未知请求记录仍然保留。
 function promiseStatus(item) {
-  if (item.status === "waiting") return t(
+  if (["waiting", "unknown"].includes(item.status)) return t(
     ["content_rejected", "prompt_too_long", "prompt_adjustment_required"].includes(item.reason)
       ? "等待调整需求" : "等待核对结果");
   if (item.status === "running") return t("执行中");
@@ -754,7 +760,7 @@ function renderPromisePanel(data) {
     else state.expandedPromises.delete(card.dataset.promiseId);
   }
   const items = list(data && data.items);
-  if (!data || data.enabled === false) {
+  if (!data || data.enabled === false && !items.length) {
     host.replaceChildren(node("p", t("承诺识别已关闭，不会新建也不会兑现。"), "hint"));
     return;
   }
@@ -777,8 +783,8 @@ function renderPromisePanel(data) {
       controlled(String(item.target_id || t("未记录"))),
     ]), "promise-target"));
     const when = node("div", undefined, "promise-when");
-    when.append(node("span", item.status === "waiting" ? t("原定时间") : t("执行时间")));
-    when.append(node("time", promiseTime(item.status === "waiting"
+    when.append(node("span", ["waiting", "unknown"].includes(item.status) ? t("原定时间") : t("执行时间")));
+    when.append(node("time", promiseTime(["waiting", "unknown"].includes(item.status)
       ? item.original_due_at : item.due_at), "promise-at"));
     head.append(meta, when);
     const brief = node("div", undefined, "promise-brief");
@@ -801,6 +807,17 @@ function renderPromisePanel(data) {
     if (Number(item.advance_count) > 0) {
       body.append(node("p", t("已提前 {0} 次", [item.advance_count]), "hint"));
     }
+    body.append(node("p", t("自动重试 {0} / {1}", [
+      Number(item.retry_count || 0) + Number(item.prompt_retry_count || 0), item.retry_limit ?? 3,
+    ]), "hint"));
+    if (item.waiting_deadline) body.append(node("p",
+      t("等待截止 {0}", [promiseTime(item.waiting_deadline)]), "hint"));
+    const cancel = button(t("取消后续处理"), () => runAction("promise.cancel", item));
+    cancel.dataset.operation = "promise.cancel";
+    cancel.dataset.promiseId = item.promise_id;
+    cancel.dataset.canCancel = String(item.can_cancel === true);
+    cancel.disabled = !canWrite() || item.can_cancel !== true;
+    body.append(cancel);
     card.append(body);
     card.addEventListener("toggle", () => {
       if (!card.isConnected) return;
@@ -1868,12 +1885,14 @@ async function saveConfig() {
 const DIRECT_ACTION_REASON = "控制台直接执行（未填写原因）";
 async function runAction(id, item) {
   const pin = id === "experience.pin";
-  const key = pin ? `experience.pin:${item?.id}` : id;
+  const cancelPromise = id === "promise.cancel";
+  const key = pin ? `experience.pin:${item?.id}` : cancelPromise ? `promise.cancel:${item?.promise_id}` : id;
   if (!canWrite() || state.writing || state.uncertain.has(key)) return;
   if (pin ? (item?.pin_available !== true || typeof item.context_id !== "string"
       || !item.context_id || typeof item.pinned !== "boolean")
+    : cancelPromise ? (item?.can_cancel !== true || !item.context_id || !item.promise_id)
     : !state.data.actions.some(action => action.id === id && action.enabled === true)) return;
-  const contextId = pin ? item.context_id : actionContextId(id);
+  const contextId = pin || cancelPromise ? item.context_id : actionContextId(id);
   if (!contextId) return;
   const revision = state.data.revision, generation = state.generation;
   state.writing = true; updateControls();
@@ -1882,6 +1901,7 @@ async function runAction(id, item) {
       context_id: contextId, action: id, expected_revision: revision,
       reason: DIRECT_ACTION_REASON, confirmed: true,
       ...(pin ? { entry_id: item.id, pinned: !item.pinned, expected_pinned: item.pinned } : {}),
+      ...(cancelPromise ? { promise_id: item.promise_id } : {}),
     });
     if (generation !== state.generation) return;
     if (result.api_version !== 1 || typeof result.status !== "string") {
@@ -1892,6 +1912,11 @@ async function runAction(id, item) {
     const outcome = t("操作结果：{0}。{1}{2}", [resultLabel(result.status), text(result.reason, ""),
       result.request_id ? t(" 请求 ID：{0}", [text(result.request_id)]) : ""]);
     state.stale = true;
+    if (cancelPromise) {
+      // 自动读回取消后的列表，无需手动刷新。
+      applyData(await readStateConfig());
+      await loadBehaviorOutcome($("behavior-outcome"));
+    }
     if (["diary.generate", "dream.generate"].includes(id) && result.status !== "unknown") {
       try { applyData(await readStateConfig()); }
       catch (error) { state.stale = true; handleError(error); }

@@ -71,13 +71,15 @@ async def test_bad_selection_never_cancels_partial_group(scenario, other, token,
 
 
 @pytest.mark.parametrize("kind", ["result_unknown", "delivery_unknown"])
-async def test_unknown_result_blocks_entire_cancellation_group(scenario, kind):
+async def test_unknown_result_can_cancel_followup_without_erasing_request(scenario, kind):
     s = scenario
     first = await seed(s, "窗边")
     second = await seed(s, "花园", kind=kind)
-    assert (await s.service.cancel_tokens(s.context, ["窗边", "花园"]))["status"] == "conflict"
-    assert (await s.service.promises.get(first))["status"] == "scheduled"
-    assert (await s.service.promises.get(second))["status"] == "waiting"
+    before = (await s.service.promises.get(second))["action_result_json"]
+    assert (await s.service.cancel_tokens(s.context, ["窗边", "花园"]))["status"] == "cancelled"
+    assert (await s.service.promises.get(first))["status"] == "cancelled"
+    assert (await s.service.promises.get(second))["status"] == "cancelled"
+    assert (await s.service.promises.get(second))["action_result_json"] == before
 
 
 async def test_cancellation_rechecks_status_after_selection(scenario):

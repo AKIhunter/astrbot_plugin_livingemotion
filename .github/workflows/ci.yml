@@ -38,7 +38,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: AKIhunter/astrbot_plugin_livinghello
-          ref: 4bd96a97b9b06bd1f80b890e68832193a9658e1a
+          ref: c507f7a1dbff4414adc53f1eb31e5a8b41f389fc
           path: .image-prompt-peer
           persist-credentials: false
       - name: Pin isolated AstrBot image contract source
@@ -244,6 +244,7 @@ jobs:
         run: |
           npm --prefix tests/ui run test:browser
           node tests/ui/sleep-master-browser.test.mjs
+          node tests/ui/promise-cancel-browser.test.mjs
       - name: Retain allowlisted synthetic evidence only
         if: always() && steps.browser.outcome != 'skipped' && steps.browser.outcome != ''
         uses: actions/upload-artifact@v4

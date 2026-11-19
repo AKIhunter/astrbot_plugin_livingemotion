@@ -67,12 +67,18 @@ async def test_duplicate_receipt_can_confirm_lh_question(scenario):
 @pytest.mark.parametrize("kind", [
     "provider_error", "result_unknown", "delivery_unknown", "quota_exhausted",
 ])
-async def test_non_content_failures_are_not_adjustment_questions(scenario, kind):
+async def test_non_content_failures_receive_one_followup_without_image_retry(scenario, kind):
     s = scenario
     notice = isolate_notice(s)
     await handoff(s, kind=kind)
     await s.service.run_due()
-    notice.assert_not_awaited()
+    notice.assert_awaited_once()
+    text = notice.call_args.args[1]
+    assert "算了" in text
+    if "unknown" in kind:
+        assert "核对" in text or "收到" in text
+    await s.service.run_due()
+    notice.assert_awaited_once()
     assert s.peer.calls == 0
 
 

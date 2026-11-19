@@ -35,7 +35,7 @@ class ConsoleApplication(Protocol):
     async def console_action(
         self, context_id: str, action: str, *, expected_revision: str | int,
         reason: str, actor_id: str, confirmed: bool, entry_id: str = "",
-        pinned: bool | None = None, expected_pinned: bool | None = None,
+        pinned: bool | None = None, expected_pinned: bool | None = None, promise_id: str = "",
     ) -> dict: ...
 
     async def console_scopes(self, persona_id: str = "", view_scope: str = "global",

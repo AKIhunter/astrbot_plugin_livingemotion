@@ -60,6 +60,7 @@ def bounds():
                 result[row[0]] = tuple(row[1:])
     result.update({
         "promise_max_active": (1, 10), "promise_recall_limit": (1, 8),
+        "promise_retry_limit": (0, 10), "promise_wait_timeout_hours": (1, 168),
         "promise_trace_ttl_hours": (1, 168), "weather_weight_scale": (0, 3),
         "diary_retries": (0, 2), "lie_in_min_minutes": (0, 1440),
         "lie_in_max_minutes": (0, 1440), "closing_lead_minutes": (0, 60),

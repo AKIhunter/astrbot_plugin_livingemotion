@@ -88,6 +88,7 @@ class ImagePromiseAction:
             method = getattr(current, "deliver_deferred_image", None)
             if not callable(method):
                 return {"status": "unavailable"}
+            artifact["stage"] = "delivery"
             if not await store.checkpoint_action(pid, "sending", artifact):
                 return {"status": "rejected"}
             try:
@@ -110,6 +111,7 @@ class ImagePromiseAction:
         peer = current
         # 兼容旧 LH 与升级前已生成的资源；旧接口仍由调用方发送、报告额度结果。
         chain = self.image_chain(path)
+        artifact["stage"] = "delivery"
         if not await store.checkpoint_action(pid, "sending", artifact):
             return {"status": "rejected"}
         try:
@@ -165,8 +167,15 @@ class ImagePromiseAction:
         artifact = dict(prior)
         while True:
             policy = self.mapping_policy(peer)
-            limit = max(0, min(2, int(policy.get("retry_limit", 0)))) if policy.get("enabled") else 0
-            count = max(0, min(2, int(artifact.get("prompt_retry_count") or 0)))
+            # 两端预算都有效；改词与确定失败延迟重试共用LE预算，不截断持久计数。
+            limit = (max(0, min(10, int(policy.get("retry_limit", 0)),
+                                self.service.retry_limit - int(row.get("retry_count") or 0)))
+                     if policy.get("enabled") else 0)
+            count = max(0, int(artifact.get("prompt_retry_count") or 0))
+            if artifact.get("prompt_repair") and count > limit:
+                artifact.update(kind="prompt_adjustment_required",
+                                notice="自动调整次数已经用完，我先保留当前需求。")
+                return await self.hold(context, pid, artifact, prompt, original)
             kind = artifact.get("kind")
             if kind in {"content_rejected", "prompt_too_long"}:
                 method = getattr(peer, "prepare_image_prompt_repair", None)

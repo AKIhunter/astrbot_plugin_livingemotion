@@ -30,6 +30,7 @@ const labels = resource({
   promise_enabled: t("记住答应过的事"), promise_max_active: t("同时追踪的承诺条数"),
   promise_max_depth: t("单条承诺最多拆几层"), promise_advance_limit: t("每轮最多推进几条"),
   promise_tick_seconds: t("承诺推进间隔"),
+  promise_retry_limit: t("失败后自动重试次数"), promise_wait_timeout_hours: t("失败后最长等待"),
   weather_factor_enabled: t("天气影响情绪"), weather_poll_seconds: t("天气抓取间隔"),
   weather_transition_seconds: t("天气过渡时长"), weather_weight_scale: t("天气影响强度"),
   weather_stale_seconds: t("天气过期时间"), weather_forecast_days: t("预报天数"),
