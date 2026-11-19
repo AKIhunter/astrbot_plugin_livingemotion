@@ -532,6 +532,8 @@ class Console:
                     item.update(type="text", max_chars=180100, hidden=True)
             if f.name == "experience_body_chars":
                 item.update(min=1, max=2000)
+            if f.name == "promise_max_active":
+                item.update(min=1, max=10)
             if f.name in enums:
                 # gentle 在主动节奏里是「轻柔」，在情绪强度里是「保守」，按字段取标签。
                 label_of = ({"gentle": "保守", "normal": "平常", "intense": "激进"}

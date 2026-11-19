@@ -372,7 +372,8 @@ class LivingEmotionAPI:
                 scope, request_id=failure["request_id"], source_event_id=source_id,
                 failure={k: failure[k] for k in
                          ("request_id", "prompt", "kind", "reason", "use_reference")}
-                | {"adjustment_asked": failure.get("adjustment_asked") is True})
+                | {"adjustment_asked": failure.get("adjustment_asked") is True},
+                max_active=app._promises().max_active)
             return self._result("ok", "image_failure_handoff",
                                 contract="livingemotion.image-followup.v1", data=result)
         except Exception:

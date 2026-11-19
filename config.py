@@ -284,6 +284,8 @@ class Config:
             raise ValueError("invalid memory mode")
         if self.coupling_promise_actions not in ("auto", "on", "off"):
             raise ValueError("invalid coupling promise actions mode")
+        if type(self.promise_max_active) is not int or not 1 <= self.promise_max_active <= 10:
+            raise ValueError("promise_max_active: expected 1-10")
         if (not isinstance(self.promise_trace_ttl_hours, (int, float))
                 or isinstance(self.promise_trace_ttl_hours, bool)
                 or not 1 <= float(self.promise_trace_ttl_hours) <= 168):

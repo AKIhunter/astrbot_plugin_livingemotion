@@ -24,7 +24,8 @@ logger = logging.getLogger("astrbot_plugin_livingemotion.promise")
 # 模型在回复末尾附带的指令；装饰阶段剔除，用户永远看不到。
 MARK = re.compile(r"<!--\s*promise\s*:\s*([^:：|]{1,12})\s*[:：|]\s*([^>\n]{1,300}?)\s*-->")
 # 取消指令：可以带短编号，也可以只给关键词，由插件负责对上号。
-CANCEL = re.compile(r"<!--\s*promise-cancel\s*:\s*([^>\n]{0,120}?)\s*-->")
+CANCEL = re.compile(
+    r"<\s*!?\s*--\s*promise-cancel(?=\s|[:：]|-->)\s*[:：]?\s*([^>\n]{0,120}?)\s*-->")
 MAX_ACTIVE = 3
 MAX_DEPTH = 3
 MAX_ADVANCE = 3
@@ -106,7 +107,8 @@ class PromiseService:
                     context, description, due_at, event=event)
                 result = await self.promises.create(
                     context, description=description, note=note, bucket=bucket,
-                    due_at=due_at, context_summary=summary, source_event_id=source_id)
+                    due_at=due_at, context_summary=summary, source_event_id=source_id,
+                    max_active=self.max_active)
                 if job_id and result.get("status") in ("created", "advanced", "duplicate"):
                     if await self.promises.delegate(result["promise_id"], job_id):
                         result = {**result, "status": "delegated", "host_job_id": job_id}
@@ -131,8 +133,13 @@ class PromiseService:
 
     # ---------- 查询 ----------
 
+    @property
+    def max_active(self) -> int:
+        value = getattr(self.app.config, "promise_max_active", MAX_ACTIVE)
+        return max(1, min(10, value)) if type(value) is int else MAX_ACTIVE
+
     async def active(self, context: Context) -> list[dict]:
-        rows = await self.promises.list(context)
+        rows = await self.promises.list(context, limit=None)
         now = self.store.clock()
         for row in rows:
             row["eta_seconds"] = max(0.0, float(row["due_at"]) - now)
@@ -147,7 +154,8 @@ class PromiseService:
         return {
             "api_version": 1,
             "enabled": bool(getattr(self.app.config, "promise_enabled", True)),
-            "max_active": MAX_ACTIVE,
+            "max_active": self.max_active,
+            "active_count": await self.promises.count_active(context),
             "items": [{
                 "promise_id": row["promise_id"],
                 "description": row["description"],
@@ -166,35 +174,38 @@ class PromiseService:
     # ---------- 取消 ----------
 
     async def cancel(self, context: Context, token: str = "") -> dict:
-        """按编号或关键词定位待取消的承诺；定位不到时把候选交给调用方去问。"""
+        return await self.cancel_tokens(context, [token])
+
+    async def cancel_tokens(self, context: Context, tokens) -> dict:
+        """先定位本轮全部目标，再原子取消；歧义或状态冲突绝不部分成功。"""
         rows = await self.active(context)
         if not rows:
             return {"status": "empty", "items": []}
-        token = str(token or "").strip()
-        if token:
-            picked = []
-            number = None
-            if token.isdigit():
-                number = int(token)
-            for index, row in enumerate(rows, start=1):
-                if number is not None and index == number:
-                    picked.append(row)
-                    continue
-                if number is None and token and token in row["description"]:
-                    picked.append(row)
-            if len(picked) == 1:
-                result = await self.promises.cancel(picked[0]["promise_id"])
-                if result.get("status") == "ok":
-                    return {"status": "cancelled", "description": picked[0]["description"]}
-                return {"status": "conflict", "items": rows}
-            if len(picked) > 1:
-                return {"status": "ambiguous", "items": picked}
+        selected = {}
+        for value in tokens:
+            parts = re.split(r"[|、,，]", str(value or "").strip())
+            for part in parts:
+                token = part.strip()
+                if not token:
+                    picked = rows if len(parts) == 1 else []
+                elif token.isdigit():
+                    number = int(token)
+                    picked = rows[number - 1:number] if number > 0 else []
+                else:
+                    picked = [row for row in rows if token in row["description"]
+                              or (len(token) >= 8 and row["promise_id"].startswith(token))]
+                if not picked:
+                    return {"status": "unmatched", "items": rows}
+                if len(picked) > 1:
+                    return {"status": "ambiguous", "items": picked}
+                selected[picked[0]["promise_id"]] = picked[0]
+        if not selected:
             return {"status": "unmatched", "items": rows}
-        if len(rows) == 1:
-            result = await self.promises.cancel(rows[0]["promise_id"])
-            if result.get("status") == "ok":
-                return {"status": "cancelled", "description": rows[0]["description"]}
-        return {"status": "ambiguous", "items": rows}
+        result = await self.promises.cancel_many(list(selected), context=context)
+        if result.get("status") == "ok":
+            return {"status": "cancelled", "count": len(selected),
+                    "description": "、".join(row["description"] for row in selected.values())}
+        return {"status": "conflict", "items": rows}
 
     async def cancel_all(self, context: Context) -> int:
         rows = await self.active(context)

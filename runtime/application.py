@@ -57,7 +57,7 @@ from .refinement import Refinement
 from .relationship_projection import read_relationship_projection
 from .state_scope import source_affect
 from .proactivity import Proactivity
-from .promise_service import MARK
+from .promise_service import CANCEL, MARK
 from .manual_experience import ManualExperienceRuntime
 from .persona_style import PersonaStyle
 
@@ -515,30 +515,35 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         except Exception:
             rows = []
         lines = PROMISE_CONTRACT.splitlines()
+        shown = rows[:3]
+        lines.append(f"本会话上限={self._promises().max_active}；未完成项（含暂停）占名额。"
+                     "满额时不应下新事项；已有事项仍履行，不能用新标记重复登记暂停项。")
         if rows:
-            lines.append("现在挂着这些没做完的事：")
-            for index, row in enumerate(rows[:3], start=1):
-                lines.append(f"{index} {row['description']}（{row.get('bucket_label', '')}）")
+            lines.append(f"现在挂着这些没做完的事：共{len(rows)}条，列出前{len(shown)}条。")
+            for index, row in enumerate(shown, start=1):
+                description = str(row["description"])
+                excerpt = description[:96] + ("…" if len(description) > 96 else "")
+                lines.append(f"{index} {excerpt}（{str(row.get('bucket_label', ''))[:24]}）")
                 if row["status"] == "waiting":
-                    lines.append(f"待办ID={row['promise_id']}，原因={row.get('last_error', '')}；"
-                                 "此项已暂停，不能自动重试或新建重复承诺。内容拒绝须先让用户调整需求，"
-                                 "再调用生图工具的 followup_id 参数恢复同一待办；"
-                                 "结果未知、发送未知及接口配置问题等待核对，不能用此参数强行恢复。")
-            lines.append("主动调整追问已由执行器处理，勿在无关回复中重复催问。"
-                         "只有用户给出新画面或具体修改才恢复；嗯、好的、再试一次不算调整。"
-                         "用户说算了、不拍了、不画了、不要了或取消时，取消对应图片，"
-                         "不把取消当作新画面。拍照、自拍、画图都适用。"
-                         "多条待办且用户未说明哪张图时，生活化地问清画面，不自行挑选。"
-                         "用户可见回应跟随正在聊的内容，说这张照片或这张图片，"
-                         "不要把拍照、自拍一律说成画图；询问再调整一下还是这次就算了，"
-                         "不得提任务、待办、接口、服务、状态、ID或内部编号。")
+                    lines.append(f"暂停 ID={str(row['promise_id'])[:64]}，"
+                                 f"原因={str(row.get('last_error', ''))[:32]}。")
+            if any(row["status"] == "waiting" for row in rows):
+                lines.append("暂停项不能自动重试或另建重复承诺。内容拒绝仅在用户给出新画面或"
+                             "具体修改后，用生图工具 followup_id 恢复同一项；嗯、好的、再试一次不算调整。"
+                             "结果未知、发送未知及接口问题等待核对，不能强行恢复。"
+                             "追问由执行器处理，无关回复不催问。算了、不拍了、不画了、不要了或取消"
+                             "表示放弃，不是新画面；明确失败可取消，未知结果须核对。"
+                             "多张未指明时问清画面，不自行挑选。回应跟随聊天内容，说这张照片或图片，"
+                             "不把拍照、自拍一律说成画图；询问再调整一下还是这次就算了，"
+                             "不得提任务、待办、接口、服务、状态、ID或内部编号。")
             lines.append("对方要取消其中一件时，末尾加 <!--promise-cancel:编号或关键词-->，"
-                         "不要只在嘴上说取消。")
+                         "多个目标以|分隔；只选已明确定位的目标，不猜未列出项的编号。")
         request.extra_user_content_parts.append(
             self.bridge.text_part(PROMISE_SUFFIX + "\n" + "\n".join(lines)).mark_as_temp())
         try:
             logger.warning(
-                "[LivingEmotion] 承诺契约已注入 挂载=%d 提示词=%d字", len(rows), len("\n".join(lines)))
+                "[LivingEmotion] 承诺契约已注入 总数=%d 展示=%d 提示词=%d字",
+                len(rows), len(shown), len("\n".join(lines)))
         except Exception:
             pass
 
@@ -787,7 +792,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
     def _strip_promise_marks(self, event, result, text):
         """把回复正文里的承诺指令摘出来，改写气泡并把指令暂存在事件上。"""
         raw = str(text or "")
-        if "<!--" not in raw or "promise" not in raw:
+        if "promise" not in raw:
             return raw
         try:
             cleaned, created, cancels = self._promises().extract(raw)
@@ -800,6 +805,8 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             except Exception:
                 pass
         if not created and not cancels:
+            if "promise-cancel" in raw:
+                logger.warning("[LivingEmotion] 取消标记未识别 字数=%d", len(raw))
             return raw
         event.set_extra("livingemotion:promise_created", created)
         event.set_extra("livingemotion:promise_cancels", cancels)
@@ -808,12 +815,24 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         # **就地清掉标记**，绝不把清洗后的全文塞回某个组件 ——
         # 那会让同一段话既留在原组件里、又被整段复制进另一个组件，
         # 最终同一句话发两遍（2026-11-15 22:00 实测）。
+        # 用完整文本的匹配区间逐组件扣除，兼容标记被拆进两个 Plain 的情况。
+        spans = sorted((match.start(), match.end()) for pattern in (MARK, CANCEL)
+                       for match in pattern.finditer(raw))
+        cursor = 0
         for part in getattr(result, "chain", ()) or ():
             if not hasattr(part, "text"):
                 continue
             original = str(getattr(part, "text", ""))
-            if "<!--" in original:
-                part.text = MARK.sub("", original).strip()
+            end = cursor + len(original)
+            pieces, kept = [], cursor
+            for start, stop in spans:
+                if stop <= cursor or start >= end:
+                    continue
+                pieces.append(original[kept - cursor:max(cursor, start) - cursor])
+                kept = min(end, stop)
+            pieces.append(original[kept - cursor:])
+            part.text = "".join(pieces)
+            cursor = end
         self._track_promise_send(event)
         return cleaned
 
@@ -876,8 +895,10 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                 logger.warning(
                     "[LivingEmotion] 承诺落库 %s 概要=%d字",
                     [r.get("status") for r in results], len(summary))
-            for token in cancels:
-                await service.cancel(context, token)
+            if cancels:
+                result = await service.cancel_tokens(context, cancels)
+                logger.warning("[LivingEmotion] 承诺取消 状态=%s 数量=%d",
+                               result.get("status"), result.get("count", 0))
         except Exception:
             # 承诺写入失败不该影响已经发出的回复，只留一行痕。
             try:

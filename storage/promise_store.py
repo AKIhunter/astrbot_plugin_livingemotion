@@ -88,7 +88,7 @@ TRANSITIONS = {
     "waiting": {"scheduled", "cancelled", "failed"},
 }
 
-ACTIVE = ("scheduled", "running", "waiting")
+ACTIVE = ("scheduled", "running", "waiting", "awaiting")
 
 # 「刚发过就别再建」的判定窗口（秒）。
 # 这条规则只用来挡住**同一条回复被重复提交**造成的双份任务，
@@ -152,7 +152,9 @@ class PromiseStore:
     async def create(self, context: Context, *, description: str, note: str,
                      bucket: str, due_at: float, depth: int = 0,
                      ttl_days: int = 7, context_summary: str = "",
-                     source_event_id: str = "") -> dict[str, Any]:
+                     source_event_id: str = "", max_active: int | None = None) -> dict[str, Any]:
+        if max_active is not None and (type(max_active) is not int or not 1 <= max_active <= 10):
+            raise ValueError("promise_max_active: expected 1-10")
         await self.ensure()
         scope = context.scope_key
         fp = fingerprint(scope, description)
@@ -187,11 +189,11 @@ class PromiseStore:
                 row = db.execute(
                     """SELECT promise_id, due_at, status FROM promises
                        WHERE scope_key=? AND fingerprint=?
-                         AND status IN ('scheduled','running','awaiting')""",
+                         AND status IN ('scheduled','running','waiting','awaiting')""",
                     (scope, fp)).fetchone()
                 if row:
-                    if row["status"] == "awaiting":
-                        # 已经到点、正等着并进下一轮回复。再记一遍只会多一条幽灵待办。
+                    if row["status"] in ("waiting", "awaiting"):
+                        # 暂停或等待合并交付的同一项只复用，不通过重复标记释放暂停。
                         return {"status": "duplicate", "promise_id": row["promise_id"]}
                     if due_at < row["due_at"]:
                         db.execute(
@@ -210,8 +212,12 @@ class PromiseStore:
                     return {"status": "already_sent", "promise_id": recent["promise_id"],
                             "age": int(now - float(recent["sent_at"] or now))}
                 active = db.execute(
-                    "SELECT COUNT(*) FROM promises WHERE scope_key=? AND status IN ('scheduled','running')",
+                    "SELECT COUNT(*) FROM promises WHERE scope_key=? "
+                    "AND status IN ('scheduled','running','waiting','awaiting')",
                     (scope,)).fetchone()[0]
+                # 去重/同源复用优先；名额检查和 INSERT 同事务，最后一个名额不会被并发抢穿。
+                if max_active is not None and active >= max_active:
+                    return {"status": "limit_reached", "active": active, "max_active": max_active}
                 promise_id = stable_key("promise-id", scope, fp, now, description)
                 db.execute(
                     """INSERT INTO promises(promise_id,scope_key,generation,status,bucket,
@@ -230,8 +236,11 @@ class PromiseStore:
         return await self.store._run(create)
 
     async def accept_image_handoff(self, context: Context, *, request_id: str,
-                                   source_event_id: str, failure: dict) -> dict:
+                                   source_event_id: str, failure: dict,
+                                   max_active: int | None = None) -> dict:
         """同一请求只交接一次；创建与动作状态在同一事务中落盘。"""
+        if max_active is not None and (type(max_active) is not int or not 1 <= max_active <= 10):
+            raise ValueError("promise_max_active: expected 1-10")
         await self.ensure()
         now = self.store.clock()
         generation = await self.store.get_generation(context)
@@ -285,6 +294,12 @@ class PromiseStore:
                          notice, original["promise_id"]))
                     return {"status": "accepted", "promise_id": original["promise_id"],
                             "task_status": status}
+                active = db.execute(
+                    "SELECT COUNT(*) FROM promises WHERE scope_key=? "
+                    "AND status IN ('scheduled','running','waiting','awaiting')",
+                    (context.scope_key,)).fetchone()[0]
+                if max_active is not None and active >= max_active:
+                    return {"status": "limit_reached", "active": active, "max_active": max_active}
                 db.execute(
                     """INSERT INTO promises
                        (promise_id,scope_key,generation,status,bucket,fingerprint,description,note,
@@ -343,7 +358,8 @@ class PromiseStore:
             return self.store._transaction(db, mutate)
         return await self.store._run(write)
 
-    async def list(self, context: Context, *, statuses=ACTIVE, limit: int = 20) -> list[dict[str, Any]]:
+    async def list(self, context: Context, *, statuses=ACTIVE,
+                   limit: int | None = 20) -> list[dict[str, Any]]:
         await self.ensure()
         scope = context.scope_key
         marks = ",".join("?" for _ in statuses)
@@ -352,15 +368,19 @@ class PromiseStore:
             rows = db.execute(
                 f"""SELECT * FROM promises WHERE scope_key=? AND status IN ({marks})
                     AND (handoff_account_key='' OR handoff_account_key=?)
-                    ORDER BY due_at ASC LIMIT ?""",
-                (scope, *statuses, context.account_key, max(1, min(200, int(limit))))).fetchall()
+                    ORDER BY due_at ASC,created_at ASC,promise_id ASC LIMIT ?""",
+                (scope, *statuses, context.account_key,
+                 -1 if limit is None else max(1, min(200, int(limit))))).fetchall()
             return [dict(row) for row in rows]
 
         return await self.store._run(read)
 
     async def count_active(self, context: Context) -> int:
-        rows = await self.list(context, limit=200)
-        return len(rows)
+        await self.ensure()
+        return await self.store._run(lambda db: db.execute(
+            "SELECT COUNT(*) FROM promises WHERE scope_key=? "
+            "AND status IN ('scheduled','running','waiting','awaiting')",
+            (context.scope_key,)).fetchone()[0])
 
     async def due(self, *, now: float, limit: int = 12) -> list[dict[str, Any]]:
         """所有会话里已经到点的承诺，交给调度器逐个处理。"""
@@ -385,7 +405,7 @@ class PromiseStore:
         def read(db):
             sql = ("SELECT promise_id,scope_key,description,status,bucket,due_at,original_due_at,"
                    "created_at,handoff_account_key,advance_count,last_error "
-                   "FROM promises WHERE status IN ('scheduled','running','waiting')")
+                   "FROM promises WHERE status IN ('scheduled','running','waiting','awaiting')")
             args: list[Any] = []
             if scope_key:
                 sql += " AND scope_key=?"
@@ -681,12 +701,35 @@ class PromiseStore:
         return await self.store._run(write)
 
     async def cancel(self, promise_id: str) -> dict[str, Any]:
-        row = await self.get(promise_id)
-        # 用户可以放弃明确被拒、尚未交付的图片；未知结果仍沿用原有保护。
-        waiting = bool(row and row["status"] == "waiting"
-                       and row["last_error"] == "content_rejected")
-        return await self.move(promise_id, status="cancelled",
-                               expect=("waiting",) if waiting else ("scheduled",))
+        return await self.cancel_many([promise_id])
+
+    async def cancel_many(self, promise_ids, *, context: Context | None = None) -> dict[str, Any]:
+        """核对与写入共用事务；已知失败可放弃，执行中和未知交付仍受保护。"""
+        await self.ensure()
+        ids = list(dict.fromkeys(promise_ids))
+        now = self.store.clock()
+
+        def write(db):
+            def mutate():
+                if not ids:
+                    return {"status": "missing"}
+                for pid in ids:
+                    row = db.execute("SELECT * FROM promises WHERE promise_id=?", (pid,)).fetchone()
+                    if not row:
+                        return {"status": "missing"}
+                    if context and (row["scope_key"] != context.scope_key
+                                    or row["handoff_account_key"] not in ("", context.account_key)):
+                        return {"status": "conflict"}
+                    known_failure = (row["status"] == "waiting" and row["last_error"] in {
+                        "content_rejected", "provider_error", "rate_limited", "quota_exhausted"})
+                    if row["status"] not in ("scheduled", "awaiting") and not known_failure:
+                        return {"status": "conflict"}
+                for pid in ids:
+                    db.execute("UPDATE promises SET status='cancelled',updated_at=? "
+                               "WHERE promise_id=?", (now, pid))
+                return {"status": "ok", "count": len(ids)}
+            return self.store._transaction(db, mutate)
+        return await self.store._run(write)
 
     async def recent_exchanges(self, scope_key: str, *,
                                limit: int = 8) -> list[dict[str, Any]]:
