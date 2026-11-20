@@ -1,26 +1,15 @@
-"""主动聊天的单一入口：先看宿主有没有在自己找人聊。
-
-AstrBot 自带一条「主动找主人聊话题」的 cron（默认 10:30 / 15:30 / 20:30）。
-LivingEmotion 也有一套按随机间隔发起的主动行为。两套同时开着，同一时段
-就会各说一次——用户看到的是"今天怎么连着来两条"。
-
-处理原则：**不替用户改宿主数据**。宿主的任务在它自己的面板里可见、可管理，
-插件越过它去删 job，既不透明也不可靠（APScheduler 在内存里已经排好，
-改库要重启才生效）。所以这里只做三件事：
-
-1. 只读探测 `data_v4.db` 的 `cron_jobs`，认出主动聊天类任务；
-2. 认出来的时候，LivingEmotion 侧**让行**（跳过本轮随机主动行为）；
-3. 结果进「功能耦合」面板，让用户知道是让给谁、去哪里关。
-
-关掉宿主那条之后，探测结果自然变空，这边立刻恢复，不需要改任何配置。
-"""
+"""只在同一会话的宿主定时问候前后让行；宿主任务始终只读。"""
 
 from __future__ import annotations
 
 import logging
+import json
 import sqlite3
 import time
+from datetime import datetime, timezone
 from pathlib import Path
+
+from ..contracts import rebuild_route
 
 logger = logging.getLogger("astrbot_plugin_livingemotion.promise")
 
@@ -33,6 +22,7 @@ HOST_CHAT_WORDS = (
     "早安", "晚安", "撒娇", "问候", "想念", "想你", "自拍", "分享心情",
 )
 PROBE_TTL = 300.0
+YIELD_WINDOW_SECONDS = 15 * 60
 
 _CACHE: dict[str, tuple[float, dict]] = {}
 
@@ -60,7 +50,8 @@ def _read_jobs(db_path: Path) -> list[dict]:
         if not columns:
             return []
         wanted = [name for name in
-                  ("id", "name", "job_type", "cron_expression", "run_at", "enabled", "note")
+                  ("id", "name", "job_type", "cron_expression", "run_at", "enabled", "note",
+                   "payload", "last_run_at", "next_run_time")
                   if name in columns]
         if not wanted:
             return []
@@ -88,6 +79,50 @@ def _is_host_chat(job: dict) -> bool:
     return any(word in haystack for word in HOST_CHAT_WORDS)
 
 
+def _host_timestamp(value) -> float | None:
+    """宿主数据库的无时区日期是 UTC，不能按插件/机器本地时区解释。"""
+    try:
+        moment = datetime.fromisoformat(str(value or ""))
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=timezone.utc)
+        return moment.timestamp()
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+
+def _job_view(job: dict) -> dict:
+    try:
+        payload = json.loads(job.get("payload") or "{}")
+    except (ValueError, TypeError):
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    return {
+        "id": str(job.get("id") or ""), "name": str(job.get("name") or ""),
+        "schedule": _schedule_of(job),
+        "target_route": str(payload.get("session") or ""),
+        "next_run_at": _host_timestamp(job.get("next_run_time")),
+        "last_run_at": _host_timestamp(job.get("last_run_at")),
+    }
+
+
+def yielding_jobs(state: dict, context, now: float) -> list[dict]:
+    """按宿主已排定/最近执行时间判断，不凭任务存在或过期缓存全天让行。"""
+    route = rebuild_route(context)
+    if not route or not state.get("present"):
+        return []
+    hits = []
+    for job in state.get("jobs") or []:
+        if job.get("target_route") != route:
+            continue
+        # next_run_at 在触发后短暂滞后，仍覆盖这次任务的后窗口。
+        # last_run_at 覆盖刷新后以及晚到的实际执行；不重新推算 cron/时区。
+        if any(isinstance(at, (int, float)) and abs(now - at) <= YIELD_WINDOW_SECONDS
+               for at in (job.get("next_run_at"), job.get("last_run_at"))):
+            hits.append(job)
+    return hits
+
+
 def probe_once(data_dir) -> dict:
     """同步探测一次；失败一律按"没检测到"处理，绝不让面板或主动行为崩。"""
     root = _data_root(data_dir)
@@ -102,8 +137,7 @@ def probe_once(data_dir) -> dict:
     return {
         "present": bool(hits),
         "count": len(hits),
-        "jobs": [{"id": str(job.get("id") or ""), "name": str(job.get("name") or ""),
-                  "schedule": _schedule_of(job)} for job in hits[:5]],
+        "jobs": [_job_view(job) for job in hits],
         "reason": "" if hits else "no_host_proactive_chat",
         "checked_at": time.time(),
     }
@@ -129,4 +163,4 @@ def refresh(data_dir, *, ttl: float = PROBE_TTL) -> dict:
     return value
 
 
-__all__ = ["cached", "probe_once", "refresh"]
+__all__ = ["cached", "probe_once", "refresh", "yielding_jobs"]

@@ -26,21 +26,26 @@ class Proactivity:
         return state
 
     async def maybe_proact(self, context):
-        # 宿主自己已经有一条主动聊天 cron 时不抢话：同一时段两套各说一次，
-        # 用户看到的就是"今天怎么连着来两条"。关掉宿主那条后探测为空，
-        # 这里自动恢复，不需要改任何开关。
+        from .proactive_arbiter import yielding_jobs
+
+        # 修复全天让行：只保护同一目标的定时问候前后各15分钟，
+        # 其他会话/时段继续原来的随机机会和发送前校验。
         host = await self.host_proactive_state()
-        if host.get("present"):
-            if not getattr(self, "_native_yield_logged", False):
-                self._native_yield_logged = True
+        now = self.store.clock()
+        yielding = yielding_jobs(host, context, now)
+        if yielding:
+            logged = getattr(self, "_native_yield_logged", set())
+            if context.scope_key not in logged:
+                self._native_yield_logged = logged | {context.scope_key}
                 import logging
 
                 logging.getLogger("astrbot_plugin_livingemotion.promise").warning(
-                    "[LE-behavior] 检测到宿主主动聊天 %s，随机主动行为让行",
-                    [job.get("name") for job in host.get("jobs") or []])
+                    "[LE-behavior] 宿主任务 %s target=%s，前后15分钟随机主动让行",
+                    [job.get("id") for job in yielding], context.scene_id)
             return
+        self._native_yield_logged = getattr(self, "_native_yield_logged", set()) - {
+            context.scope_key}
         policy = self.behavior_policy()
-        now = self.store.clock()
         if (self.behavior._policy_reasons(context, policy, now)
                 or len(self._actions) >= self.config.queue_size):
             return
