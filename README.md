@@ -3,7 +3,7 @@
 ![livingEmotion 原创字标与状态线](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-4.29.1–4.29.4-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.6.2-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.6.3-3a8060)](CHANGELOG.md)
 
 **简体中文** · [English](README.en.md)
 
@@ -42,6 +42,7 @@
 | 九项情绪、对象采集与编辑时自动刷新 | [情绪谱说明](docs/ta-emotion-spectrum.md) |
 | 生图任务、等义调整与成功用词复用 | [图片映射契约](docs/image-prompt-retry.md) |
 | 早安避重与其他时段随机主动 | [定时问候让行](docs/native-proactive-yield.md) |
+| 模型情绪值与中文状态块 | [输入精度说明](docs/prompt-precision.md) |
 | 常见问题、保存冲突、不生成、不发送 | [排障手册](docs/troubleshooting.md) |
 | 兼容性与宿主版本 | [兼容说明](docs/compatibility.md) |
 | 使用指令 `le_wake` | 管理员叫醒；[睡眠规则](docs/sleep-energy-rules.md) |
@@ -58,5 +59,5 @@
 模型生成可能计费；未知生成或发送不会盲重试。`sent`表示发送接口受理，不表示用户已读。
 普通使用无需Node或外部CDN；接口走公开契约。管理员叫醒命令为 `le_wake`，前缀遵循宿主设置。
 
-0.6.2 修复宿主早安任务导致全天随机主动暂停：08:00 问候仅在07:45–08:15让行，
-其他时段按原机会检查；无需迁移配置。完整变化见[更新日志](CHANGELOG.md)。
+0.6.3 将模型情绪输入统一为最多3位小数，主回复状态块中文直接输出。
+原始状态、数据库与判断阈值保留原精度，无需迁移配置。完整变化见[更新日志](CHANGELOG.md)。

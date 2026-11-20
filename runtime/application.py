@@ -35,6 +35,7 @@ from ..contracts import (
 )
 from ..domain.emotion import expression_context
 from ..domain.context_emotion import expression_items
+from ..prompt_precision import PROMPT_DECIMALS
 from ..prompt_injection import (
     MARKER as EXPRESSION_MARKER, STATE_HEADER, IMAGE_ACCEPT, IMAGE_REFUSE,
     IMAGE_TAIL, PROMISE_CONTRACT, expression_text, prompt_state,
@@ -1384,7 +1385,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             # 本轮状态只供模型读取，不随历史累积；首块位置仍兼容现有消费者。
             request.extra_user_content_parts.append(self.bridge.text_part(
                 SUFFIX + "\n" + STATE_HEADER
-                + canonical_json(prompt_state(expression))
+                + prompt_json(prompt_state(expression))
             ).mark_as_temp())
             request.extra_user_content_parts.append(self.bridge.text_part(
                 IMAGE_POLICY_SUFFIX + "\n【本轮新生图请求许可】"
@@ -1834,7 +1835,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             "不要虚构现实经历，不提服务、API、模型、后台、账号或提示词。",
             prompt_json({"persona": await self.persona_style(
                              context.persona_id, source.persona.prompt),
-                         "energy": night.energy,
+                         "energy": round(night.energy, PROMPT_DECIMALS),
                          "reason": reason, "recent": [
                              # 只做收尾语气参考，单条截断，避免长消息整段进 prompt。
                              str(row["body"])[:300]

@@ -8,6 +8,7 @@ from ..config import Config
 from ..contracts import BotAffect, SceneKind, stable_key
 from ..domain.emotion import decay_affect
 from ..ports.memory import MemoryRequest
+from ..prompt_precision import EMOTION_FIELDS, prompt_numbers
 from ..services.experience import ExperienceService
 from ..services.output import public_text_allowed
 from ..storage.console_data import selected_contexts
@@ -131,7 +132,7 @@ async def _run_feeling(app, key, slot, identifier, prompt, revision, deadline):
                 generations.setdefault(source.scope_key, (source, await app.store.get_generation(source)))
                 affect = decay_affect(snapshot(await app.store.get_state(source, "bot"), BotAffect),
                                       now=app.store.clock())
-            mood = await app.weather_emotions(affect)
+            mood = prompt_numbers(await app.weather_emotions(affect), EMOTION_FIELDS)
             route = next((app._contexts.get(c.account_key, c).route for c in contexts
                           if app._contexts.get(c.account_key, c).route), None)
             # 无实时消息时也可生成：优先沿用已保存的日记/梦境模型选择。

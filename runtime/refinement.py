@@ -14,6 +14,7 @@ from ..domain.context_emotion import (
 )
 from ..domain.relationship import apply_relationship, RelationshipPolicy
 from ..ports.memory import MemoryRequest
+from ..prompt_precision import AFFECT_FIELDS, RELATIONSHIP_FIELDS, prompt_numbers
 from .projector import account_affect_token, attach_context_emotions, encode_account_runtime, encode_account_state
 from .state_scope import source_affect
 
@@ -231,8 +232,9 @@ class Refinement:
                                     & {"native_bot_mention", "native_bot_reply"}) else "bot"),
                             "native_target_signals": [s for s in event.signals
                                 if s in {"native_bot_mention", "native_bot_reply", "native_other_target"}],
-                            "bot": to_dict(inputs["state"]),
-                            "relationship": to_dict(inputs["relationship"]),
+                             "bot": prompt_numbers(to_dict(inputs["state"]), AFFECT_FIELDS),
+                             "relationship": prompt_numbers(
+                                 to_dict(inputs["relationship"]), RELATIONSHIP_FIELDS),
                             "memories": [{"kind": m.evidence.kind.value, "text": m.text[:400]}
                                          for m in materials]}
         if contextual_enabled:

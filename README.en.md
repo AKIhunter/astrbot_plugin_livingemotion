@@ -2,7 +2,7 @@
 
 ![livingEmotion wordmark and state lines](.github/img/Banner.png)
 
-[![Version](https://img.shields.io/badge/version-0.6.2-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.6.3-3a8060)](CHANGELOG.md)
 
 [简体中文](README.md) · **English**
 
@@ -30,6 +30,7 @@ Successful wording substitutions are scoped by the actual image provider, model 
 | [Technical guide](docs/technical-guide.md) | Decision flows, persistence, integration and upgrades |
 | [Image prompt contract](docs/image-prompt-retry.md) | Bounded repairs and mapping reuse |
 | [Scheduled greeting coordination](docs/native-proactive-yield.md) | Same-conversation 15-minute windows |
+| [Model input precision](docs/prompt-precision.md) | Three decimal places and literal Chinese in reply state blocks |
 | [Troubleshooting](docs/troubleshooting.md) | Configuration conflicts, generation and delivery |
 | [Documentation index](docs/README.md) | Current reference and development documents |
 | [Changelog](CHANGELOG.md) | Historical changes |
@@ -37,5 +38,6 @@ Successful wording substitutions are scoped by the actual image provider, model 
 Model generation can incur provider charges. Normal use needs neither Node nor an external CDN.
 Developer: [AKIhunter](https://github.com/AKIhunter). Feedback QQ group: 991350637.
 
-0.6.2 limits random-chat yielding to 15 minutes before and after a scheduled greeting
-in the same conversation. Other times retain the existing opportunity checks; no configuration migration is needed.
+0.6.3 limits model emotion inputs to at most three decimal places and keeps Chinese literal
+in main-reply state blocks. Stored state and decision thresholds retain their original precision;
+no configuration migration is needed.

@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 from ..adapters.weather import WeatherReport
 from ..contracts import ContentKind, Experience, prompt_json
+from ..prompt_precision import EMOTION_FIELDS, prompt_mood, prompt_numbers
 from ..runtime.background import ModelResultUnknown
 from .experience import SYSTEM_PROMPT, parse_entry, perspective, _plain, emotion_snapshot
 from ..storage.experiences import owner_key
@@ -104,8 +105,10 @@ class ManualExperienceService:
                     "program_header": {"date": snapshot.day, "timezone": snapshot.timezone,
                                        "city": snapshot.home_city or "未配置"},
                     "body_character_limit": min(2000, snapshot.body_chars),
-                    "mood": {"emotions": emotions, "basis": "daily_recorded_mean"},
-                    "dream": dream_profile(emotions, snapshot.themes) if snapshot.kind == "dream" else None,
+                    "mood": {"emotions": prompt_numbers(emotions, EMOTION_FIELDS),
+                             "basis": "daily_recorded_mean"},
+                    "dream": prompt_mood(dream_profile(emotions, snapshot.themes))
+                             if snapshot.kind == "dream" else None,
                     "grounding": ("Use verified materials only." if snapshot.materials else
                                   "无已验证当日经历。日记仅作人格自省，不编造聊天、行程或真实事件；"
                                   "梦境是想象，必须明确说明。"),

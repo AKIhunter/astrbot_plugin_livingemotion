@@ -47,6 +47,7 @@ from ..runtime.background import ModelResultUnknown
 from ..storage import SQLiteStore
 from ..domain.dreaming import DEFAULT_THEMES, dream_profile, six_emotions
 from ..domain.emotion import decay_affect
+from ..prompt_precision import prompt_mood
 
 PROMPT_VERSION = "experience-2"
 # 手动补写「已经过完的一天」时，素材窗口已经封存：新来的消息属于今天，
@@ -867,7 +868,9 @@ class ExperienceService:
                 for item in materials
             ],
         }
-        data = prompt_json(payload)
+        # Round presentation after dream decisions; keep the existing material budget input.
+        data = prompt_json({**payload, "mood": prompt_mood(payload["mood"]),
+                            "dream": prompt_mood(payload["dream"])})
         # 预算仍按旧口径（canonical_json 的转义长度）评估，保证素材筛选结果
         # 不因编码变化而漂移；只是发给模型的字符串不再转义中文。
         tokens = self.count_tokens(SYSTEM_PROMPT, canonical_json(payload))

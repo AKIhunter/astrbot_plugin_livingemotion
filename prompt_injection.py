@@ -2,6 +2,9 @@
 from copy import deepcopy
 import json
 from .prompt_bundle import MAX_CHARS as CHARACTER_MAX_CHARS, prompts, variant_for, valid_text as character_valid_text
+from .prompt_precision import (
+    AFFECT_FIELDS, EMOTION_FIELDS, RELATIONSHIP_FIELDS, prompt_numbers,
+)
 
 MAX_CHARS = 2000
 MARKER = "<!--livingemotion:expression:v1-->"
@@ -113,15 +116,17 @@ def expression_text(config):
 def prompt_state(expression):
     """Round only a deep output copy; never alter policy, timestamps or storage."""
     result = deepcopy(expression)
-    paths = (("bot", ("arousal", "pleasure", "stress", "social_need")),
-             ("daily_emotions", None), ("human_observation", ("confidence",)))
+    paths = (("bot", AFFECT_FIELDS), ("daily_emotions", EMOTION_FIELDS),
+             ("human_observation", ("confidence",)), ("night", ("energy",)),
+             ("relationship", RELATIONSHIP_FIELDS))
     for parent, keys in paths:
-        values = result.get(parent)
-        if not isinstance(values, dict):
-            continue
-        for key in keys or tuple(values):
-            if type(values.get(key)) is float:
-                values[key] = round(values[key], 4)
+        if parent in result:
+            result[parent] = prompt_numbers(result[parent], keys)
+    bot = result.get("bot")
+    if isinstance(bot, dict) and isinstance(bot.get("context_emotions"), (list, tuple)):
+        bot["context_emotions"] = [
+            prompt_numbers(item, ("intensity",)) for item in bot["context_emotions"]
+        ]
     return result
 
 

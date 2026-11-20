@@ -6,6 +6,7 @@ from uuid import uuid4
 from ..contracts import BotAffect, to_dict
 from ..domain.emotion import decay_affect
 from ..ports.memory import MemoryRequest
+from ..prompt_precision import EMOTION_FIELDS, prompt_numbers
 from ..storage.behavior_logs import simulation_record
 from ..storage.console_data import selected_contexts
 from .projector import snapshot
@@ -61,8 +62,8 @@ async def simulate(application, context_id="", persona_id="", emotion="current",
         if sources:
             record = await app.store.get_state(sources[0], "bot")
             affect = decay_affect(snapshot(record, BotAffect), now=app.store.clock())
-        # Reuse the page's daily weather overlay, clamping and rounding.
-        mood = await app.weather_emotions(affect)
+        # Round only the model copy; weather projection and stored affect stay precise.
+        mood = prompt_numbers(await app.weather_emotions(affect), EMOTION_FIELDS)
         materials = []
         for source in sources:
             own = await app.local_behavior_materials(MemoryRequest(request_id, "simulation", source))

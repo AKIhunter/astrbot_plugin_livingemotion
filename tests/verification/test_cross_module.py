@@ -44,13 +44,19 @@ def test_domain_ast_has_no_host_private_plugin_or_sql_access():
     allowed = {"__future__", "dataclasses", "datetime", "hashlib", "json", "math",
                "re", "typing", "unicodedata", "zoneinfo", "contracts", "emotion",
                "collections.abc", "random", "appraisal", "context_emotion", "copy"}
-    for path in sorted((ROOT / "domain").glob("*.py")):
+    # The domain shares only the precision constant; inspect its pure helper too.
+    paths = [*sorted((ROOT / "domain").glob("*.py")), ROOT / "prompt_precision.py"]
+    for path in paths:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 assert all(alias.name.split(".")[0] in allowed for alias in node.names), path
             elif isinstance(node, ast.ImportFrom):
-                assert node.module in allowed, (path.name, node.lineno, node.module)
+                if node.module == "prompt_precision":
+                    assert path.name == "context_emotion.py" and node.level == 2
+                    assert [alias.name for alias in node.names] == ["PROMPT_DECIMALS"]
+                else:
+                    assert node.module in allowed, (path.name, node.lineno, node.module)
             elif isinstance(node, ast.Attribute):
                 assert node.attr not in {"initializer", "store", "cfg", "execute", "send_message"}
             elif isinstance(node, ast.Constant) and isinstance(node.value, str):
@@ -178,9 +184,13 @@ async def test_application_interaction_trace_expression_behavior_and_mode_contro
         assert (await app.api.ingest_event(event))["status"] == "accepted"
         after = (await app.api.get_bot_state(context))["data"]
         assert after["stress"] > before["stress"]
+        stored = await app.store.get_state(context, "bot")
         after_expression = await expression()
-        assert after_expression["bot"]["stress"] == pytest.approx(after["stress"], abs=1e-6)
-        assert before_expression["bot"]["stress"] == before["stress"]
+        # Presentation is rounded; API state, storage and the rule trace remain precise.
+        assert after_expression["bot"]["stress"] == round(after["stress"], 3)
+        assert before_expression["bot"]["stress"] == round(before["stress"], 3)
+        assert (await app.api.get_bot_state(context))["data"] == after
+        assert await app.store.get_state(context, "bot") == stored
         after_evaluation = await app.behavior.evaluate(context)
         assert after_evaluation.score is not None
         assert after_evaluation.score != before_evaluation.score

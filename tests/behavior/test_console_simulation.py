@@ -330,17 +330,21 @@ async def test_simulation_weather_matches_page_without_compounding(
         # 参数里的 bonus 保留下来，是为了证明「即使旧口径会加 0.2/0.4，也不再加」。
         assert bonus >= 0
         assert displayed[axis] == pytest.approx(six_emotions(affect)[axis], abs=1e-6)
+        # Model presentation keeps three decimals; the page and stored projection stay precise.
+        model_values = {key: round(value, 3) for key, value in displayed.items()}
 
         for emotion in ("current", "current", "anger"):
             result = await submit(app, emotion)
             assert result["status"] == "completed" and result["sends"] == 0
             data = model.calls[-1][1]
-            assert data["current_emotions"] == displayed
+            assert data["current_emotions"] == model_values
             if emotion == "current":
-                assert json.loads(data["tone"].split("：", 1)[1]) == displayed
+                assert json.loads(data["tone"].split("：", 1)[1]) == model_values
             else:
                 assert data["emotion"] == "愤怒" and "表达不满" in data["tone"]
         assert await app.store.get_state(context, "bot") == before
+        assert (await app.console_state(persona_id="native", view_scope="global"))[
+            "emotion_analysis"]["bot"]["emotions"] == displayed
         assert host.sends == 0
         if weather == "no_city":
             assert calls == []

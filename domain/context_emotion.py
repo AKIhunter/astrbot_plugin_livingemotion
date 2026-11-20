@@ -13,6 +13,7 @@ import re
 from ..contracts import (
     ActorRole, ContextAppraisal, ContextEmotion, ContentKind, finite, stable_key, to_dict,
 )
+from ..prompt_precision import PROMPT_DECIMALS
 from .appraisal import direct_text
 
 VERSION = 1
@@ -316,7 +317,7 @@ def expression_items(raw, context, *, now, relationship=None, relationship_note=
     rows = sorted(read_state(raw, context, now=now)["items"],
                   key=lambda r: (-r["intensity"], r["kind"]))
     return [{"kind": r["kind"], "label": LABELS[r["kind"]],
-             "intensity": round(r["intensity"], 4), "cause": r["cause_code"],
+             "intensity": round(r["intensity"], PROMPT_DECIMALS), "cause": r["cause_code"],
              "holder": "bot", "target": "current_interlocutor"}
             for r in rows if r["intensity"] >= THRESHOLD and not (
                 r["kind"] == "shyness" and (
