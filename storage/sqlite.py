@@ -622,6 +622,50 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
                 return CommitResult("rejected", exc.reason, event.idempotency_key, generation)
         return await self._run(commit)
 
+    async def refine_context_emotions(self, event: Event, generation: int,
+                                      write: StateWrite, trace: dict) -> CommitResult:
+        """CAS only account metadata and its trace; never replay affect or ledger."""
+        context, now = event.context, self._now()
+        if (write.kind != "relationship" or write.record_key != context.account_id
+                or trace.get("event_key") != event.idempotency_key):
+            raise ValueError("invalid context refinement")
+
+        def commit(db):
+            def mutate():
+                self._check_generation(db, context, generation)
+                row = db.execute(
+                    """SELECT e.seq,s.human_watermark FROM events e JOIN scopes s USING(scope_key)
+                       WHERE e.event_key=? AND e.scope_key=? AND e.generation=?""",
+                    (event.idempotency_key, context.scope_key, generation),
+                ).fetchone()
+                if not row or row["seq"] != row["human_watermark"]:
+                    raise _Rejected("new_human_message")
+                saved = db.execute(
+                    """SELECT value_json FROM event_traces WHERE event_key=? AND scope_key=?
+                       AND generation=? AND kind='relationship'""",
+                    (event.idempotency_key, context.scope_key, generation),
+                ).fetchone()
+                if not saved:
+                    raise _Rejected("trace_missing")
+                value = json.loads(saved["value_json"])
+                value["context_emotions"] = trace
+                payload = canonical_json(value)
+                if len(payload) > 65536:
+                    raise ValueError("invalid context trace")
+                versions = self._write_states(db, context, generation, (write,), now)
+                db.execute(
+                    """UPDATE event_traces SET value_json=? WHERE event_key=? AND scope_key=?
+                       AND generation=? AND kind='relationship'""",
+                    (payload, event.idempotency_key, context.scope_key, generation),
+                )
+                return CommitResult("accepted", "context_emotions_refined",
+                                    event.idempotency_key, generation, versions)
+            try:
+                return self._transaction(db, mutate)
+            except _Rejected as exc:
+                return CommitResult("rejected", exc.reason, event.idempotency_key, generation)
+        return await self._run(commit)
+
     def _prune_window(self, db: sqlite3.Connection, now: float,
                       scope_key: str | None = None) -> None:
         db.execute("DELETE FROM body_window WHERE occurred_at<=?",
@@ -667,6 +711,42 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
             ).fetchall()
             return [{**dict(row), "metadata_json": json.loads(row["metadata_json"])}
                     for row in rows]
+        return await self._run(read)
+
+    async def recent_dialogue(self, event: Event, *, limit: int = 8) -> list[dict[str, Any]]:
+        """Latest same-account, same-persona dialogue up to this event, in time order."""
+        if type(limit) is not int or not 1 <= limit <= 8:
+            raise ValueError("invalid dialogue limit")
+        context = event.context
+        cutoff = self._now() - self.config.window_days * 86400
+
+        def read(db):
+            rows = db.execute(
+                """SELECT e.event_key,e.actor_role,e.occurred_at,e.metadata_json,w.body
+                   FROM body_window w JOIN events e ON e.seq=w.seq
+                   WHERE w.scope_key=? AND e.account_id=? AND w.occurred_at>?
+                   AND e.seq<(SELECT seq FROM events WHERE event_key=?)
+                   AND e.generation=(SELECT generation FROM scopes WHERE scope_key=?)
+                   AND ((e.event_type='message' AND e.actor_role='human')
+                     OR (e.event_type='bot_reply_submitted' AND e.actor_role='bot'
+                         AND e.producer='livingemotion.host'))
+                   ORDER BY e.seq DESC LIMIT ?""",
+                (context.scope_key, context.account_id, cutoff, event.idempotency_key,
+                 context.scope_key, self.config.window_per_scope),
+            ).fetchall()
+            result = []
+            for row in rows:
+                metadata = json.loads(row["metadata_json"])
+                raw = metadata.get("context", {})
+                if (not metadata.get("reliable_source")
+                        or any(raw.get(key) != to_dict(getattr(context, key)) for key in (
+                            "bot_id", "persona_id", "persona_revision", "identity_revision", "audience"))):
+                    continue
+                result.append({"ref": row["event_key"], "role": row["actor_role"],
+                               "at": row["occurred_at"], "text": row["body"][:400]})
+                if len(result) >= limit:
+                    break
+            return list(reversed(result))
         return await self._run(read)
 
     async def human_watermark(self, context: Context) -> int:

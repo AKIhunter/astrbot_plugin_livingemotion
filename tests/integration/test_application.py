@@ -121,7 +121,10 @@ async def test_native_qq_names_and_number_grants_keep_private_group_separate(tmp
         assert next(c for c in app._contexts.values() if c.scene_kind.value == "group"
                     and c.scene_id == "12345678").scope_key not in grants
         graph = await app.console_relationships(persona_id="native", view_scope="private", query="原生QQ")
-        assert graph["total"] == 2
+        # 日列表可能已经在后台取过首次快照；真实来源与名字核验使用实时图。
+        assert graph["graph_total"] == 2
+        assert {n["account_id"] for n in graph["nodes"]} == {"12345678", "23456789"}
+        assert all(n["label"] == "原生QQ名字" for n in graph["nodes"])
         group_graph = await app.console_relationships(persona_id="native", view_scope="group")
         assert group_graph["nodes"][0]["label"] == "真正QQ名字"
         native["autonomy_qq_ids"] = "99999999"

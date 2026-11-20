@@ -280,7 +280,8 @@ class Projector:
         ))
         contextual = apply_context_emotions(
             context_before, event, relationship, now=now,
-            enabled=context_enabled, relationship_note=relationship_note)
+            enabled=context_enabled and not config.emotion_model_enabled,
+            relationship_note=relationship_note)
         if not config.allow_sleep:
             from ..domain.night import sleepless_state
             night_result = {"night": sleepless_state(night, now=now), "runtime": {}, "cost": 0}

@@ -14,7 +14,9 @@ from ..adapters.weather import OpenMeteoWeather
 from ..contracts import prompt_json, stable_key
 from ..services.experience import LENIENT_SAVE, SEALED_DAY, ExperiencePolicy, ExperienceService
 from ..domain.proactivity import motive_for
-from ..prompt_precision import AFFECT_FIELDS, RELATIONSHIP_FIELDS, prompt_numbers
+from ..domain.emotion import CONTROL_EXPRESSION_NOTE, control_expression
+from ..domain.dreaming import six_emotions
+from ..prompt_precision import AFFECT_FIELDS, EMOTION_FIELDS, RELATIONSHIP_FIELDS, prompt_numbers
 from ..storage.proactivity import record_topic_use
 from .background import ModelResultUnknown
 
@@ -368,6 +370,7 @@ class Generation:
                 "Never guilt, pressure, demand a reply, claim surveillance or invent shared events. "
                 "Bot feelings are subjective; use only supplied numeric mood, never private causes. "
                 "Older materials are historical; do not assume plans happened or feelings persist."
+                + CONTROL_EXPRESSION_NOTE
             )
             data = prompt_json({
                 "persona": request.snapshot.persona_prompt,
@@ -384,7 +387,9 @@ class Generation:
                     "pleasure": request.snapshot.affect.pleasure,
                     "social_need": request.snapshot.affect.social_need,
                     "stress": request.snapshot.affect.stress,
+                    **control_expression(request.snapshot.affect),
                 }, AFFECT_FIELDS),
+                "emotions": prompt_numbers(six_emotions(request.snapshot.affect), EMOTION_FIELDS),
                 "materials": [{"kind": m.evidence.kind.value, "text": m.text,
                                "occurred_at": m.evidence.occurred_at}
                               for m in request.materials],

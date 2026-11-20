@@ -403,6 +403,7 @@ async def test_settings_options_use_native_lists_and_never_secrets(le_store, le_
     class MultiApiRouterProvider:
         def __init__(self, identifier, model="router-model"):
             self.identifier, self.model = identifier, model
+            self.provider_config = {"display_name": "合成上游", "api_key": "NEVER_RETURN"}
 
         def meta(self):
             return SimpleNamespace(id=self.identifier)
@@ -426,10 +427,10 @@ async def test_settings_options_use_native_lists_and_never_secrets(le_store, le_
     result = await app.console_settings_options()
     assert result["personas"] == [{"value": "native-persona", "label": "native-persona"}]
     assert result["chat_providers"] == [
-        {"value": "native-provider", "label": "native-provider / native-model"},
+        {"value": "native-provider", "label": "native-model"},
         {"value": "multi_api_router:upstream_12",
-         "label": "multi_api_router:upstream_12 / router-model"},
+         "label": "合成上游 · router-model"},
     ]
     assert result["embedding_providers"] == [
-        {"value": "native-provider", "label": "native-provider / native-model"}]
+        {"value": "native-provider", "label": "native-model"}]
     assert "NEVER_RETURN" not in str(result)

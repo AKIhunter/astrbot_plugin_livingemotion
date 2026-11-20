@@ -13,7 +13,7 @@ export const SECTIONS = resource({
 export const DIMENSIONS = resource({
   pleasure: t("愉悦"), arousal: t("唤醒"), stress: t("压力"), social_need: t("社交需求"),
 });
-// 页面五维：前四维参与运行期计算，底气只由模型异步写入、只用于展示。
+// 页面五维：前四维走规则，底气由模型联合分析写入，调节负面情绪与聊天表达。
 export const BOT_DIMENSIONS = resource({
   pleasure: t("愉悦"), arousal: t("唤醒"), stress: t("压力"),
   social_need: t("社交需求"), control: t("底气"),

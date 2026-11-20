@@ -51,15 +51,22 @@ def _arousal_above_baseline(value):
 
 def six_emotions(value):
     p, a, s, n = (getattr(value, k) for k in ("pleasure", "arousal", "stress", "social_need"))
+    control = getattr(value, "control", .5)
+    if type(control) not in (int, float) or not math.isfinite(control) or not 0 <= control <= 1:
+        raise ValueError("control: expected finite number in 0..1")
+    # 掌控感只调节已有负面情绪，中性 0.5 保持旧公式；不回写四维、
+    # 不凭空产生情绪，也不改变开心窗口的预算口径。
+    dominance = 2 * control - 1
     positive, negative = max(0, p), max(0, -p)
     # 惊讶只统计相对唤醒基线的增量：基线 arousal 0.3 是平常水平，
     # 若直接乘 arousal，阴天全维加成会把平静状态推成「兴奋」。
     excited = _arousal_above_baseline(value)
     return {
         "joy": positive * (1 - .35 * s),
-        "anger": negative * a * (.35 + .65 * s),
-        "sadness": negative * (1 - .55 * a) * (1 - .35 * s),
-        "fear": s * (.35 + .65 * a),
+        "anger": min(1, max(0, negative * a * (.35 + .65 * s) * (1 + .30 * dominance))),
+        "sadness": min(1, max(0, negative * (1 - .55 * a) * (1 - .35 * s)
+                              * (1 - .20 * dominance))),
+        "fear": min(1, max(0, s * (.35 + .65 * a) * (1 - .40 * dominance))),
         "surprise": excited * (.25 + .35 * (1 - abs(p))),
         # 关怀满足社交需求后n可能下降，不能因此把关爱也显示成下降。
         "affection": (.35 * n + .65 * positive) * (1 - .4 * s),

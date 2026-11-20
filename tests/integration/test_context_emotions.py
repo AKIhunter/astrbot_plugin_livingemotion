@@ -278,8 +278,9 @@ async def test_joint_model_replaces_original_snapshot_once(tmp_path, output):
         message, _, _ = await ingest(app, "refinement", body)
         await asyncio.wait_for(asyncio.gather(*tuple(app._actions)), 3)
         record = await app.store.get_state(context, "relationship", context.account_id)
-        intensity = record.value["_account_affect"]["context_emotions"]["items"][0]["intensity"]
-        assert intensity == pytest.approx(.675 if output == "valid" else .5)
+        items = record.value["_account_affect"]["context_emotions"]["items"]
+        assert ([r["intensity"] for r in items] == pytest.approx([.675])
+                if output == "valid" else not items)
         assert app.emotion_model_analysis([context])["applied"]
         assert len(calls) == 1
         before = record
@@ -332,7 +333,7 @@ async def test_authorized_help_memory_and_late_result_fences(tmp_path, change):
         await ingest(app, "with-memory", body)
         await asyncio.wait_for(started.wait(), 2)
         local = await app.store.get_state(context, "relationship", context.account_id)
-        assert feelings(app, local, context)[0]["kind"] == "hurt"
+        assert not feelings(app, local, context)  # No lexical guess before the model.
         if change == "revoke":
             authorized[0] = False
         elif change == "new_message":
@@ -357,7 +358,7 @@ async def test_authorized_help_memory_and_late_result_fences(tmp_path, change):
         else:
             assert result == local
             assert not app.emotion_model_analysis([context])["applied"]
-        assert len(calls) == 1 and host.sends == 0
+        assert len(calls) == (2 if change == "new_message" else 1) and host.sends == 0
     finally:
         release.set()
         await app.terminate()

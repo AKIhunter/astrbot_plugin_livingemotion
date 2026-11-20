@@ -10,6 +10,9 @@ import { startServer } from "./server.mjs";
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || "playwright");
 const root = fileURLToPath(new URL("../../", import.meta.url));
+const metadata = await readFile(path.join(root, "metadata.yaml"), "utf8");
+const version = metadata.match(/^version:\s*(\d+\.\d+\.\d+)\s*$/m)?.[1];
+assert.ok(version, "metadata version is required");
 const code = `import json,sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -56,7 +59,7 @@ try {
     await page.clock.install();
     await page.goto(url);
     await page.locator("#content[aria-busy=false]").waitFor();
-    assert.equal(await page.locator(".plugin-version").innerText(), "v0.6.0");
+    assert.equal(await page.locator(".plugin-version").innerText(), `v${version}`);
     const header = await page.locator(".masthead").boundingBox();
     const controls = await page.locator("#refresh, #language, [data-theme-choice]").evaluateAll(
       nodes => nodes.map(el => { const r = el.getBoundingClientRect(); return r.y + r.height / 2; }));
@@ -108,7 +111,8 @@ try {
     await page.locator('[data-section="settings"]').click();
     await page.locator('[data-settings-jump="night"]').click();
     assert.equal(await toggle.isChecked(), false);
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    // 已发布控制台是PC布局；窄宿主iframe保留700px最小宽度。
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= Math.max(innerWidth, 700) + 1));
     results.push({ width, theme, headerHeight: header.height, completeList: true,
       autoRefreshChangesTotal: true, preservesExpansionAndFocus: true, promptOrder: true,
       singleSleepToggle: true, exactSavePatch: true, reloadReadback: true });

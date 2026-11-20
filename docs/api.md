@@ -1,6 +1,6 @@
 # API v1
 
-适用0.6.1；按api.py、page_api/routes.py、validation.py和Console核对。
+适用0.7.0；按api.py、page_api/routes.py、validation.py和Console核对。
 本页同时列出公开进程内门面和全部21项注册管理路由。
 注册不等于应用已接通：emotion-image-save当前缺少应用入口，返回503。
 
@@ -43,6 +43,9 @@ authorization和代际须最终复核；历史、梦与摘要不伪造成新互�
 `console/state.data.context_emotions` 则返回 version、scope_kind、context_id、target、
 enabled 与 emotions，提供实测零值及低于阈值的衰减值；全局、关闭、来源不匹配或未采集时为空。
 TA 概览迁为九项情绪谱，Console 不再返回已移除的 `emotion_curve` 历史曲线字段。
+0.7.0六项仍保留原字段，愤怒、悲伤、恐惧使用已衰减的掌控感调节；
+中性0.5与旧公式相同。普通回复状态的bot附加control/control_style，见[掌控感](control-integration.md)。
+`emotion_model_analysis`筛选匹配只忽略route，其余Context字段继续严格核对。
 
 ## 生图绑定与回执
 
@@ -97,7 +100,7 @@ global汇总真实来源，不创建全局发送路由。state/configuration可�
 | POST config | patch、expected_revision；可选context_id/reason/receipt=state或config | 原生保存、运行态替换与回执 |
 | POST preview | context_id | 行为资格预览，0模型/0发送 |
 | POST action | context_id/action/expected_revision/confirmed=true；可选reason、置顶字段或promise_id | 下述动作；最终复核业务守卫 |
-| GET relationships | S、分页/query、limit、graph_scope=matched/all | 分页关系及nodes/edges/displayed |
+| GET relationships | S、分页/query、limit、graph_scope=matched/all | items为日列表；nodes与live_items实时；list_snapshot提供日期/时区/计算时间 |
 | POST relationship | persona_id/platform/account_id或context_id、expected_version、score/frozen/note、reason | CAS编辑好感；需编辑许可 |
 | GET energy | S、分页、event_type | 精力事件与曲线 |
 | GET settings-options | 无 | 人格、chat/embedding模型选项，不含密钥 |

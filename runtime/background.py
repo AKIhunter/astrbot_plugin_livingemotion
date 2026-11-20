@@ -65,6 +65,8 @@ class BackgroundRuntime:
         if not job_id or job_id in self._pending:
             return {"status": "rejected", "reason_code": "duplicate_job"}
         enabled = {"emotion": self.config.emotion_model_enabled,
+                   "context_emotion": (self.config.emotion_model_enabled
+                                       and self.config.context_emotions_enabled),
                    "feeling": self.config.enabled,
                    "dream": self.config.dream_enabled, "diary": self.config.diary_enabled,
                    "behavior": self.config.autonomy_enabled,

@@ -44,10 +44,10 @@ def test_v7_migration_preserves_legacy_dimensions_and_marks_baseline_missing():
                    ("old", 0, 300, .8, .5, .1, .4))
         db.commit()
         migrate(db)
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 8
+        assert db.execute("PRAGMA user_version").fetchone()[0] == len(MIGRATIONS)
         old = db.execute("SELECT * FROM emotion_samples").fetchone()
         assert old[:7] == ("old", 0, 300, .8, .5, .1, .4)
-        assert old[7:] == (None,) * 5
+        assert old[7:] == (None,) * 7
         migrate(db)
         assert db.execute("SELECT COUNT(*) FROM emotion_samples").fetchone()[0] == 1
     finally:

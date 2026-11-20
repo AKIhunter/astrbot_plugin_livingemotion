@@ -339,14 +339,16 @@ class StateScopeStore:
         affect = BotAffect(**{k: value[k] for k in ("pleasure", "arousal", "stress", "social_need")
                              if k in value}, **{k: value[k] for k in (
                                  "baseline_pleasure", "baseline_arousal", "baseline_stress",
-                                 "baseline_social_need", "baseline_refined") if k in value})
+                                  "baseline_social_need", "baseline_refined",
+                                  "control", "control_at") if k in value})
         db.execute("""INSERT OR REPLACE INTO emotion_samples
                    (owner_key,generation,at,pleasure,arousal,stress,social_need,
                     baseline_pleasure,baseline_arousal,baseline_stress,baseline_social_need,
-                    baseline_refined) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     baseline_refined,control,control_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                    (key, generation, now, *dims, affect.baseline_pleasure,
                     affect.baseline_arousal, affect.baseline_stress,
-                    affect.baseline_social_need, int(affect.baseline_refined)))
+                     affect.baseline_social_need, int(affect.baseline_refined),
+                     affect.control, affect.control_at))
         db.execute("DELETE FROM emotion_samples WHERE at<?", (now - 172800,))
 
     async def emotion_history(self, context, *, since, until):
@@ -374,19 +376,24 @@ class StateScopeStore:
                     index += 1
                 emotions = None
                 basis = "uncollected"
+                control_basis = "uncollected"
                 if current is not None:
                     baseline_known = current["baseline_refined"] is not None
+                    control_known = current["control"] is not None and current["control_at"] is not None
                     affect = BotAffect(**{k: current[k] for k in
                         ("pleasure", "arousal", "stress", "social_need")},
                         **({k: current[k] for k in (
                             "baseline_pleasure", "baseline_arousal", "baseline_stress",
                             "baseline_social_need")} if baseline_known else {}),
                         baseline_refined=bool(current["baseline_refined"]),
+                        **({"control": current["control"], "control_at": current["control_at"]}
+                           if control_known else {}),
                         updated_at=current["at"])
                     emotions = six_emotions(decay_affect(affect, now=at))
                     basis = "recorded_decay" if baseline_known else "legacy_baseline_unknown"
+                    control_basis = "recorded_decay" if control_known else "legacy_control_unknown"
                 points.append({"at": at, "emotions": emotions,
-                               "basis": basis})
+                               "basis": basis, "control_basis": control_basis})
             return points
         return await self._run(read)
 

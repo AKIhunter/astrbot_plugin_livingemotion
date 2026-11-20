@@ -174,7 +174,7 @@ def local_appraisals(event, relationship, state, *, relationship_note=""):
 
 def parse_context_appraisals(value, event, relationship, state, *,
                              support_refs=(), relationship_note=""):
-    """Strip the additive namespace before the legacy strict model parser."""
+    """Validate structure, subject and real evidence, never gate by vocabulary."""
     if isinstance(value, str):
         from .emotion import _unique_object
         text = value.strip()
@@ -186,42 +186,35 @@ def parse_context_appraisals(value, event, relationship, state, *,
     if not isinstance(value, dict):
         raise ValueError("model_schema")
     legacy = {k: v for k, v in value.items() if k != "context_appraisals"}
+    if "context_appraisals" not in value:
+        return legacy, (), ("context_appraisals_missing",)
     rows = value.get("context_appraisals", [])
     accepted, rejected = [], False
     if not isinstance(rows, list) or len(rows) > 8:
         return legacy, (), ("context_appraisals_invalid",)
     allowed_refs = set(support_refs) | {r["ref"] for r in state["support"]}
-    local = local_appraisals(event, relationship, state, relationship_note=relationship_note)
+    seen_kinds = set()
     for row in rows:
         try:
             if not isinstance(row, dict) or set(row) - {
-                "kind", "cause_code", "evidence", "confidence", "strength", "context_refs"
+                "kind", "cause_code", "evidence", "confidence", "strength", "context_refs",
+                "action", "holder", "target",
             }:
                 raise ValueError("context_appraisal_schema")
             appraisal = ContextAppraisal(**row)
             if (appraisal.cause_code not in CAUSES[appraisal.kind]
                     or appraisal.confidence < .75
                     or appraisal.evidence not in event.body
-                    or appraisal.evidence not in direct_text(event.body)
-                    or not _direct(appraisal.evidence)
+                    or appraisal.kind in seen_kinds
                     or any(r not in allowed_refs for r in appraisal.context_refs)):
                 raise ValueError("context_appraisal_evidence")
-            if appraisal.kind == "wronged":
-                valid = (
-                    appraisal.cause_code == "admitted_unfair_blame"
-                    and bool(_UNFAIR.search(appraisal.evidence))
-                    and bool(_matching(event.body, _UNFAIR))
-                ) or (
-                    appraisal.cause_code == "devalued_contribution"
-                    and bool(_DENY_HELP.search(appraisal.evidence))
-                    and bool(_matching(event.body, _DENY_HELP))
-                    and bool(appraisal.context_refs)
-                )
-            else:
-                valid = any(a.kind == appraisal.kind and a.cause_code == appraisal.cause_code
-                            for a in local)
-            if not valid:
-                raise ValueError("context_appraisal_gate")
+            if (appraisal.action == "increase" and (
+                    (appraisal.kind == "wronged"
+                     and appraisal.cause_code == "devalued_contribution"
+                     and not appraisal.context_refs)
+                    or (appraisal.kind == "shyness" and relationship.score < 250))):
+                raise ValueError("context_appraisal_basis")
+            seen_kinds.add(appraisal.kind)
             accepted.append(appraisal)
         except (ValueError, TypeError, KeyError):
             rejected = True
@@ -229,7 +222,8 @@ def parse_context_appraisals(value, event, relationship, state, *,
 
 
 def apply_context_emotions(raw, event, relationship, *, now, enabled=False,
-                           appraisals=(), support_refs=(), relationship_note=""):
+                           appraisals=(), support_refs=(), relationship_note="",
+                           semantic=False):
     finite(now, "now", 0)
     state = read_state(raw, event.context, now=now)
     before = to_dict(state)
@@ -248,7 +242,8 @@ def apply_context_emotions(raw, event, relationship, *, now, enabled=False,
     if any(k == key for k, _ in state["seen"]):
         trace["reason_codes"] = ["context_event_duplicate"]
         return result
-    candidates = {a.kind: replace(a, confidence=min(a.confidence, event.confidence))
+    # Model mode is authoritative: an empty array must not resurrect rule guesses.
+    candidates = {} if semantic else {a.kind: replace(a, confidence=min(a.confidence, event.confidence))
                   for a in local_appraisals(event, relationship, state,
                                             relationship_note=relationship_note)}
     for appraisal in appraisals:
@@ -257,13 +252,13 @@ def apply_context_emotions(raw, event, relationship, *, now, enabled=False,
             support_refs=support_refs, relationship_note=relationship_note)
         if valid:
             candidates[appraisal.kind] = appraisal
-            if appraisal.kind == "wronged":
+            if appraisal.kind == "wronged" and appraisal.action == "increase":
                 candidates.pop("hurt", None)
     items = {r["kind"]: ContextEmotion(**r) for r in state["items"]}
     reasons = []
-    if _matching(event.body, _BOUNDARY) and items.pop("shyness", None):
+    if not semantic and _matching(event.body, _BOUNDARY) and items.pop("shyness", None):
         reasons.append("context_boundary_respected")
-    if (_matching(event.body, _REPAIR) and not _EXCUSE.search(direct_text(event.body))
+    if (not semantic and _matching(event.body, _REPAIR) and not _EXCUSE.search(direct_text(event.body))
             and not set(candidates) & {"hurt", "wronged"}):
         for kind in ("hurt", "wronged"):
             if kind in items:
@@ -271,17 +266,29 @@ def apply_context_emotions(raw, event, relationship, *, now, enabled=False,
                 reasons.append("context_cause_repaired")
     for kind, appraisal in candidates.items():
         old = items.get(kind)
+        if appraisal.action == "none":
+            continue
+        if appraisal.action == "clear":
+            if items.pop(kind, None):
+                reasons.append("context_" + kind + "_cleared")
+            continue
+        if appraisal.action == "decrease":
+            if old:
+                items[kind] = replace(old, intensity=max(
+                    0, old.intensity - appraisal.strength * appraisal.confidence))
+                reasons.append("context_" + kind + "_decreased")
+            continue
         cap, _, ttl = POLICIES[kind]
         if kind == "shyness" and relationship.score < 450:
             cap = min(cap, .25)
         stimulus = stable_key(kind, appraisal.cause_code, appraisal.evidence)
         intensity = min(cap, appraisal.strength * appraisal.confidence)
         if old is not None and old.cause_code == appraisal.cause_code:
-            if old.stimulus_key == stimulus or now - old.started_at < WINDOW:
+            if old.stimulus_key == stimulus or (not semantic and now - old.started_at < WINDOW):
                 continue
             last_at = next((at for k, at in reversed(state["seen"])
                             if k in old.evidence_refs), old.started_at)
-            if now - last_at < WINDOW:
+            if not semantic and now - last_at < WINDOW:
                 continue
             intensity = min(cap, old.intensity + min(.10, intensity))
             items[kind] = replace(old, intensity=intensity, confidence=appraisal.confidence,
@@ -293,15 +300,22 @@ def apply_context_emotions(raw, event, relationship, *, now, enabled=False,
                 stable_key(event.context.account_key, kind, key), stimulus,
                 (key, *appraisal.context_refs)[:2])
         reasons.append("context_" + kind)
-    if _matching(event.body, _HELP):
+    if not semantic and _matching(event.body, _HELP):
         state["support"] = (state["support"] + [
             {"ref": key, "at": now, "expires_at": now + 86400}])[-2:]
         reasons.append("context_help_acknowledged")
-    if not reasons:
+    if not reasons and not semantic:
         return result
+    if not reasons:
+        reasons.append("context_no_stimulus")
     if len(state["seen"]) >= MAX_SEEN:
-        trace["reason_codes"] = ["context_capacity_limited"]
-        return {"state": before, "applied": False, "trace": trace}
+        if semantic:
+            # SQLite retains event idempotency; keep only a bounded recent guard
+            # here so ordinary no-op turns cannot freeze later repairs.
+            state["seen"] = state["seen"][-(MAX_SEEN - 1):]
+        else:
+            trace["reason_codes"] = ["context_capacity_limited"]
+            return {"state": before, "applied": False, "trace": trace}
     state["items"] = [to_dict(i) for i in items.values() if i.intensity > .001]
     state["seen"].append([key, now])
     state["updated_at"] = now

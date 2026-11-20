@@ -7,10 +7,11 @@ import {
   experienceStatus, reasonExplanation, resultLabel, AFFECT_LABELS, modelDiagnosticText,
 } from "./model.mjs?v=eff0d6f932b0";
 import { radar3d } from "./charts/radar3d.mjs?v=eff0d6f932b0";
-import { mountRelationships, emotionExplainer } from "./charts/relationships.mjs?v=ta-omissions-20261119-r3";
+import { mountRelationships, emotionExplainer } from "./charts/relationships.mjs?v=ta-rel-20261120-r1";
+import { contextEmotionPicker } from "./scope-picker.mjs?v=ta-rel-20261120-r1";
 import { mountEnergy } from "./charts/energy.mjs?v=eff0d6f932b0";
 import { emotionSpectrum } from "./charts/emotion-spectrum.mjs?v=ta-omissions-20261119-r3";
-import { renderSettings as settingsView, jumpToSettingsGroup, syncSettingsValues } from "./settings.mjs?v=ta-omissions-20261119-r3";
+import { renderSettings as settingsView, jumpToSettingsGroup, syncSettingsValues } from "./settings.mjs?v=model-labels-20261120-r1";
 import { EXPERIENCE_TABS, experienceTabs, selectExperienceTab, turnPage, cancelPageTurn } from "./experience.mjs?v=eff0d6f932b0";
 import { reconcileDraft } from "./draft.mjs?v=eff0d6f932b0";
 
@@ -55,9 +56,11 @@ try {
     page: Number.isSafeInteger(relationship.page) && relationship.page > 0 ? relationship.page : 1,
   };
 } catch (_) { /* The page also works when storage is unavailable. */ }
-// 旧页签与会话缓存迁移：控制台始终读取当前人格的全局视图。
+// 旧缓存只清动作落点；保留 TA 的具体会话，由宿主目录核验，不跨刷新丢对象。
 state.contextId = "";
-state.selection = state.selection.persona_id ? { persona_id: state.selection.persona_id, view_scope: "global" } : {};
+if (!["global", "private", "group"].includes(state.selection.view_scope)) {
+  state.selection = state.selection.persona_id ? { persona_id: state.selection.persona_id, view_scope: "global" } : {};
+}
 
 function remember() {
   try {
@@ -119,6 +122,8 @@ function canWrite() {
   return !!(state.data?.context_id || state.data?.scope_selection?.persona_id || state.data?.experience.persona_id) && !state.loading && !state.writing && !state.stale;
 }
 function selectedScope() { return Object.keys(state.selection).length ? state.selection : state.contextId; }
+// 关系页始终以人格为范围，TA 的具体会话选择不能进入关系查询或限制平台候选。
+function relationshipScope() { return { persona_id: state.selection.persona_id, view_scope: "global" }; }
 function handleError(error) {
   const failure = pageError(error);
   if (locale() !== "zh-CN") failure.message = controlled(failure.message);
@@ -164,6 +169,8 @@ function updateControls() {
   const dirty = Object.keys(state.draft).length;
   $("refresh").disabled = state.loading || state.writing;
   if ($("context-emotion-picker")) $("context-emotion-picker").disabled =
+    state.loading || state.writing || dirty > 0;
+  if ($("context-emotion-query")) $("context-emotion-query").disabled =
     state.loading || state.writing || dirty > 0;
   $("content").setAttribute("aria-busy", String(state.loading));
   $("editor").hidden = !dirty && !state.invalidFields.size;
@@ -383,31 +390,14 @@ function renderOverview(container) {
   // TA 概览直接显示运行时降维分量；主题切换只由 CSS 控制，共用同一份数据。
   const spectrum = emotionSpectrum(state.data);
   if (state.data.context_emotions?.enabled === true) {
-    const picker = node("select"); picker.id = "context-emotion-picker";
-    const all = node("option", t("人格总体 · 不含对象情绪")); all.value = ""; picker.append(all);
-    const contexts = list(state.scopes?.contexts).filter(item =>
-      item.persona_id === state.selection.persona_id && ["private", "group"].includes(item.view_scope));
-    for (const item of contexts) {
-      const option = node("option", text(item.label, `${item.platform} / ${item.account_id}`));
-      option.value = item.id; picker.append(option);
-    }
-    picker.value = state.selection.context_id || "";
-    picker.disabled = state.loading || state.writing || Object.keys(state.draft).length > 0;
-    picker.addEventListener("change", () => {
-      const context = contexts.find(item => item.id === picker.value);
-      state.selection = context
-        ? { persona_id: state.selection.persona_id, view_scope: context.view_scope,
-            platform: context.platform, context_id: context.id }
-        : { persona_id: state.selection.persona_id, view_scope: "global" };
-      state.preview = null;
-      void loadState();
-    });
-    const label = node("label", t("会话对象")); label.htmlFor = picker.id;
-    const row = node("div", undefined, "context-emotion-picker");
-    row.style.cssText = "display:flex;align-items:center;gap:12px;flex-wrap:wrap";
-    picker.style.maxWidth = "100%";
-    row.append(label, picker);
-    spectrum.append(row);
+    spectrum.append(contextEmotionPicker({
+      contexts: state.scopes?.contexts, selection: state.selection,
+      disabled: state.loading || state.writing || Object.keys(state.draft).length > 0,
+      onSelect: selection => {
+        state.selection = selection; state.preview = null; remember();
+        void loadState();
+      },
+    }));
   }
   container.append(spectrum);
   const feeling = node("div", undefined, "ta-overview-feeling");
@@ -441,7 +431,7 @@ function personaPicker() {
     const value = select.value;
     if (!value || value === state.selection.persona_id) return;
     state.dispose?.(); state.dispose = null;
-    state.selection = { persona_id: value, view_scope: state.selection.view_scope || "global" };
+    state.selection = { persona_id: value, view_scope: "global" };
     state.contextId = ""; state.data = null; state.preview = null; state.filters = emptyFilters();
     $("content").replaceChildren(node("p", t("正在读取所选人格…"), "empty"));
     $("records").replaceChildren(); $("settings").replaceChildren(); loadState();
@@ -642,11 +632,11 @@ function renderRelationships(container) {
     container.append(node("p", t("没有已授权人格，不能查询关系。请刷新宿主范围。"), "empty")); return;
   }
   const panel = node("div"); panel.id = "relationship-body"; container.append(panel);
-  panel.dataset.viewKey = JSON.stringify([scopeParams(selectedScope()),
+  panel.dataset.viewKey = JSON.stringify([relationshipScope(),
     state.data.config.values.relationship_edit_enabled,
     state.data.config.values.relationship_stage_names]);
   state.dispose = mountRelationships(panel, {
-    api, selection: { ...scopeParams(selectedScope()), platforms: personaPlatforms() },
+    api, selection: { ...relationshipScope(), platforms: personaPlatforms() },
     queryState: state.relationshipQuery,
     onQuery: value => { state.relationshipQuery = value; remember(); },
     stageNames: state.data.config.values.relationship_stage_names ?? Array.from({ length: 11 }, (_, index) => state.data.config.values[`relationship_stage_${index}_name`] || ""),
@@ -1393,7 +1383,7 @@ function render(preserveSettings = false) {
     syncSettingsValues($("settings"), state); updateControls(); return;
   }
   if (preserveSettings && state.section === "relationships" && $("relationship-body")?.dataset.viewKey ===
-      JSON.stringify([scopeParams(selectedScope()), state.data.config.values.relationship_edit_enabled,
+      JSON.stringify([relationshipScope(), state.data.config.values.relationship_edit_enabled,
         state.data.config.values.relationship_stage_names])) {
     // Keep the mounted editor and its optimistic version; refresh its read side.
     void state.dispose?.refresh?.(); updateControls(); return;
@@ -1796,6 +1786,11 @@ async function refreshState(automatic) {
           state.selection = { persona_id: target.id, view_scope: "global" };
           state.contextId = ""; state.preview = null;
         }
+      }
+      if (state.selection.context_id && !list(state.scopes.contexts).some(item =>
+          item.id === state.selection.context_id && item.persona_id === state.selection.persona_id)) {
+        state.selection = { persona_id: state.selection.persona_id, view_scope: "global" };
+        state.contextId = ""; state.preview = null;
       }
     }
     const data = await readStateConfig();

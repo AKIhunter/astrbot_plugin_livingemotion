@@ -1,6 +1,6 @@
 # 开发与检查分层
 
-适用0.6.0。完整克隆保留tests与开发依赖；使用Python 3.12/3.13验证便携路径。
+适用0.7.0。完整克隆保留tests与开发依赖；使用Python 3.12/3.13验证便携路径。
 先从插件根目录安装requirements-dev.txt，然后运行：
 
 ```bash
@@ -9,6 +9,8 @@ python -m pytest -q
 npm --prefix tests/ui ci --ignore-scripts --no-audit --no-fund
 npm --prefix tests/ui run build
 npm --prefix tests/ui test
+node tests/ui/ta-relationships-browser.test.mjs
+node tests/ui/omissions-browser.test.mjs
 npm --prefix tests/ui run test:browser
 node tests/ui/sleep-master-browser.test.mjs
 node tests/ui/promise-cancel-browser.test.mjs
@@ -35,6 +37,8 @@ ASTRBOT_NATIVE_SOURCE仅指向源码快照，不启动宿主或连接平台。
 UI测试读取真实Console DTO与实际页面，配置保存由合成桥处理。
 浏览器外联全部阻断；自动刷新、草稿保存、列表展开与多分辨率独立核对。
 UI_EVIDENCE_DIR可指向仓库外证据目录；PLAYWRIGHT_MODULE可复用已安装依赖。
+新增TA/关系脚本使用REPORT_PATH、PW_MODULE；编辑与布局脚本使用LE_UI_REPORT、PW_MODULE。
+CI先独立执行这两组检查，再运行原合成浏览器矩阵，以便分别查看结果。
 临时服务在finally关闭。浏览器通过不替代宿主HTTP认证和真实平台投递。
 
 ## 文档与提交

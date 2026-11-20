@@ -2,7 +2,7 @@
 
 ![livingEmotion wordmark and state lines](.github/img/Banner.png)
 
-[![Version](https://img.shields.io/badge/version-0.6.3-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.7.0-3a8060)](CHANGELOG.md)
 
 [简体中文](README.md) · **English**
 
@@ -15,6 +15,10 @@ Configure an IANA timezone before enabling sleep. Disabling sleep keeps the pers
 
 TA displays nine emotion components. Optional wronged, hurt and shyness collection is off by default;
 enable it in Settings → Emotions and select a conversation on TA. Collection requires Active mode.
+Enable model refinement for contextual interpretation. A joint analysis is reused; during its
+cooldown a separate object analysis can use the shared daily budget. Replies wait at most five seconds.
+Control influences negative emotion intensity and speaking style. TA selection and relationship
+filters are independent; the relationship list updates at local midnight while the graph stays live.
 Behavior simulation offers 12 choices, keeps its records separate and does not send messages.
 State refresh continues while editing and preserves drafts and optimistic versions.
 
@@ -28,6 +32,7 @@ Successful wording substitutions are scoped by the actual image provider, model 
 | [User guide](docs/user-guide.md) | Controls, daily operations and simulation boundaries |
 | [Configuration reference](docs/config-reference.md) | Every field, default, location, effect and example |
 | [Technical guide](docs/technical-guide.md) | Decision flows, persistence, integration and upgrades |
+| [Control integration](docs/control-integration.md) | Mood projection, speaking style and history migration |
 | [Image prompt contract](docs/image-prompt-retry.md) | Bounded repairs and mapping reuse |
 | [Scheduled greeting coordination](docs/native-proactive-yield.md) | Same-conversation 15-minute windows |
 | [Model input precision](docs/prompt-precision.md) | Three decimal places and literal Chinese in reply state blocks |
@@ -38,6 +43,6 @@ Successful wording substitutions are scoped by the actual image provider, model 
 Model generation can incur provider charges. Normal use needs neither Node nor an external CDN.
 Developer: [AKIhunter](https://github.com/AKIhunter). Feedback QQ group: 991350637.
 
-0.6.3 limits model emotion inputs to at most three decimal places and keeps Chinese literal
-in main-reply state blocks. Stored state and decision thresholds retain their original precision;
-no configuration migration is needed.
+0.7.0 adds contextual object analysis, control-based expression and readable model names.
+SQLite upgrades automatically to v9 without filling missing historical control values.
+No new configuration keys; three-decimal model inputs and scheduled greeting coordination remain.

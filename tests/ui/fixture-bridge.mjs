@@ -10,6 +10,17 @@ const relationships = makeRelationships();
 const pins = new Map();
 const styleSummaries = new Map();
 const clone = value => structuredClone(value);
+const taScenario = scenario === "ta-relationships";
+const taScopes = makeScopes();
+if (taScenario) {
+  taScopes.contexts.push(...Array.from({ length: 30 }, (_, i) => ({
+    id: `ta-extra-${i}`, scope_key: `ta-scope-${i}`, persona_id: "fixture-persona",
+    platform: "qq", view_scope: "private", scene_id: `${80000 + i}`,
+    account_id: `${80000 + i}`, nickname: `合成对象 ${i}`, label: `QQ / ${80000 + i}`,
+  })));
+  data.contexts = taScopes.contexts.map(({ id, label }) => ({ id, label }));
+  data.config.values.context_emotions_enabled = true;
+}
 const fail = (code, message) => Promise.reject(Object.assign(new Error(message), { code }));
 const configKey = `livingemotion.synthetic.config.${scenario}`;
 const dailyScenario = scenario.startsWith("daily");
@@ -91,6 +102,9 @@ const bridge = {
         data.context_id = params.view_scope === "global" ? "" : params.context_id || (params.view_scope === "group" ? "fixture-b" : "fixture-a");
         data.representative_context_id = params.view_scope === "global" ? "fixture-a" : data.context_id;
       } else if (params.context_id) { data.context_id = params.context_id; data.selection.context_id = params.context_id; }
+      if (taScenario) data.context_emotions = { version: 1, enabled: true, scope_kind: "account",
+        context_id: data.context_id, target: taScopes.contexts.find(c => c.id === data.context_id)?.account_id || "",
+        emotions: data.context_id ? { wronged: 0, hurt: 0, shyness: 0 } : {} };
       return { status: "ok", data: clone(data) };
     }
     if (path === "console/configuration") {
@@ -100,7 +114,7 @@ const bridge = {
       if (scenario === "save-fast-read-error") return fail("timeout", "合成预读超时");
       return { status: "ok", data: { api_version: 1, config: clone(data.config) } };
     }
-    if (path === "console/scopes") return { status: "ok", data: scenario === "native-dto" || scenario.startsWith("save-") ? clone(nativeDTO.scopes) :
+    if (path === "console/scopes") return { status: "ok", data: taScenario ? clone(taScopes) : scenario === "native-dto" || scenario.startsWith("save-") ? clone(nativeDTO.scopes) :
       scenario === "no-context" ? { api_version: 1, personas: [], platforms: [], contexts: [] } : makeScopes() };
     if (path === "console/settings-options") return { status: "ok", data: {
       api_version: 1, personas: makeScopes().personas.map(item => ({ value: item.id, label: item.name })),

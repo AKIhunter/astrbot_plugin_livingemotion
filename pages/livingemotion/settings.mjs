@@ -411,7 +411,10 @@ export function renderSettings(root, state, options, updateControls, description
       const field = { ...original };
       if (/provider_id$/.test(field.key) || field.key === "persona_id") {
         const source = /embedding/.test(field.key) ? options.embedding_providers : options.chat_providers;
-        const choices = field.key === "persona_id" ? options.personas : source;
+        // 原生字段随 state 刷新，优先于首屏缓存，避免模型名称退回旧标签。
+        const choices = field.key === "persona_id" ? options.personas :
+          field.type === "enum" && Array.isArray(field.options)
+            ? field.options.filter(item => item?.value !== "") : source;
         if (Array.isArray(choices)) {
           field.type = "enum";
           field.options = [{ value: "", label: field.key === "persona_id" ? t("跟随当前会话人格") : /embedding/.test(field.key) ? t("待配置") : t("沿用当前聊天模型") },
@@ -742,6 +745,14 @@ export function syncSettingsValues(root, state) {
   // 后台更新只同步未编辑字段，保留原 DOM、焦点、无效输入、折叠和滚动位置。
   for (const field of state.data.config.fields) {
     const input = root.querySelector(`#config-${field.key}`);
+    // 只更新已有模型选项的文字；保留选项值、当前选择和正在编辑的表单节点。
+    if (input?.tagName === "SELECT" && /provider_id$/.test(field.key)) {
+      for (const choice of list(field.options)) {
+        if (!choice || typeof choice.value !== "string" || !choice.value) continue;
+        const option = [...input.options].find(item => item.value === choice.value);
+        if (option) option.textContent = text(choice.label, option.textContent);
+      }
+    }
     if (!input || Object.hasOwn(state.draft, field.key) || state.invalidFields.has(field.key) ||
         input === document.activeElement) continue;
     const value = state.data.config.values[field.key];

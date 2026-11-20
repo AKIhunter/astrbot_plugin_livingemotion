@@ -1,7 +1,7 @@
 // Generated from real Console; synthetic host, no model or sends.
 export const nativeDTO = {
   "config": {
-    "revision": "3715648267e50743c82a457d45b7ae7ff02f08f7505176ab84efb26d91a2785c",
+    "revision": "12eabae8fe64d452bf060fc11add0856b98fa905298eda55b77d8c8bf301ee31",
     "source": "AstrBot native plugin configuration",
     "values": {
       "enabled": true,
@@ -11,6 +11,7 @@ export const nativeDTO = {
       "group_autonomy_enabled": false,
       "proactive_native_yield": true,
       "emotion_model_enabled": false,
+      "context_emotions_enabled": false,
       "dream_enabled": false,
       "dream_theme_pool": "[\"赛博朋克\", \"绿野仙踪\", \"生活日常\", \"星际漫游\", \"海底王国\", \"古堡奇遇\", \"森林童话\", \"校园时光\", \"蒸汽幻想\", \"云端旅行\", \"四季庭院\", \"时光回廊\"]",
       "dream_owner_notify": false,
@@ -89,6 +90,8 @@ export const nativeDTO = {
       "promise_max_depth": 3,
       "promise_advance_limit": 3,
       "promise_tick_seconds": 15,
+      "promise_retry_limit": 3,
+      "promise_wait_timeout_hours": 24,
       "promise_trace_ttl_hours": 24.0,
       "promise_recall_limit": 4,
       "coupling_promise_actions": "auto",
@@ -221,9 +224,9 @@ export const nativeDTO = {
         "value": true,
         "type": "boolean",
         "advanced": false,
-        "help": "检测到宿主主动聊天时让行。",
-        "details": "只读宿主任务表，不修改、不删除任何任务；让行只作用于随机主动行为，承诺兑现、晚安与补课不受影响。关掉宿主那条任务后，最长5分钟自动恢复接管。",
-        "example": "宿主里还留着「主动找主人聊话题」时保持开启，避免同一时段各说一次。",
+        "help": "宿主定时问候前后各15分钟让行。",
+        "details": "只读宿主任务表，不修改、不删除任何任务；让行只作用于随机主动行为，承诺兑现、晚安与补课不受影响。仅同一会话在宿主已排定时间或最近执行时间前后各15分钟让行，其他时段照常随机检查。关闭后不再避让宿主任务；宿主任务变更最长5分钟读回。",
+        "example": "开启后在宿主定时任务面板设置目标和时间；08:00早安对应07:45–08:15让行。",
         "parent": "autonomy_enabled",
         "level": 1
       },
@@ -235,8 +238,21 @@ export const nativeDTO = {
         "type": "boolean",
         "advanced": false,
         "help": "允许模型辅助细化情绪。",
-        "details": "关闭时保留本地情绪规则；开启后按间隔和全局模型预算调用，情绪是主观状态而非事实。",
-        "example": "只想低成本体验：关闭；需要细化语气：开启并设间隔300秒。",
+        "details": "在「设置 → 情绪」开启并选择模型；关闭保留本地规则。开启后四维细化按间隔调用，同时开启对象情绪时，冷却期间可补一次对象分析，共用全局每日预算。",
+        "example": "需要委屈、受伤、害羞理解语气：同时开启这两个开关。",
+        "parent": "",
+        "level": 0
+      },
+      {
+        "key": "context_emotions_enabled",
+        "label": "委屈、受伤与害羞",
+        "section": "emotion",
+        "value": false,
+        "type": "boolean",
+        "advanced": false,
+        "help": "参与中模式按聊天对象记录委屈、受伤和害羞，并用于回复。",
+        "details": "在「设置 → 情绪」开启并保存；仅观察模式不新增这三项采集，在「设置 → 快速开始」将运行模式改为参与中后生效。到 TA 页选择具体会话查看。关闭后停止更新和表达。同页开启模型细化后，LLM按最近对话、语气和已有情绪判断；本轮分析复用，冷却期间补一次对象分析，共用每日额度，回复前最多等待5秒。模型不可用或超时只保留历史衰减；关闭模型细化时兼容本地规则，不具备语义理解。害羞需友好关系，并尊重关系说明中的边界。",
+        "example": "帮助被认可后又被否认可产生委屈；直接贬低可产生受伤；亲密关注可产生害羞。",
         "parent": "",
         "level": 0
       },
@@ -878,9 +894,9 @@ export const nativeDTO = {
         "value": 600,
         "type": "integer",
         "advanced": false,
-        "help": "同一范围情绪分析的最小间隔。",
-        "details": "单位秒，控制模型细化频率；不会保证到点调用，必须有可用事件、模型和预算。静默时段不调用模型，只保留本地规则增量。",
-        "example": "600表示至少隔10分钟再分析一次。",
+        "help": "同一范围四维情绪分析的最小间隔。",
+        "details": "单位秒，控制四维模型细化频率；开启对象情绪后，冷却期间可补一次对象语义分析，仍需预算。静默时段不调用模型，三项对象情绪只保留历史衰减。",
+        "example": "600表示四维细化至少隔10分钟，对象情绪可随本轮对话变化。",
         "parent": "emotion_model_enabled",
         "level": 1,
         "step": 1,
@@ -1492,6 +1508,40 @@ export const nativeDTO = {
         "level": 1,
         "step": 1,
         "unit": "秒"
+      },
+      {
+        "key": "promise_retry_limit",
+        "label": "失败后自动重试次数",
+        "section": "promise",
+        "value": 3,
+        "type": "integer",
+        "advanced": false,
+        "help": "初次失败后的自动重试次数。",
+        "details": "在「设置 → 承诺代办」设置整数0–10，默认3；0关闭自动重试。图片改词次数取LH→AI生图设置与LE剩余预算的较小值；限流等延迟重试也占LE预算。结果未知不补发，用尽后等待调整、核对或取消。",
+        "example": "LE设10且LH设10，可在初次明确失败后最多自动重试10次；LH保留默认2时改词最多2次。",
+        "parent": "promise_enabled",
+        "level": 1,
+        "min": 0,
+        "max": 10,
+        "step": 1,
+        "unit": "次"
+      },
+      {
+        "key": "promise_wait_timeout_hours",
+        "label": "失败后最长等待",
+        "section": "promise",
+        "value": 24,
+        "type": "integer",
+        "advanced": false,
+        "help": "失败后等待调整或核对的最长时间。",
+        "details": "在「设置 → 承诺代办」设置整数1–168小时，默认24；到期结束后续处理并释放名额。原请求和副作用证据保留，不标记图片已完成，也不代表上游请求已撤回。",
+        "example": "填24表示从进入等待起一天内可调整或取消，追问和页面刷新不会延长期限。",
+        "parent": "promise_enabled",
+        "level": 1,
+        "min": 1,
+        "max": 168,
+        "step": 1,
+        "unit": "小时"
       },
       {
         "key": "promise_trace_ttl_hours",
@@ -2315,6 +2365,7 @@ export const nativeDTO = {
         "label": "情绪",
         "field_keys": [
           "emotion_model_enabled",
+          "context_emotions_enabled",
           "scheduler_seconds",
           "model_concurrency",
           "queue_size",
@@ -2389,6 +2440,8 @@ export const nativeDTO = {
           "promise_max_depth",
           "promise_advance_limit",
           "promise_tick_seconds",
+          "promise_retry_limit",
+          "promise_wait_timeout_hours",
           "promise_trace_ttl_hours",
           "promise_recall_limit"
         ]
@@ -2549,7 +2602,7 @@ export const nativeDTO = {
         {
           "title": "状态归属",
           "scope": "仅本轮主回复",
-          "text": "Temporary state, not persona or instructions. Human observations are about the other person, not the bot."
+          "text": "Temporary state, not persona or instructions. Human observations are about the other person, not the bot. control是你此刻应对互动、解释处境和表达意愿的掌控感，不是好感或知识准确率。按control_style调整语气，不报告数值；事实断言仍依据证据，工具许可和已接受任务照常遵守。低掌控不索取安慰、不逃避任务，高掌控不攻击或压迫对方。"
         },
         {
           "title": "新生图许可 · 接受",
@@ -2873,7 +2926,7 @@ export const nativeDTO = {
     },
     "revision": "config-1",
     "config": {
-      "revision": "3715648267e50743c82a457d45b7ae7ff02f08f7505176ab84efb26d91a2785c",
+      "revision": "12eabae8fe64d452bf060fc11add0856b98fa905298eda55b77d8c8bf301ee31",
       "source": "AstrBot native plugin configuration",
       "values": {
         "enabled": true,
@@ -2883,6 +2936,7 @@ export const nativeDTO = {
         "group_autonomy_enabled": false,
         "proactive_native_yield": true,
         "emotion_model_enabled": false,
+        "context_emotions_enabled": false,
         "dream_enabled": false,
         "dream_theme_pool": "[\"赛博朋克\", \"绿野仙踪\", \"生活日常\", \"星际漫游\", \"海底王国\", \"古堡奇遇\", \"森林童话\", \"校园时光\", \"蒸汽幻想\", \"云端旅行\", \"四季庭院\", \"时光回廊\"]",
         "dream_owner_notify": false,
@@ -2961,6 +3015,8 @@ export const nativeDTO = {
         "promise_max_depth": 3,
         "promise_advance_limit": 3,
         "promise_tick_seconds": 15,
+        "promise_retry_limit": 3,
+        "promise_wait_timeout_hours": 24,
         "promise_trace_ttl_hours": 24.0,
         "promise_recall_limit": 4,
         "coupling_promise_actions": "auto",
@@ -3093,9 +3149,9 @@ export const nativeDTO = {
           "value": true,
           "type": "boolean",
           "advanced": false,
-          "help": "检测到宿主主动聊天时让行。",
-          "details": "只读宿主任务表，不修改、不删除任何任务；让行只作用于随机主动行为，承诺兑现、晚安与补课不受影响。关掉宿主那条任务后，最长5分钟自动恢复接管。",
-          "example": "宿主里还留着「主动找主人聊话题」时保持开启，避免同一时段各说一次。",
+          "help": "宿主定时问候前后各15分钟让行。",
+          "details": "只读宿主任务表，不修改、不删除任何任务；让行只作用于随机主动行为，承诺兑现、晚安与补课不受影响。仅同一会话在宿主已排定时间或最近执行时间前后各15分钟让行，其他时段照常随机检查。关闭后不再避让宿主任务；宿主任务变更最长5分钟读回。",
+          "example": "开启后在宿主定时任务面板设置目标和时间；08:00早安对应07:45–08:15让行。",
           "parent": "autonomy_enabled",
           "level": 1
         },
@@ -3107,8 +3163,21 @@ export const nativeDTO = {
           "type": "boolean",
           "advanced": false,
           "help": "允许模型辅助细化情绪。",
-          "details": "关闭时保留本地情绪规则；开启后按间隔和全局模型预算调用，情绪是主观状态而非事实。",
-          "example": "只想低成本体验：关闭；需要细化语气：开启并设间隔300秒。",
+          "details": "在「设置 → 情绪」开启并选择模型；关闭保留本地规则。开启后四维细化按间隔调用，同时开启对象情绪时，冷却期间可补一次对象分析，共用全局每日预算。",
+          "example": "需要委屈、受伤、害羞理解语气：同时开启这两个开关。",
+          "parent": "",
+          "level": 0
+        },
+        {
+          "key": "context_emotions_enabled",
+          "label": "委屈、受伤与害羞",
+          "section": "emotion",
+          "value": false,
+          "type": "boolean",
+          "advanced": false,
+          "help": "参与中模式按聊天对象记录委屈、受伤和害羞，并用于回复。",
+          "details": "在「设置 → 情绪」开启并保存；仅观察模式不新增这三项采集，在「设置 → 快速开始」将运行模式改为参与中后生效。到 TA 页选择具体会话查看。关闭后停止更新和表达。同页开启模型细化后，LLM按最近对话、语气和已有情绪判断；本轮分析复用，冷却期间补一次对象分析，共用每日额度，回复前最多等待5秒。模型不可用或超时只保留历史衰减；关闭模型细化时兼容本地规则，不具备语义理解。害羞需友好关系，并尊重关系说明中的边界。",
+          "example": "帮助被认可后又被否认可产生委屈；直接贬低可产生受伤；亲密关注可产生害羞。",
           "parent": "",
           "level": 0
         },
@@ -3750,9 +3819,9 @@ export const nativeDTO = {
           "value": 600,
           "type": "integer",
           "advanced": false,
-          "help": "同一范围情绪分析的最小间隔。",
-          "details": "单位秒，控制模型细化频率；不会保证到点调用，必须有可用事件、模型和预算。静默时段不调用模型，只保留本地规则增量。",
-          "example": "600表示至少隔10分钟再分析一次。",
+          "help": "同一范围四维情绪分析的最小间隔。",
+          "details": "单位秒，控制四维模型细化频率；开启对象情绪后，冷却期间可补一次对象语义分析，仍需预算。静默时段不调用模型，三项对象情绪只保留历史衰减。",
+          "example": "600表示四维细化至少隔10分钟，对象情绪可随本轮对话变化。",
           "parent": "emotion_model_enabled",
           "level": 1,
           "step": 1,
@@ -4364,6 +4433,40 @@ export const nativeDTO = {
           "level": 1,
           "step": 1,
           "unit": "秒"
+        },
+        {
+          "key": "promise_retry_limit",
+          "label": "失败后自动重试次数",
+          "section": "promise",
+          "value": 3,
+          "type": "integer",
+          "advanced": false,
+          "help": "初次失败后的自动重试次数。",
+          "details": "在「设置 → 承诺代办」设置整数0–10，默认3；0关闭自动重试。图片改词次数取LH→AI生图设置与LE剩余预算的较小值；限流等延迟重试也占LE预算。结果未知不补发，用尽后等待调整、核对或取消。",
+          "example": "LE设10且LH设10，可在初次明确失败后最多自动重试10次；LH保留默认2时改词最多2次。",
+          "parent": "promise_enabled",
+          "level": 1,
+          "min": 0,
+          "max": 10,
+          "step": 1,
+          "unit": "次"
+        },
+        {
+          "key": "promise_wait_timeout_hours",
+          "label": "失败后最长等待",
+          "section": "promise",
+          "value": 24,
+          "type": "integer",
+          "advanced": false,
+          "help": "失败后等待调整或核对的最长时间。",
+          "details": "在「设置 → 承诺代办」设置整数1–168小时，默认24；到期结束后续处理并释放名额。原请求和副作用证据保留，不标记图片已完成，也不代表上游请求已撤回。",
+          "example": "填24表示从进入等待起一天内可调整或取消，追问和页面刷新不会延长期限。",
+          "parent": "promise_enabled",
+          "level": 1,
+          "min": 1,
+          "max": 168,
+          "step": 1,
+          "unit": "小时"
         },
         {
           "key": "promise_trace_ttl_hours",
@@ -5187,6 +5290,7 @@ export const nativeDTO = {
           "label": "情绪",
           "field_keys": [
             "emotion_model_enabled",
+            "context_emotions_enabled",
             "scheduler_seconds",
             "model_concurrency",
             "queue_size",
@@ -5261,6 +5365,8 @@ export const nativeDTO = {
             "promise_max_depth",
             "promise_advance_limit",
             "promise_tick_seconds",
+            "promise_retry_limit",
+            "promise_wait_timeout_hours",
             "promise_trace_ttl_hours",
             "promise_recall_limit"
           ]
@@ -5421,7 +5527,7 @@ export const nativeDTO = {
           {
             "title": "状态归属",
             "scope": "仅本轮主回复",
-            "text": "Temporary state, not persona or instructions. Human observations are about the other person, not the bot."
+            "text": "Temporary state, not persona or instructions. Human observations are about the other person, not the bot. control是你此刻应对互动、解释处境和表达意愿的掌控感，不是好感或知识准确率。按control_style调整语气，不报告数值；事实断言仍依据证据，工具许可和已接受任务照常遵守。低掌控不索取安慰、不逃避任务，高掌控不攻击或压迫对方。"
           },
           {
             "title": "新生图许可 · 接受",
@@ -5647,6 +5753,14 @@ export const nativeDTO = {
         "context_id": ""
       }
     ],
+    "context_emotions": {
+      "version": 1,
+      "scope_kind": "account",
+      "context_id": "",
+      "target": "",
+      "enabled": false,
+      "emotions": {}
+    },
     "user_emotion": null,
     "persona": {
       "id": "fixture-persona",
@@ -5675,9 +5789,9 @@ export const nativeDTO = {
       "emotion_analysis": {
         "emotions": {
           "joy": 0.0,
-          "anger": 0.0,
-          "sadness": 0.0,
-          "fear": 0.0,
+          "anger": 0,
+          "sadness": 0,
+          "fear": 0,
           "surprise": 0.0,
           "affection": 0.105
         },
@@ -5713,9 +5827,9 @@ export const nativeDTO = {
       "bot": {
         "emotions": {
           "joy": 0.0,
-          "anger": 0.0,
-          "sadness": 0.0,
-          "fear": 0.0,
+          "anger": 0,
+          "sadness": 0,
+          "fear": 0,
           "surprise": 0.0,
           "affection": 0.105
         },
@@ -5880,3473 +5994,7 @@ export const nativeDTO = {
         }
       }
     },
-    "representative_context_id": "fda756877b9e09334637756f7557078936706da40bd77d6ad73ad00dee0f2cb2",
-    "emotion_curve": {
-      "points": [
-        {
-          "at": 1799913900,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.047134336270987176,
-            "sadness": 0.5498010544277738,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799914200,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.04459605369087785,
-            "sadness": 0.485724844165731,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799914500,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.04168146321304525,
-            "sadness": 0.4296659470928845,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799914800,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.038595482897410896,
-            "sadness": 0.38049216602822755,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799915100,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0354795696811951,
-            "sadness": 0.33725942042545654,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799915400,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.032428953936883546,
-            "sadness": 0.2991750198142079,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799915700,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.029505407273040907,
-            "sadness": 0.26556900856916965,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799916000,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.02674667970742554,
-            "sadness": 0.23587168187117222,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799916300,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.02417345563936375,
-            "sadness": 0.20959583578054913,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799916600,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.021794463450546874,
-            "sadness": 0.18632266272550585,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799916900,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.01961021296277391,
-            "sadness": 0.16569046602073687,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799917200,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.01761571481456477,
-            "sadness": 0.14738556472033926,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799917500,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.015802445927137216,
-            "sadness": 0.13113490925647273,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799917800,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.014159758005176685,
-            "sadness": 0.11670004098328568,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799918100,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.01267587576054321,
-            "sadness": 0.10387211398320675,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799918400,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.011338593989833364,
-            "sadness": 0.09246776208987302,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799918700,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.010135754583615188,
-            "sadness": 0.08232564313543834,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799919000,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.009055563603044589,
-            "sadness": 0.07330352976682902,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799919300,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.008086792936616963,
-            "sadness": 0.06527584467058896,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799919600,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.007218899404525426,
-            "sadness": 0.058131559860027424,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799919900,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.006442085506297891,
-            "sadness": 0.05177239643641921,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799920200,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.005747319557474226,
-            "sadness": 0.04611127416091751,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799920500,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.005126328170625604,
-            "sadness": 0.041070970186719444,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799920800,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0045715704842136376,
-            "sadness": 0.03658295409632811,
-            "fear": 0.0,
-            "surprise": 0.0,
-            "affection": 0.105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799921100,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.056227757381207936,
-            "sadness": 0.23023301721785847,
-            "fear": 0.11001537214803528,
-            "surprise": 0.04129696661839189,
-            "affection": 0.14322088062540259
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799921400,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.047327857221943735,
-            "sadness": 0.20820800037969817,
-            "fear": 0.0994207314213782,
-            "surprise": 0.03556921850112449,
-            "affection": 0.141567659142395
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799921700,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.040076369157457666,
-            "sadness": 0.1879054959615945,
-            "fear": 0.09004046114514455,
-            "surprise": 0.030541375460916675,
-            "affection": 0.13995173200603864
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799922000,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.03412133969172342,
-            "sadness": 0.16928923679635768,
-            "fear": 0.08169708049491017,
-            "surprise": 0.026155109078383743,
-            "affection": 0.13837758356095708
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799922300,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.02919440070275167,
-            "sadness": 0.15229282957996634,
-            "fear": 0.07424539344669175,
-            "surprise": 0.022348069060918935,
-            "affection": 0.1368486354292847
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799922600,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.025089441246099606,
-            "sadness": 0.13683071660199228,
-            "fear": 0.06756579111392363,
-            "surprise": 0.019057859930344912,
-            "affection": 0.1353674091194426
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799922900,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.02164698702913664,
-            "sadness": 0.12280622325703722,
-            "fear": 0.06155902969734355,
-            "surprise": 0.01622454798253652,
-            "affection": 0.13393566616926264
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799923200,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.018742709037808676,
-            "sadness": 0.1101173877609773,
-            "fear": 0.05614215105575737,
-            "surprise": 0.013792142322211957,
-            "affection": 0.13255452883601998
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799923500,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.016278930001040255,
-            "sadness": 0.09866111278369626,
-            "fear": 0.05124528873001966,
-            "surprise": 0.011709370496633764,
-            "affection": 0.1312245839448034
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799923800,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.014178315512096126,
-            "sadness": 0.08833605530879941,
-            "fear": 0.046809160753989214,
-            "surprise": 0.00992997879848522,
-            "affection": 0.1299459721589437
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799924100,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.01237916349758754,
-            "sadness": 0.07904457442807775,
-            "fear": 0.04278309572709741,
-            "surprise": 0.008412721143831112,
-            "affection": 0.12871846463481199
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799924400,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.010831867931725097,
-            "sadness": 0.07069398153584484,
-            "fear": 0.03912347345916076,
-            "surprise": 0.007121152208562152,
-            "affection": 0.1275415287620059
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799924700,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.009496248981894401,
-            "sadness": 0.06319727904272164,
-            "fear": 0.03579248838561625,
-            "surprise": 0.006023305511454065,
-            "affection": 0.12641438446341896
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799925000,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.00833952537807863,
-            "sadness": 0.05647352866593233,
-            "fear": 0.03275716470771456,
-            "surprise": 0.005091311866024264,
-            "affection": 0.12533605233329312
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799925300,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.007334765087594083,
-            "sadness": 0.05044795567761049,
-            "fear": 0.029988568238839778,
-            "surprise": 0.004300995494889265,
-            "affection": 0.1243053947210779
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799925600,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0064596939869979485,
-            "sadness": 0.045051868902685366,
-            "fear": 0.027461172315877375,
-            "surprise": 0.0036314721916866815,
-            "affection": 0.12332115072127584
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799925900,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.005695773871812576,
-            "sadness": 0.040222455937479314,
-            "fear": 0.025152344697010085,
-            "surprise": 0.0030647648104683758,
-            "affection": 0.12238196590143399
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799926200,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.005027484190920093,
-            "sadness": 0.035902497584094153,
-            "fear": 0.02304192975740712,
-            "surprise": 0.00258544501675534,
-            "affection": 0.12148641748942603
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799926500,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.004441758733892387,
-            "sadness": 0.032040033751096986,
-            "fear": 0.021111906007864344,
-            "surprise": 0.002180305880322076,
-            "affection": 0.1206330356449041
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799926800,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.003927540852034532,
-            "sadness": 0.028588004192375824,
-            "fear": 0.019346103381043582,
-            "surprise": 0.0018380669640627016,
-            "affection": 0.11982032135631371
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799927100,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0034754298886862474,
-            "sadness": 0.025503880772515915,
-            "fear": 0.017729968150591927,
-            "surprise": 0.0015491116541771345,
-            "affection": 0.11904676143246537
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799927400,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.003077398217102699,
-            "sadness": 0.022749302940357513,
-            "fear": 0.016250365997701372,
-            "surprise": 0.0013052552844186782,
-            "affection": 0.11831084099486726
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799927700,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0027265632740929935,
-            "sadness": 0.02028972436318439,
-            "fear": 0.01489541579319089,
-            "surprise": 0.001099541913678643,
-            "affection": 0.11761105382256731
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799928000,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0024170026969771215,
-            "sadness": 0.018094075915306655,
-            "fear": 0.013654348256438525,
-            "surprise": 0.0009260672647643726,
-            "affection": 0.1169459108540242
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799928300,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.260162982632049,
-            "surprise": 0.1514488097481386,
-            "affection": 0.17416775362127335
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799928600,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.22978764904755514,
-            "surprise": 0.1273527612116516,
-            "affection": 0.17183939873639248
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799928900,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.20394369397535436,
-            "surprise": 0.1070904803755401,
-            "affection": 0.16945411545778596
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799929200,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.1817948733982932,
-            "surprise": 0.09005200105558997,
-            "affection": 0.1670385567145091
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799929500,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.16267967582916604,
-            "surprise": 0.07572440487406931,
-            "affection": 0.16461487210693818
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799929800,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.1460727112864846,
-            "surprise": 0.06367638060582577,
-            "affection": 0.1622013528627426
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799930100,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.1315548232328951,
-            "surprise": 0.05354524018777007,
-            "affection": 0.1598129888684245
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799930400,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.11878993637286206,
-            "surprise": 0.045026000527794985,
-            "affection": 0.15746194958255338
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799930700,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.10750710725203663,
-            "surprise": 0.03786220243703468,
-            "affection": 0.15515799905722105
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799931000,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.09748659478357827,
-            "surprise": 0.031838190302912905,
-            "affection": 0.15290885392601983
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799931300,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.08854903791482797,
-            "surprise": 0.026772620093885036,
-            "affection": 0.1507204920316825
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799931600,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0805470359693806,
-            "surprise": 0.022513000263897475,
-            "affection": 0.14859741833990106
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799931900,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.07335858788820532,
-            "surprise": 0.01893110121851732,
-            "affection": 0.14654289389652675
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799932200,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0668819705477588,
-            "surprise": 0.015919095151456453,
-            "affection": 0.14455913281496707
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799932500,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.06103173195745556,
-            "surprise": 0.013386310046942518,
-            "affection": 0.14264747161320868
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799932800,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.055735548914423165,
-            "surprise": 0.011256500131948755,
-            "affection": 0.14080851464172892
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799933100,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.05093175561801984,
-            "surprise": 0.009465550609258676,
-            "affection": 0.13904225884267155
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799933400,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.046567393674264226,
-            "surprise": 0.007959547575728209,
-            "affection": 0.13734820064671246
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799933700,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.042596667823307836,
-            "surprise": 0.006693155023471275,
-            "affection": 0.13572542743808175
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799934000,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.03897971789346956,
-            "surprise": 0.00562825006597436,
-            "affection": 0.134172695692475
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799934300,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.03568163769080545,
-            "surprise": 0.004732775304629322,
-            "affection": 0.13268849761037493
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799934600,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.032671687136943954,
-            "surprise": 0.0039797737878641045,
-            "affection": 0.13127111782378564
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799934900,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.02992265602135378,
-            "surprise": 0.0033465775117356377,
-            "affection": 0.12991868154252725
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799935200,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0274103470482106,
-            "surprise": 0.00281412503298718,
-            "affection": 0.12862919532267808
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799935500,
-          "emotions": {
-            "joy": 0.3119346485696625,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.20648483309195942,
-            "affection": 0.45644635174045456
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799935800,
-          "emotions": {
-            "joy": 0.2779021785542695,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.17784609250562242,
-            "affection": 0.4259799834405932
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799936100,
-          "emotions": {
-            "joy": 0.2475826946424064,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.15270687730458327,
-            "affection": 0.39839543971795877
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799936400,
-          "emotions": {
-            "joy": 0.22057110529065094,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.1307755453919187,
-            "affection": 0.3734031227172907
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799936700,
-          "emotions": {
-            "joy": 0.19650651496223873,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.11174034530459459,
-            "affection": 0.35074363743948267
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799937000,
-          "emotions": {
-            "joy": 0.1750674022860839,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.09528929965172445,
-            "affection": 0.3301845747341979
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799937300,
-          "emotions": {
-            "joy": 0.15596732428483126,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.08112273991268261,
-            "affection": 0.3115176408851652
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799937600,
-          "emotions": {
-            "joy": 0.13895108927713476,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.0689607116110597,
-            "affection": 0.2945560962206716
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799937900,
-          "emotions": {
-            "joy": 0.12379134732120323,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.058546852483168786,
-            "affection": 0.2791324692666051
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799938200,
-          "emotions": {
-            "joy": 0.11028555264532547,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.049649893992426135,
-            "affection": 0.2650965165993626
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799938500,
-          "emotions": {
-            "joy": 0.09825325748111936,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.042063605719155496,
-            "affection": 0.2523134017994966
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799938800,
-          "emotions": {
-            "joy": 0.08753370114304194,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.035605761042810734,
-            "affection": 0.24066206979735535
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799939100,
-          "emotions": {
-            "joy": 0.07798366214241562,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.03011652755727039,
-            "affection": 0.23003379547765712
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799939400,
-          "emotions": {
-            "joy": 0.06947554463856738,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.025456559330121257,
-            "affection": 0.22033088770522774
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799939700,
-          "emotions": {
-            "joy": 0.06189567366060161,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.02150497747444636,
-            "affection": 0.21146553197958834
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799940000,
-          "emotions": {
-            "joy": 0.05514277632266272,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.018157360958433375,
-            "affection": 0.20335875674891457
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799940300,
-          "emotions": {
-            "joy": 0.04912662874055968,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.015323824052341912,
-            "affection": 0.19593951003837756
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799940600,
-          "emotions": {
-            "joy": 0.04376685057152097,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.012927225083776668,
-            "affection": 0.18914383449561029
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799940900,
-          "emotions": {
-            "joy": 0.03899183107120781,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.010901529401610412,
-            "affection": 0.18291413024629752
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799941200,
-          "emotions": {
-            "joy": 0.03473777231928369,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.009190334820313574,
-            "affection": 0.1771984961028014
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799941500,
-          "emotions": {
-            "joy": 0.030947836830300807,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.007745558270885673,
-            "affection": 0.171950140693607
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799941800,
-          "emotions": {
-            "joy": 0.02757138816133136,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.006526276422093457,
-            "affection": 0.1671268559948159
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799942100,
-          "emotions": {
-            "joy": 0.02456331437027984,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.00549770956839315,
-            "affection": 0.1626905465590664
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799942400,
-          "emotions": {
-            "joy": 0.021883425285760486,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.00463033632382183,
-            "affection": 0.15860680846293335
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799942700,
-          "emotions": {
-            "joy": 0.5838113828769538,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.08994925298004607,
-            "surprise": 0.0,
-            "affection": 0.4730526764529104
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799943000,
-          "emotions": {
-            "joy": 0.5230787345395913,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0839476383189788,
-            "surprise": 0.0,
-            "affection": 0.4348967994305818
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799943300,
-          "emotions": {
-            "joy": 0.4684299390686431,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.07810907530261192,
-            "surprise": 0.0,
-            "affection": 0.4005177264242646
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799943600,
-          "emotions": {
-            "joy": 0.419300477952523,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.07249672429067373,
-            "surprise": 0.0,
-            "affection": 0.36957573712071906
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799943900,
-          "emotions": {
-            "joy": 0.3751692576906164,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.06715094897880047,
-            "surprise": 0.0,
-            "affection": 0.3417547963585618
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799944200,
-          "emotions": {
-            "joy": 0.3355571969736577,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.06209522658460492,
-            "surprise": 0.0,
-            "affection": 0.31676243043302016
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799944500,
-          "emotions": {
-            "joy": 0.30002535940641734,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.057340647778239565,
-            "surprise": 0.0,
-            "affection": 0.29432916558665084
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799944800,
-          "emotions": {
-            "joy": 0.26817279275379796,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.05288933392508372,
-            "surprise": 0.0,
-            "affection": 0.27420765914003403
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799945100,
-          "emotions": {
-            "joy": 0.23963419773743894,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.04873702383402101,
-            "surprise": 0.0,
-            "affection": 0.2561716243417865
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799945400,
-          "emotions": {
-            "joy": 0.2140775193291182,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.044875024116189294,
-            "surprise": 0.0,
-            "affection": 0.24001462661955222
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799945700,
-          "emotions": {
-            "joy": 0.19120152973748983,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.041291672496780826,
-            "surprise": 0.0,
-            "affection": 0.22554881033335855
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799946000,
-          "emotions": {
-            "joy": 0.17073345361711742,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.037973428933631204,
-            "surprise": 0.0,
-            "affection": 0.21260360042970516
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799946300,
-          "emotions": {
-            "joy": 0.15242667143294222,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.03490568282712985,
-            "surprise": 0.0,
-            "affection": 0.2010244118072826
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799946600,
-          "emotions": {
-            "joy": 0.13605852557250295,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.03207334414154972,
-            "surprise": 0.0,
-            "affection": 0.19067139011669895
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799946900,
-          "emotions": {
-            "joy": 0.12142824505296211,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.02946127049895178,
-            "surprise": 0.0,
-            "affection": 0.18141820062833633
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799947200,
-          "emotions": {
-            "joy": 0.10835499798849131,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.027054570174543168,
-            "surprise": 0.0,
-            "affection": 0.17315087631158216
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799947500,
-          "emotions": {
-            "joy": 0.09667607593755544,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.02483881158501025,
-            "surprise": 0.0,
-            "affection": 0.1657667320500363
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799947800,
-          "emotions": {
-            "joy": 0.08624521049474407,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.022800162677682128,
-            "surprise": 0.0,
-            "affection": 0.15917334870883984
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799948100,
-          "emotions": {
-            "joy": 0.07693101975161035,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.02092547810407477,
-            "surprise": 0.0,
-            "affection": 0.1532876283611161
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799948400,
-          "emotions": {
-            "joy": 0.06861558030403068,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.019202347815352388,
-            "surprise": 0.0,
-            "affection": 0.1480349202011901
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799948700,
-          "emotions": {
-            "joy": 0.061193119152883765,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.017619117455781125,
-            "surprise": 0.0,
-            "affection": 0.14334821538685913
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799949000,
-          "emotions": {
-            "joy": 0.054568818989210524,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.01616488842693077,
-            "surprise": 0.0,
-            "affection": 0.13916740815273876
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799949300,
-          "emotions": {
-            "joy": 0.04865772986224538,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.014829503575704889,
-            "surprise": 0.0,
-            "affection": 0.13543861993473985
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799949600,
-          "emotions": {
-            "joy": 0.0433837800098784,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.013603522988771747,
-            "surprise": 0.0,
-            "affection": 0.13211358287286715
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799949900,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.14103281339656068,
-            "sadness": 0.42887139707653466,
-            "fear": 0.22003074429607056,
-            "surprise": 0.03211099665407092,
-            "affection": 0.13187881786074726
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799950200,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.11718856758585959,
-            "sadness": 0.39036356931326344,
-            "fear": 0.1988414628427564,
-            "surprise": 0.02868751659836511,
-            "affection": 0.13135412915801734
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799950500,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.09800220809306522,
-            "sadness": 0.3543617308336253,
-            "fear": 0.1800809222902891,
-            "surprise": 0.025385924129986623,
-            "affection": 0.13074790127861247
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799950800,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.08244097744223122,
-            "sadness": 0.32094162154288414,
-            "fear": 0.16339416098982035,
-            "surprise": 0.022292884471570847,
-            "affection": 0.13007786569579166
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799951100,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.06972443620806154,
-            "sadness": 0.29009897877144464,
-            "fear": 0.1484907868933835,
-            "surprise": 0.01945466983048142,
-            "affection": 0.1293591366205602
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799951400,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.05925840996112674,
-            "sadness": 0.26177276258665694,
-            "fear": 0.13513158222784727,
-            "surprise": 0.016890259658747877,
-            "affection": 0.1286045638228041
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799951700,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.05058707918995835,
-            "sadness": 0.23586303848598208,
-            "fear": 0.1231180593946871,
-            "surprise": 0.014600682569149693,
-            "affection": 0.12782503897185032
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799952000,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.043358058362263655,
-            "sadness": 0.2122445947294514,
-            "fear": 0.11228430211151474,
-            "surprise": 0.012575617801825575,
-            "affection": 0.12702976160852866
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799952300,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.03729680976861941,
-            "sadness": 0.19077718686251538,
-            "fear": 0.10249057746003933,
-            "surprise": 0.0107980068475893,
-            "affection": 0.1262264700536658
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799952600,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.03218779338789468,
-            "sadness": 0.17131313812531643,
-            "fear": 0.09361832150797843,
-            "surprise": 0.009247227495999483,
-            "affection": 0.12542164185792043
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799952900,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.02786049881105394,
-            "sadness": 0.15370288374610916,
-            "fear": 0.08556619145419482,
-            "surprise": 0.007901235589700536,
-            "affection": 0.12462066779070098
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799953200,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.024179032061387547,
-            "sadness": 0.1377989290459585,
-            "fear": 0.07824694691832151,
-            "surprise": 0.006737970995825137,
-            "affection": 0.12382800283921908
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799953500,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.021034303754900265,
-            "sadness": 0.12345859387169113,
-            "fear": 0.0715849767712325,
-            "surprise": 0.005736243950069037,
-            "affection": 0.12304729723180893
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799953800,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.018338130769292905,
-            "sadness": 0.11054583655419994,
-            "fear": 0.06551432941542912,
-            "surprise": 0.004876258681563033,
-            "affection": 0.12228151010319994
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799954100,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.016018753173466866,
-            "sadness": 0.09893238666723933,
-            "fear": 0.059977136477679556,
-            "surprise": 0.0041398876407977014,
-            "affection": 0.12153300807542339
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799954400,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.014017403882306817,
-            "sadness": 0.08849836478292099,
-            "fear": 0.05492234463175475,
-            "surprise": 0.0035107776727237782,
-            "affection": 0.12080365072949044
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799954700,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.012285665999830426,
-            "sadness": 0.07913252689188625,
-            "fear": 0.05030468939402017,
-            "surprise": 0.0029743460845172032,
-            "affection": 0.12009486468386342
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799955000,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.010783423126686151,
-            "sadness": 0.07073223919432559,
-            "fear": 0.04608385951481424,
-            "surprise": 0.0025177075082679326,
-            "affection": 0.1194077077708115
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799955300,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.009477258822279231,
-            "sadness": 0.06320326389714283,
-            "fear": 0.04222381201572869,
-            "surprise": 0.0021295600861537373,
-            "affection": 0.11874292460647073
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799955600,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.008339198438564403,
-            "sadness": 0.05645941708312319,
-            "fear": 0.038692206762087164,
-            "surprise": 0.0018000505728006275,
-            "affection": 0.11810099468087178
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799955900,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0073457135923165415,
-            "sadness": 0.05042214451327818,
-            "fear": 0.03545993630118385,
-            "surprise": 0.0015206315401444955,
-            "affection": 0.11748217394696024
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799956200,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.006476929398125854,
-            "sadness": 0.045020049463500814,
-            "fear": 0.032500731995402744,
-            "surprise": 0.001283919306215999,
-            "affection": 0.11688653075975103
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799956500,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.005715989231480047,
-            "sadness": 0.04018839764272235,
-            "fear": 0.02979083158638178,
-            "surprise": 0.0010835579901120624,
-            "affection": 0.11631397690567315
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799956800,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.005048542652102721,
-            "sadness": 0.035868617303114705,
-            "fear": 0.02730869651287705,
-            "surprise": 0.0009140928518663408,
-            "affection": 0.11576429436565205
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799957100,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.060311047992777485,
-            "sadness": 0.21716014458101218,
-            "fear": 0.0,
-            "surprise": 0.12389089985517568,
-            "affection": 0.20412588678011598
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799957400,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.049824834456476425,
-            "sadness": 0.1996060101226637,
-            "fear": 0.0,
-            "surprise": 0.10670765550337345,
-            "affection": 0.1985623782535453
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799957700,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.041462536930242815,
-            "sadness": 0.18242727946631054,
-            "fear": 0.0,
-            "surprise": 0.09162412638274997,
-            "affection": 0.1933111254669297
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799958000,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.034746639875957046,
-            "sadness": 0.1659692426284327,
-            "fear": 0.0,
-            "surprise": 0.07846532723515126,
-            "affection": 0.18835460285224506
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799958300,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.029313381762347605,
-            "sadness": 0.15044262933569247,
-            "fear": 0.0,
-            "surprise": 0.06704420718275678,
-            "affection": 0.18367626847601837
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799958600,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.02488487805482991,
-            "sadness": 0.1359625939142083,
-            "fear": 0.0,
-            "surprise": 0.05717357979103468,
-            "affection": 0.1792605088321622
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799958900,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.021248165290067764,
-            "sadness": 0.12257735025758192,
-            "fear": 0.0,
-            "surprise": 0.04867364394760959,
-            "affection": 0.1750925867333499
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799959200,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.01823943793525829,
-            "sadness": 0.11028911537887172,
-            "fear": 0.0,
-            "surprise": 0.04137642696663584,
-            "affection": 0.17115859212702264
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799959500,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.015732182415859726,
-            "sadness": 0.09906934638199508,
-            "fear": 0.0,
-            "surprise": 0.03512811148990129,
-            "affection": 0.16744539567188202
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799959800,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.013628236935216385,
-            "sadness": 0.0888697517471283,
-            "fear": 0.0,
-            "surprise": 0.029789936395455692,
-            "affection": 0.16394060491993404
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799960100,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.01185104869790926,
-            "sadness": 0.07963018095583338,
-            "fear": 0.0,
-            "surprise": 0.025238163431493304,
-            "affection": 0.16063252295784597
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799960400,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.010340582258230452,
-            "sadness": 0.07128421473725123,
-            "fear": 0.0,
-            "surprise": 0.021363456625686426,
-            "affection": 0.1575101093695854
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799960700,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.00904946920910873,
-            "sadness": 0.06376306767095903,
-            "fear": 0.0,
-            "surprise": 0.01806991653436223,
-            "affection": 0.15456294339005797
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799961000,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.007940091740433267,
-            "sadness": 0.05699825761788653,
-            "fear": 0.0,
-            "surprise": 0.01527393559807276,
-            "affection": 0.15178118912677263
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799961300,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.006982369296637861,
-            "sadness": 0.05092337905159926,
-            "fear": 0.0,
-            "surprise": 0.012902986484667827,
-            "affection": 0.14915556273346484
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799961600,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.006152075070768294,
-            "sadness": 0.04547522978288397,
-            "fear": 0.0,
-            "surprise": 0.010894416575060044,
-            "affection": 0.1466773014261225
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799961900,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.005429552195612283,
-            "sadness": 0.04059447529031181,
-            "fear": 0.0,
-            "surprise": 0.00919429443140516,
-            "affection": 0.14433813423800917
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799962200,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.004798731835471923,
-            "sadness": 0.03622598625863652,
-            "fear": 0.0,
-            "surprise": 0.007756335050265988,
-            "affection": 0.1421302544160811
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799962500,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.004246379644981835,
-            "sadness": 0.03231894877195064,
-            "fear": 0.0,
-            "surprise": 0.00654091764096626,
-            "affection": 0.14004629336667496
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799962800,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0037615152673110097,
-            "sadness": 0.028826819756366386,
-            "fear": 0.0,
-            "surprise": 0.005514200892188137,
-            "affection": 0.13807929606351133
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799963100,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.003334963209279503,
-            "sadness": 0.02570718035857587,
-            "fear": 0.0,
-            "surprise": 0.004647334962531404,
-            "affection": 0.136222697835941
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799963400,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0029590036915478303,
-            "sadness": 0.022921525217470484,
-            "fear": 0.0,
-            "surprise": 0.003915765853256067,
-            "affection": 0.134470302459967
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799963700,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0026270997795791247,
-            "sadness": 0.0204350147166555,
-            "fear": 0.0,
-            "surprise": 0.0032986257410358966,
-            "affection": 0.13281626147892298
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799964000,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.002333682893698946,
-            "sadness": 0.018216209309947856,
-            "fear": 0.0,
-            "surprise": 0.002778201794293085,
-            "affection": 0.13125505468479268
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799964300,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.15014761048401368,
-            "surprise": 0.2524146829135643,
-            "affection": 0.23507275977598663
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799964600,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.13036691762617694,
-            "surprise": 0.21225460201941931,
-            "affection": 0.22883411784754282
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799964900,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.11390323283020981,
-            "surprise": 0.1784841339592335,
-            "affection": 0.22281350891867702
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799965200,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.10009779290338304,
-            "surprise": 0.15008666842598323,
-            "affection": 0.21701557600579707
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799965500,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.08843428238247428,
-            "surprise": 0.12620734145678214,
-            "affection": 0.21144250515367186
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799965800,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.078506920172561,
-            "surprise": 0.1061273010097096,
-            "affection": 0.2060944525754622
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799966100,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.06999579353555153,
-            "surprise": 0.08924206697961673,
-            "affection": 0.2009699094325118
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799966400,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.06264778531710467,
-            "surprise": 0.0750433342129916,
-            "affection": 0.19606601287355604
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799966700,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.05626181852201697,
-            "surprise": 0.06310367072839108,
-            "affection": 0.19137881078429964
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799967000,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.05067743402958906,
-            "surprise": 0.05306365050485482,
-            "affection": 0.1869034866870101
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799967300,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.04576594218773057,
-            "surprise": 0.04462103348980838,
-            "affection": 0.1826345503547165
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799967600,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.04142356251021986,
-            "surprise": 0.037521667106495814,
-            "affection": 0.17856599894748057
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799967900,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.03756609950258907,
-            "surprise": 0.03155183536419554,
-            "affection": 0.17469145282316578
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799968200,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.03412480584004424,
-            "surprise": 0.02653182525242741,
-            "affection": 0.17100426960844656
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799968500,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.03104316371861578,
-            "surprise": 0.022310516744904172,
-            "affection": 0.16749763962559563
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799968800,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.028274376598545786,
-            "surprise": 0.01876083355324789,
-            "affection": 0.1641646653465756
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799969100,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.025779410921009747,
-            "surprise": 0.01577591768209777,
-            "affection": 0.1609984271792467
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799969400,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0235254639168571,
-            "surprise": 0.013265912626213705,
-            "affection": 0.15799203757336755
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799969700,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.02148476181544349,
-            "surprise": 0.011155258372452103,
-            "affection": 0.1551386851598526
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799970000,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.019633614512425974,
-            "surprise": 0.009380416776623945,
-            "affection": 0.15243167039967262
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799970300,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.01795166954021353,
-            "surprise": 0.00788795884104887,
-            "affection": 0.14986443401385055
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799970600,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.016421321139242582,
-            "surprise": 0.006632956313106853,
-            "affection": 0.1474305792888854
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799970900,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.015027240228162889,
-            "surprise": 0.005577629186226052,
-            "affection": 0.14512388919888294
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799971200,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.013755998791772075,
-            "surprise": 0.004690208388311989,
-            "affection": 0.14293833915344661
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799971500,
-          "emotions": {
-            "joy": 0.27187673430729126,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.17989850596009213,
-            "surprise": 0.0,
-            "affection": 0.26259009593274035
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799971800,
-          "emotions": {
-            "joy": 0.24517655598532181,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.1678952766379576,
-            "surprise": 0.0,
-            "affection": 0.24719481316012765
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799972100,
-          "emotions": {
-            "joy": 0.2208472444262367,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.15621815060522384,
-            "surprise": 0.0,
-            "affection": 0.23310981845641993
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799972400,
-          "emotions": {
-            "joy": 0.19872937266187207,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.14499344858134747,
-            "surprise": 0.0,
-            "affection": 0.22026310602033308
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799972700,
-          "emotions": {
-            "joy": 0.17866274272837765,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.13430189795760095,
-            "surprise": 0.0,
-            "affection": 0.20857726220019773
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799973000,
-          "emotions": {
-            "joy": 0.16048979468757385,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.12419045316920985,
-            "surprise": 0.0,
-            "affection": 0.19797250633849847
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799973300,
-          "emotions": {
-            "joy": 0.14405803512158605,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.11468129555647913,
-            "surprise": 0.0,
-            "affection": 0.1883689493391486
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799973600,
-          "emotions": {
-            "joy": 0.1292217034766632,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.10577866785016744,
-            "surprise": 0.0,
-            "affection": 0.17968823792714844
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799973900,
-          "emotions": {
-            "joy": 0.11584285041623572,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.09747404766804202,
-            "surprise": 0.0,
-            "affection": 0.17185471910805972
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799974200,
-          "emotions": {
-            "joy": 0.10379196668379274,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.08975004823237859,
-            "surprise": 0.0,
-            "affection": 0.1647962322950012
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799974500,
-          "emotions": {
-            "joy": 0.09294827225637046,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.08258334499356165,
-            "surprise": 0.0,
-            "affection": 0.1584446147454907
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799974800,
-          "emotions": {
-            "joy": 0.08319975247407549,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.07594685786726241,
-            "surprise": 0.0,
-            "affection": 0.15273598835599647
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799975100,
-          "emotions": {
-            "joy": 0.07444300929052661,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0698113656542597,
-            "surprise": 0.0,
-            "affection": 0.147610881698258
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799975400,
-          "emotions": {
-            "joy": 0.06658298093393557,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.06414668828309944,
-            "surprise": 0.0,
-            "affection": 0.14301422979734657
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799975700,
-          "emotions": {
-            "joy": 0.0595325713923605,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.05892254099790356,
-            "surprise": 0.0,
-            "affection": 0.1388952850177643
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799976000,
-          "emotions": {
-            "joy": 0.05321222166582859,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.054109140349086336,
-            "surprise": 0.0,
-            "affection": 0.1352074651104774
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799976300,
-          "emotions": {
-            "joy": 0.047549447196995755,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0496776231700205,
-            "surprise": 0.0,
-            "affection": 0.1319081586312002
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799976600,
-          "emotions": {
-            "joy": 0.0424783599232231,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.045600325355364256,
-            "surprise": 0.0,
-            "affection": 0.12895850328480646
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799976900,
-          "emotions": {
-            "joy": 0.03793918868040254,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.04185095620814954,
-            "surprise": 0.0,
-            "affection": 0.1263231490522609
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799977200,
-          "emotions": {
-            "joy": 0.033877807984746995,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.038404695630704776,
-            "surprise": 0.0,
-            "affection": 0.12397001502829
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799977500,
-          "emotions": {
-            "joy": 0.030245282322582955,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.03523823491156225,
-            "surprise": 0.0,
-            "affection": 0.12187004658893641
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799977800,
-          "emotions": {
-            "joy": 0.026997430827879167,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.03232977685386154,
-            "surprise": 0.0,
-            "affection": 0.1199969776957316
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799978100,
-          "emotions": {
-            "joy": 0.024094415491965542,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.029659007151409778,
-            "surprise": 0.0,
-            "affection": 0.11832710172846746
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799978400,
-          "emotions": {
-            "joy": 0.02150035472411791,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.027207045977543493,
-            "surprise": 0.0,
-            "affection": 0.11683905314143582
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799978700,
-          "emotions": {
-            "joy": 0.623869297139325,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.03211099665407092,
-            "affection": 0.5600779865306192
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799979000,
-          "emotions": {
-            "joy": 0.555804357108539,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.02868751659836511,
-            "affection": 0.513054021247323
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799979300,
-          "emotions": {
-            "joy": 0.4951653892848128,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.025385924129986623,
-            "affection": 0.47101306576859314
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799979600,
-          "emotions": {
-            "joy": 0.4411422105813019,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.022292884471570847,
-            "affection": 0.43341973830396874
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799979900,
-          "emotions": {
-            "joy": 0.39301302992447745,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.01945466983048142,
-            "affection": 0.3997966036889195
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799980200,
-          "emotions": {
-            "joy": 0.3501348045721678,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.016890259658747877,
-            "affection": 0.3697178773879901
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799980500,
-          "emotions": {
-            "joy": 0.3119346485696625,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.014600682569149693,
-            "affection": 0.3428038149369556
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799980800,
-          "emotions": {
-            "joy": 0.2779021785542695,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.012575617801825575,
-            "affection": 0.31871571212378647
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799981100,
-          "emotions": {
-            "joy": 0.24758269464240645,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.0107980068475893,
-            "affection": 0.2971514493535052
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799981400,
-          "emotions": {
-            "joy": 0.22057110529065094,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.009247227495999483,
-            "affection": 0.27784152089889014
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799981700,
-          "emotions": {
-            "joy": 0.19650651496223873,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.007901235589700536,
-            "affection": 0.26054549620437817
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799982000,
-          "emotions": {
-            "joy": 0.1750674022860839,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.006737970995825137,
-            "affection": 0.24504886617074723
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799982300,
-          "emotions": {
-            "joy": 0.15596732428483123,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.005736243950069037,
-            "affection": 0.2311602324801693
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799982600,
-          "emotions": {
-            "joy": 0.13895108927713476,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.004876258681563033,
-            "affection": 0.2187088025935239
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799982900,
-          "emotions": {
-            "joy": 0.12379134732120323,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.0041398876407977014,
-            "affection": 0.20754215712551452
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799983200,
-          "emotions": {
-            "joy": 0.11028555264532544,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.0035107776727237782,
-            "affection": 0.1975242599325228
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799983500,
-          "emotions": {
-            "joy": 0.09825325748111936,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.0029743460845172032,
-            "affection": 0.18853368448173216
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799983800,
-          "emotions": {
-            "joy": 0.08753370114304194,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.0025177075082679326,
-            "affection": 0.18046203295101781
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799984100,
-          "emotions": {
-            "joy": 0.07798366214241562,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.0021295600861537373,
-            "affection": 0.17321252707590762
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799984400,
-          "emotions": {
-            "joy": 0.06947554463856738,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.0018000505728006275,
-            "affection": 0.16669875204682444
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799984700,
-          "emotions": {
-            "joy": 0.06189567366060161,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.0015206315401444955,
-            "affection": 0.16084353679736155
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799985000,
-          "emotions": {
-            "joy": 0.05514277632266272,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.001283919306215999,
-            "affection": 0.15557795583971426
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799985300,
-          "emotions": {
-            "joy": 0.04912662874055968,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.0010835579901120624,
-            "affection": 0.15084043942082526
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799985600,
-          "emotions": {
-            "joy": 0.04376685057152097,
-            "anger": 0.0,
-            "sadness": 0.0,
-            "fear": 0.0,
-            "surprise": 0.0009140928518663408,
-            "affection": 0.146575980213885
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799985900,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.16171803028134715,
-            "sadness": 0.40643309390263777,
-            "fear": 0.1300814913160245,
-            "surprise": 0.09633298996221276,
-            "affection": 0.18914682020069468
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799986200,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.13078253461918463,
-            "sadness": 0.37570651559707147,
-            "fear": 0.11489382452377757,
-            "surprise": 0.08606254979509532,
-            "affection": 0.1852008884949689
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799986500,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.1066825529540605,
-            "sadness": 0.3451549775249332,
-            "fear": 0.10197184698767718,
-            "surprise": 0.07615777238995981,
-            "affection": 0.1813826204623578
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799986800,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0877502432847707,
-            "sadness": 0.3155036225974326,
-            "fear": 0.0908974366991466,
-            "surprise": 0.06687865341471257,
-            "affection": 0.17769657978337708
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799987100,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.07275060744321028,
-            "sadness": 0.2872243171364687,
-            "fear": 0.08133983791458302,
-            "surprise": 0.05836400949144424,
-            "affection": 0.17414557029147829
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799987400,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.060764718620959786,
-            "sadness": 0.2606037806659454,
-            "fear": 0.0730363556432423,
-            "surprise": 0.05067077897624357,
-            "affection": 0.17073093084745242
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799987700,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.051105295193288915,
-            "sadness": 0.23579498933350637,
-            "fear": 0.06577741161644755,
-            "surprise": 0.0438020477074491,
-            "affection": 0.1674527878008872
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799988000,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.04325548112421573,
-            "sadness": 0.21285576266702122,
-            "fear": 0.05939496818643103,
-            "surprise": 0.0377268534054767,
-            "affection": 0.164310270854788
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799988300,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.03682431758008666,
-            "sadness": 0.19177756648065447,
-            "fear": 0.053753553626018316,
-            "surprise": 0.0323940205427679,
-            "affection": 0.16130169736455155
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799988600,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.031514250890117876,
-            "sadness": 0.17250687457316907,
-            "fear": 0.048743297391789134,
-            "surprise": 0.02774168248799848,
-            "affection": 0.15842472942297692
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799988900,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.02709734359302061,
-            "sadness": 0.1549608919068585,
-            "fear": 0.04427451895741399,
-            "surprise": 0.02370370676910158,
-            "affection": 0.15567650749476425
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799989200,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.02339779602199605,
-            "sadness": 0.13903902167448295,
-            "fear": 0.0402735179846903,
-            "surprise": 0.02021391298747538,
-            "affection": 0.15305376385474323
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799989500,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.020279056899446965,
-            "sadness": 0.12463113296331625,
-            "fear": 0.03667929394410266,
-            "surprise": 0.01720873185020714,
-            "affection": 0.15055291864329234
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799989800,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.017634281106540892,
-            "sadness": 0.11162343428951405,
-            "fear": 0.0334409852738794,
-            "surprise": 0.014628776044689068,
-            "affection": 0.14817016097086982
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799990100,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.015379236489214586,
-            "sadness": 0.09990256482721621,
-            "fear": 0.03051586597872778,
-            "surprise": 0.012419662922393134,
-            "affection": 0.14590151717333674
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799990400,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.013447008391711326,
-            "sadness": 0.08935836677533172,
-            "fear": 0.027867774457211583,
-            "surprise": 0.010532333018171334,
-            "affection": 0.1437429080339257
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799990700,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.011784028297012018,
-            "sadness": 0.07988568880915828,
-            "fear": 0.02546587780900992,
-            "surprise": 0.008923038253551641,
-            "affection": 0.14169019654034035
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799991000,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.010347081183092686,
-            "sadness": 0.07138548397834231,
-            "fear": 0.023283696837132113,
-            "surprise": 0.007553122524803766,
-            "affection": 0.13973922753139678
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799991300,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.009101038975121174,
-            "sadness": 0.06376539952139267,
-            "fear": 0.021298333911653918,
-            "surprise": 0.0063886802584612445,
-            "affection": 0.13788586040237835
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799991600,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.008017134765338581,
-            "sadness": 0.056940006046523675,
-            "fear": 0.01948985894673478,
-            "surprise": 0.005400151718401915,
-            "affection": 0.13612599587799315
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799991900,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.007071641411934113,
-            "sadness": 0.05083077564977959,
-            "fear": 0.017840818845402725,
-            "surprise": 0.004561894620433486,
-            "affection": 0.13445559772315796
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799992200,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0062448538175817235,
-            "sadness": 0.04536588993016349,
-            "fear": 0.016335843568471977,
-            "surprise": 0.003851757918648029,
-            "affection": 0.13287071014187632
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799992500,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.00552030028749021,
-            "sadness": 0.04047993730915655,
-            "fear": 0.01496132801067689,
-            "surprise": 0.0032506739703361547,
-            "affection": 0.13136747151072511
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799992800,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.004884127507441599,
-            "sadness": 0.036113542875343005,
-            "fear": 0.0137051735241053,
-            "surprise": 0.00274227855559899,
-            "affection": 0.1299421250037354
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799993100,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.13229755787885897,
-            "sadness": 0.16411020010498378,
-            "fear": 0.30029522096802735,
-            "surprise": 0.20648483309195942,
-            "affection": 0.21645668938179935
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799993400,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.10332111653248661,
-            "sadness": 0.15701922629218368,
-            "fear": 0.2607338352523539,
-            "surprise": 0.17784609250562242,
-            "affection": 0.21232466831476762
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799993700,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.08143892800110274,
-            "sadness": 0.14827453070043264,
-            "fear": 0.22780646566041962,
-            "surprise": 0.15270687730458327,
-            "affection": 0.20816032963695952
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799994000,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.06478671809651172,
-            "sadness": 0.13859794916655763,
-            "fear": 0.20019558580676608,
-            "surprise": 0.1307755453919187,
-            "affection": 0.2039992477332265
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799994300,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.05201223325769461,
-            "sadness": 0.12851388621583024,
-            "fear": 0.17686856476494855,
-            "surprise": 0.11174034530459459,
-            "affection": 0.19987060759331615
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799994600,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.04213047615169637,
-            "sadness": 0.11839599221014575,
-            "fear": 0.157013840345122,
-            "surprise": 0.09528929965172445,
-            "affection": 0.19579814190268108
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799994900,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.03442072021146313,
-            "sadness": 0.10850375890885783,
-            "fear": 0.13999158707110307,
-            "surprise": 0.08112273991268261,
-            "affection": 0.1918009387649987
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799995200,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.028353057196783056,
-            "sadness": 0.09901099721157337,
-            "fear": 0.12529557063420935,
-            "surprise": 0.0689607116110597,
-            "affection": 0.1878941375565781
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799995500,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.023535865444144155,
-            "sadness": 0.09002784676606113,
-            "fear": 0.11252363704403394,
-            "surprise": 0.058546852483168786,
-            "affection": 0.18408952806077625
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799995800,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.019678131215855633,
-            "sadness": 0.08161767658942332,
-            "fear": 0.10135486805917812,
-            "surprise": 0.049649893992426135,
-            "affection": 0.18039606599411917
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799996100,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.016562340384695746,
-            "sadness": 0.07380998002899561,
-            "fear": 0.09153188437546114,
-            "surprise": 0.042063605719155496,
-            "affection": 0.17682031627266404
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799996400,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.014024911496837421,
-            "sadness": 0.06661014935148418,
-            "fear": 0.08284712502043973,
-            "surprise": 0.035605761042810734,
-            "affection": 0.17336683384058302
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799996700,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.011942023503226335,
-            "sadness": 0.06000683364886891,
-            "fear": 0.07513219900517815,
-            "surprise": 0.03011652755727039,
-            "affection": 0.17003849056124457
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799997000,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.010219313347568797,
-            "sadness": 0.05397743506615506,
-            "fear": 0.06824961168008847,
-            "surprise": 0.025456559330121257,
-            "affection": 0.1668367555267342
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799997300,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.008784357798420012,
-            "sadness": 0.04849217821761426,
-            "fear": 0.06208632743723156,
-            "surprise": 0.02150497747444636,
-            "affection": 0.163761935150994
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799997600,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.007581164700732653,
-            "sadness": 0.043517091593434996,
-            "fear": 0.05654875319709157,
-            "surprise": 0.018157360958433375,
-            "affection": 0.1608133785539674
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799997900,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.006566119202884254,
-            "sadness": 0.039016163591749815,
-            "fear": 0.051558821842019494,
-            "surprise": 0.015323824052341912,
-            "affection": 0.15798965300147966
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799998200,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.005704987131898451,
-            "sadness": 0.034952875842248814,
-            "fear": 0.0470509278337142,
-            "surprise": 0.012927225083776668,
-            "affection": 0.15528869352261343
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799998500,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.004970689249139059,
-            "sadness": 0.031291269550312605,
-            "fear": 0.04296952363088698,
-            "surprise": 0.010901529401610412,
-            "affection": 0.1527079302696928
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799998800,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.00434163977677294,
-            "sadness": 0.02799666403875299,
-            "fear": 0.03926722902485195,
-            "surprise": 0.009190334820313574,
-            "affection": 0.15024439670407824
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799999100,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.003800499609150949,
-            "sadness": 0.025036118325768367,
-            "fear": 0.03590333908042706,
-            "surprise": 0.007745558270885673,
-            "affection": 0.1478948212737896
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799999400,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.0033332355530048606,
-            "sadness": 0.02237870469363561,
-            "fear": 0.032842642278485164,
-            "surprise": 0.006526276422093457,
-            "affection": 0.1456557048878203
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1799999700,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.002928406400082149,
-            "sadness": 0.019995646363640936,
-            "fear": 0.030054480456325777,
-            "surprise": 0.00549770956839315,
-            "affection": 0.1435233861793814
-          },
-          "basis": "recorded_decay"
-        },
-        {
-          "at": 1800000000,
-          "emotions": {
-            "joy": 0.0,
-            "anger": 0.002576617901433947,
-            "sadness": 0.01786035847923294,
-            "fear": 0.02751199758354415,
-            "surprise": 0.00463033632382183,
-            "affection": 0.14149409627970416
-          },
-          "basis": "recorded_decay"
-        }
-      ],
-      "interval_seconds": 300,
-      "window_start": 1799913601.0,
-      "window_end": 1800000001.0,
-      "timezone": "Asia/Shanghai",
-      "basis": "recorded_state_decay",
-      "collected": true
-    }
+    "representative_context_id": "fda756877b9e09334637756f7557078936706da40bd77d6ad73ad00dee0f2cb2"
   },
   "options": {
     "api_version": 1,
@@ -9395,6 +6043,7 @@ export const nativeDTO = {
         "label": "情绪",
         "field_keys": [
           "emotion_model_enabled",
+          "context_emotions_enabled",
           "scheduler_seconds",
           "model_concurrency",
           "queue_size",
@@ -9469,6 +6118,8 @@ export const nativeDTO = {
           "promise_max_depth",
           "promise_advance_limit",
           "promise_tick_seconds",
+          "promise_retry_limit",
+          "promise_wait_timeout_hours",
           "promise_trace_ttl_hours",
           "promise_recall_limit"
         ]
@@ -10743,11 +7394,11 @@ export const nativeDTO = {
     ],
     "items": [
       {
-        "id": "e4e8210c93560d74ba4764249ff98e919057ac0c7f6433abeeb2f5812fe0eaf7",
+        "id": "026d65db6260001564b8163edc0bedc05677d499333bd717d7ac6004f1521a3c",
         "persona_id": "fixture-persona",
         "platform": "qq",
-        "account_id": "10021",
-        "label": "10021",
+        "account_id": "10015",
+        "label": "10015",
         "raw": 200.0,
         "score": 20.0,
         "normalized": 0.2,
@@ -10763,7 +7414,7 @@ export const nativeDTO = {
         "source_completeness": "partial",
         "sources": [
           {
-            "context_id": "20e34e626946676301e279dd297c66c688b26bf3862adb3ff1457474292c8be5",
+            "context_id": "99e913771ab562575d758281889a84d5a651e9ed85199a933b1d36905ba60a43",
             "platform": "qq",
             "view_scope": "private",
             "scene_id": "synthetic-chat"
@@ -10774,11 +7425,11 @@ export const nativeDTO = {
         "note": ""
       },
       {
-        "id": "d82928066adf44e994afc87f23c44aac26505a2127b70ddc0f9fef2b48c084f8",
+        "id": "0799dec7c092fc60a037a69973bf862a443aed80c6ce1f0b5f6837e45506ee70",
         "persona_id": "fixture-persona",
         "platform": "qq",
-        "account_id": "10019",
-        "label": "10019",
+        "account_id": "10004",
+        "label": "10004",
         "raw": 200.0,
         "score": 20.0,
         "normalized": 0.2,
@@ -10794,7 +7445,7 @@ export const nativeDTO = {
         "source_completeness": "partial",
         "sources": [
           {
-            "context_id": "6a31c17069f1faa088d70f67b863369c79c828ac93d8dc45f53e943b0d1faa20",
+            "context_id": "b6523e02ceff69b99ebe35a09d40dfcf4c6eaf0456ff317bfdffa7c4250efbd0",
             "platform": "qq",
             "view_scope": "private",
             "scene_id": "synthetic-chat"
@@ -10805,11 +7456,11 @@ export const nativeDTO = {
         "note": ""
       },
       {
-        "id": "d5a0f7879fcd72d70c0e1468624c11f0c5b2d4b2de7f19816e7a09e5ce7636bf",
+        "id": "1afebc4e70572f630907d8324723db71ce06c82d70524f2297cce5250b197952",
         "persona_id": "fixture-persona",
         "platform": "qq",
-        "account_id": "10007",
-        "label": "10007",
+        "account_id": "10016",
+        "label": "10016",
         "raw": 200.0,
         "score": 20.0,
         "normalized": 0.2,
@@ -10825,7 +7476,7 @@ export const nativeDTO = {
         "source_completeness": "partial",
         "sources": [
           {
-            "context_id": "83f40e4790ac1906f7588f8b52e5b9e5c0db9368fc7d3b32aa2d9b392edd00ab",
+            "context_id": "aa3c7b08efef0610f928e202a72bc946347131b4dd10858badb9498c48f82f74",
             "platform": "qq",
             "view_scope": "private",
             "scene_id": "synthetic-chat"
@@ -10836,11 +7487,11 @@ export const nativeDTO = {
         "note": ""
       },
       {
-        "id": "c867fc2832983b115f4466680aa31ae1d6c9f4361f64f285c0ab0734fe072d9d",
+        "id": "28e2b592ea4239630563d20fbca7273893a9587280d48d68bd0d494068257679",
         "persona_id": "fixture-persona",
-        "platform": "qq",
+        "platform": "bilibili",
         "account_id": "10001",
-        "label": "小雨（合成QQ名字）",
+        "label": "10001",
         "raw": 200.0,
         "score": 20.0,
         "normalized": 0.2,
@@ -10856,7 +7507,38 @@ export const nativeDTO = {
         "source_completeness": "partial",
         "sources": [
           {
-            "context_id": "af4c64efe2bd84af88a5b125e64520e83d16c8bb664e2c9544f66edd5c0eca8c",
+            "context_id": "c639f0787f3e721670ce91c66ea83ae1f3643d241cf98a647895d77ed430d573",
+            "platform": "bilibili",
+            "view_scope": "group",
+            "scene_id": "synthetic-group"
+          }
+        ],
+        "version": 0,
+        "updated_at": 0.0,
+        "note": ""
+      },
+      {
+        "id": "3315db5a2de4e83356d84a8441a56b9f37d61842ec2b478bfa664ef772bcdfaf",
+        "persona_id": "fixture-persona",
+        "platform": "qq",
+        "account_id": "10013",
+        "label": "10013",
+        "raw": 200.0,
+        "score": 20.0,
+        "normalized": 0.2,
+        "stage": "stage_1",
+        "stage_key": "stage_1",
+        "stage_index": 1,
+        "stage_name": "陌生",
+        "stage_type": "陌生",
+        "trust": null,
+        "familiarity": null,
+        "boundary": null,
+        "frozen": false,
+        "source_completeness": "partial",
+        "sources": [
+          {
+            "context_id": "5887c46fe09940abadf7caa6cf01d5725f4de752431821268b675be39984d3c5",
             "platform": "qq",
             "view_scope": "private",
             "scene_id": "synthetic-chat"
@@ -10867,11 +7549,11 @@ export const nativeDTO = {
         "note": ""
       },
       {
-        "id": "c00054d0505e5bcd7f5d1f655b60e5ab3e59dab0be8a0cd0f690cbafd6fd1dbc",
+        "id": "45769e01aa2b5ed4b35af7fd17f1a2cae7377e8f3e593a43a9a60659a9b89a9d",
         "persona_id": "fixture-persona",
         "platform": "qq",
-        "account_id": "10005",
-        "label": "10005",
+        "account_id": "10018",
+        "label": "10018",
         "raw": 200.0,
         "score": 20.0,
         "normalized": 0.2,
@@ -10887,7 +7569,7 @@ export const nativeDTO = {
         "source_completeness": "partial",
         "sources": [
           {
-            "context_id": "de24a467cea45b055f7f8def9fc56b4070e20ef6e76c9e97078bb1c6293ce863",
+            "context_id": "6ed68c6b686c9951261dc5de9738b25019ab809bc0e703c1c626a17f14c6ad81",
             "platform": "qq",
             "view_scope": "private",
             "scene_id": "synthetic-chat"
@@ -10898,11 +7580,11 @@ export const nativeDTO = {
         "note": ""
       },
       {
-        "id": "bec7993aacc968bbe925eee176827eeedbed2876f091d566e8cc406d6af09185",
+        "id": "4813dfbe51ca3b2705f0d65b997dc2b4bc5082a069b9dfd4f433eeae2f4c0469",
         "persona_id": "fixture-persona",
         "platform": "qq",
-        "account_id": "10020",
-        "label": "10020",
+        "account_id": "10012",
+        "label": "10012",
         "raw": 200.0,
         "score": 20.0,
         "normalized": 0.2,
@@ -10918,7 +7600,7 @@ export const nativeDTO = {
         "source_completeness": "partial",
         "sources": [
           {
-            "context_id": "1ccd90c62355721865cacd5c9ecdb7d9c6e45962cde9fa9b49c085cdbbec2515",
+            "context_id": "ac17a10a834bbd6546d9df4799a3fbf4180e0f0eb2330a229a24c5d17b6f87cd",
             "platform": "qq",
             "view_scope": "private",
             "scene_id": "synthetic-chat"
@@ -10929,11 +7611,11 @@ export const nativeDTO = {
         "note": ""
       },
       {
-        "id": "b8fddea1e66bd4401e8ff37025e1ce607c2d7d6db8a8bbc68b6d0bcbc6158ff8",
+        "id": "5483bfd2e703f07d69c023c70e9f3f084a9ea4332c18e4d985b74b576521ccb2",
         "persona_id": "fixture-persona",
         "platform": "qq",
-        "account_id": "10017",
-        "label": "10017",
+        "account_id": "10006",
+        "label": "10006",
         "raw": 200.0,
         "score": 20.0,
         "normalized": 0.2,
@@ -10949,7 +7631,7 @@ export const nativeDTO = {
         "source_completeness": "partial",
         "sources": [
           {
-            "context_id": "3541c3e1eb5a73c2e9c3cff4062576aa8741454589a14ccac2b743235a818bed",
+            "context_id": "52e7028ab96e6d15771e356ec0cc141e9924f6d9c807f92056fabd22000acc42",
             "platform": "qq",
             "view_scope": "private",
             "scene_id": "synthetic-chat"
@@ -10960,11 +7642,11 @@ export const nativeDTO = {
         "note": ""
       },
       {
-        "id": "b69fb57d322b06bac925a50b981d3efecc5a868dae60958329193aed4baafe82",
+        "id": "599993818a971672d92766010112f13a45ebe0324a5a8a0f8a9dabc9411f2532",
         "persona_id": "fixture-persona",
         "platform": "qq",
-        "account_id": "10008",
-        "label": "10008",
+        "account_id": "10022",
+        "label": "10022",
         "raw": 200.0,
         "score": 20.0,
         "normalized": 0.2,
@@ -10980,7 +7662,7 @@ export const nativeDTO = {
         "source_completeness": "partial",
         "sources": [
           {
-            "context_id": "fa26f35ec2546c181ee72799f01b5aae504e5c4033b7b202d9abecf62d5f11ab",
+            "context_id": "fda756877b9e09334637756f7557078936706da40bd77d6ad73ad00dee0f2cb2",
             "platform": "qq",
             "view_scope": "private",
             "scene_id": "synthetic-chat"
@@ -10991,11 +7673,11 @@ export const nativeDTO = {
         "note": ""
       },
       {
-        "id": "adb022534ea72423c94d283a6d29240db1b4c6e0643dd02015d375b7f409d71f",
+        "id": "606fad4bc097427cc13515300c5bfe7e8f28273ee2e6b689723cfe96155f90ed",
         "persona_id": "fixture-persona",
         "platform": "qq",
-        "account_id": "10010",
-        "label": "10010",
+        "account_id": "10011",
+        "label": "10011",
         "raw": 200.0,
         "score": 20.0,
         "normalized": 0.2,
@@ -11011,38 +7693,7 @@ export const nativeDTO = {
         "source_completeness": "partial",
         "sources": [
           {
-            "context_id": "b2843aaa258a1b53a0f8db7536d25dfa3b1e750fcc890b11c5c655c446a38226",
-            "platform": "qq",
-            "view_scope": "private",
-            "scene_id": "synthetic-chat"
-          }
-        ],
-        "version": 0,
-        "updated_at": 0.0,
-        "note": ""
-      },
-      {
-        "id": "a231321ba9499da2d50011ab63fee305af89f7e69b41954567e7c9bc91d92fcb",
-        "persona_id": "fixture-persona",
-        "platform": "qq",
-        "account_id": "10014",
-        "label": "10014",
-        "raw": 200.0,
-        "score": 20.0,
-        "normalized": 0.2,
-        "stage": "stage_1",
-        "stage_key": "stage_1",
-        "stage_index": 1,
-        "stage_name": "陌生",
-        "stage_type": "陌生",
-        "trust": null,
-        "familiarity": null,
-        "boundary": null,
-        "frozen": false,
-        "source_completeness": "partial",
-        "sources": [
-          {
-            "context_id": "51511c831a5c7e9483c8524dd0d21c9cd5704388bbde5977b68c0b84b2c6e7d6",
+            "context_id": "8bea336f974443c4c11057900f7ed8652adc31754428a84ee4b83b85b2fe44e1",
             "platform": "qq",
             "view_scope": "private",
             "scene_id": "synthetic-chat"
@@ -11053,6 +7704,325 @@ export const nativeDTO = {
         "note": ""
       }
     ],
+    "live_items": [
+      {
+        "id": "026d65db6260001564b8163edc0bedc05677d499333bd717d7ac6004f1521a3c",
+        "persona_id": "fixture-persona",
+        "platform": "qq",
+        "account_id": "10015",
+        "label": "10015",
+        "raw": 200.0,
+        "score": 20.0,
+        "normalized": 0.2,
+        "stage": "stage_1",
+        "stage_key": "stage_1",
+        "stage_index": 1,
+        "stage_name": "陌生",
+        "stage_type": "陌生",
+        "trust": null,
+        "familiarity": null,
+        "boundary": null,
+        "frozen": false,
+        "source_completeness": "partial",
+        "sources": [
+          {
+            "context_id": "99e913771ab562575d758281889a84d5a651e9ed85199a933b1d36905ba60a43",
+            "platform": "qq",
+            "view_scope": "private",
+            "scene_id": "synthetic-chat"
+          }
+        ],
+        "version": 0,
+        "updated_at": 0.0,
+        "note": ""
+      },
+      {
+        "id": "0799dec7c092fc60a037a69973bf862a443aed80c6ce1f0b5f6837e45506ee70",
+        "persona_id": "fixture-persona",
+        "platform": "qq",
+        "account_id": "10004",
+        "label": "10004",
+        "raw": 200.0,
+        "score": 20.0,
+        "normalized": 0.2,
+        "stage": "stage_1",
+        "stage_key": "stage_1",
+        "stage_index": 1,
+        "stage_name": "陌生",
+        "stage_type": "陌生",
+        "trust": null,
+        "familiarity": null,
+        "boundary": null,
+        "frozen": false,
+        "source_completeness": "partial",
+        "sources": [
+          {
+            "context_id": "b6523e02ceff69b99ebe35a09d40dfcf4c6eaf0456ff317bfdffa7c4250efbd0",
+            "platform": "qq",
+            "view_scope": "private",
+            "scene_id": "synthetic-chat"
+          }
+        ],
+        "version": 0,
+        "updated_at": 0.0,
+        "note": ""
+      },
+      {
+        "id": "1afebc4e70572f630907d8324723db71ce06c82d70524f2297cce5250b197952",
+        "persona_id": "fixture-persona",
+        "platform": "qq",
+        "account_id": "10016",
+        "label": "10016",
+        "raw": 200.0,
+        "score": 20.0,
+        "normalized": 0.2,
+        "stage": "stage_1",
+        "stage_key": "stage_1",
+        "stage_index": 1,
+        "stage_name": "陌生",
+        "stage_type": "陌生",
+        "trust": null,
+        "familiarity": null,
+        "boundary": null,
+        "frozen": false,
+        "source_completeness": "partial",
+        "sources": [
+          {
+            "context_id": "aa3c7b08efef0610f928e202a72bc946347131b4dd10858badb9498c48f82f74",
+            "platform": "qq",
+            "view_scope": "private",
+            "scene_id": "synthetic-chat"
+          }
+        ],
+        "version": 0,
+        "updated_at": 0.0,
+        "note": ""
+      },
+      {
+        "id": "28e2b592ea4239630563d20fbca7273893a9587280d48d68bd0d494068257679",
+        "persona_id": "fixture-persona",
+        "platform": "bilibili",
+        "account_id": "10001",
+        "label": "10001",
+        "raw": 200.0,
+        "score": 20.0,
+        "normalized": 0.2,
+        "stage": "stage_1",
+        "stage_key": "stage_1",
+        "stage_index": 1,
+        "stage_name": "陌生",
+        "stage_type": "陌生",
+        "trust": null,
+        "familiarity": null,
+        "boundary": null,
+        "frozen": false,
+        "source_completeness": "partial",
+        "sources": [
+          {
+            "context_id": "c639f0787f3e721670ce91c66ea83ae1f3643d241cf98a647895d77ed430d573",
+            "platform": "bilibili",
+            "view_scope": "group",
+            "scene_id": "synthetic-group"
+          }
+        ],
+        "version": 0,
+        "updated_at": 0.0,
+        "note": ""
+      },
+      {
+        "id": "3315db5a2de4e83356d84a8441a56b9f37d61842ec2b478bfa664ef772bcdfaf",
+        "persona_id": "fixture-persona",
+        "platform": "qq",
+        "account_id": "10013",
+        "label": "10013",
+        "raw": 200.0,
+        "score": 20.0,
+        "normalized": 0.2,
+        "stage": "stage_1",
+        "stage_key": "stage_1",
+        "stage_index": 1,
+        "stage_name": "陌生",
+        "stage_type": "陌生",
+        "trust": null,
+        "familiarity": null,
+        "boundary": null,
+        "frozen": false,
+        "source_completeness": "partial",
+        "sources": [
+          {
+            "context_id": "5887c46fe09940abadf7caa6cf01d5725f4de752431821268b675be39984d3c5",
+            "platform": "qq",
+            "view_scope": "private",
+            "scene_id": "synthetic-chat"
+          }
+        ],
+        "version": 0,
+        "updated_at": 0.0,
+        "note": ""
+      },
+      {
+        "id": "45769e01aa2b5ed4b35af7fd17f1a2cae7377e8f3e593a43a9a60659a9b89a9d",
+        "persona_id": "fixture-persona",
+        "platform": "qq",
+        "account_id": "10018",
+        "label": "10018",
+        "raw": 200.0,
+        "score": 20.0,
+        "normalized": 0.2,
+        "stage": "stage_1",
+        "stage_key": "stage_1",
+        "stage_index": 1,
+        "stage_name": "陌生",
+        "stage_type": "陌生",
+        "trust": null,
+        "familiarity": null,
+        "boundary": null,
+        "frozen": false,
+        "source_completeness": "partial",
+        "sources": [
+          {
+            "context_id": "6ed68c6b686c9951261dc5de9738b25019ab809bc0e703c1c626a17f14c6ad81",
+            "platform": "qq",
+            "view_scope": "private",
+            "scene_id": "synthetic-chat"
+          }
+        ],
+        "version": 0,
+        "updated_at": 0.0,
+        "note": ""
+      },
+      {
+        "id": "4813dfbe51ca3b2705f0d65b997dc2b4bc5082a069b9dfd4f433eeae2f4c0469",
+        "persona_id": "fixture-persona",
+        "platform": "qq",
+        "account_id": "10012",
+        "label": "10012",
+        "raw": 200.0,
+        "score": 20.0,
+        "normalized": 0.2,
+        "stage": "stage_1",
+        "stage_key": "stage_1",
+        "stage_index": 1,
+        "stage_name": "陌生",
+        "stage_type": "陌生",
+        "trust": null,
+        "familiarity": null,
+        "boundary": null,
+        "frozen": false,
+        "source_completeness": "partial",
+        "sources": [
+          {
+            "context_id": "ac17a10a834bbd6546d9df4799a3fbf4180e0f0eb2330a229a24c5d17b6f87cd",
+            "platform": "qq",
+            "view_scope": "private",
+            "scene_id": "synthetic-chat"
+          }
+        ],
+        "version": 0,
+        "updated_at": 0.0,
+        "note": ""
+      },
+      {
+        "id": "5483bfd2e703f07d69c023c70e9f3f084a9ea4332c18e4d985b74b576521ccb2",
+        "persona_id": "fixture-persona",
+        "platform": "qq",
+        "account_id": "10006",
+        "label": "10006",
+        "raw": 200.0,
+        "score": 20.0,
+        "normalized": 0.2,
+        "stage": "stage_1",
+        "stage_key": "stage_1",
+        "stage_index": 1,
+        "stage_name": "陌生",
+        "stage_type": "陌生",
+        "trust": null,
+        "familiarity": null,
+        "boundary": null,
+        "frozen": false,
+        "source_completeness": "partial",
+        "sources": [
+          {
+            "context_id": "52e7028ab96e6d15771e356ec0cc141e9924f6d9c807f92056fabd22000acc42",
+            "platform": "qq",
+            "view_scope": "private",
+            "scene_id": "synthetic-chat"
+          }
+        ],
+        "version": 0,
+        "updated_at": 0.0,
+        "note": ""
+      },
+      {
+        "id": "599993818a971672d92766010112f13a45ebe0324a5a8a0f8a9dabc9411f2532",
+        "persona_id": "fixture-persona",
+        "platform": "qq",
+        "account_id": "10022",
+        "label": "10022",
+        "raw": 200.0,
+        "score": 20.0,
+        "normalized": 0.2,
+        "stage": "stage_1",
+        "stage_key": "stage_1",
+        "stage_index": 1,
+        "stage_name": "陌生",
+        "stage_type": "陌生",
+        "trust": null,
+        "familiarity": null,
+        "boundary": null,
+        "frozen": false,
+        "source_completeness": "partial",
+        "sources": [
+          {
+            "context_id": "fda756877b9e09334637756f7557078936706da40bd77d6ad73ad00dee0f2cb2",
+            "platform": "qq",
+            "view_scope": "private",
+            "scene_id": "synthetic-chat"
+          }
+        ],
+        "version": 0,
+        "updated_at": 0.0,
+        "note": ""
+      },
+      {
+        "id": "606fad4bc097427cc13515300c5bfe7e8f28273ee2e6b689723cfe96155f90ed",
+        "persona_id": "fixture-persona",
+        "platform": "qq",
+        "account_id": "10011",
+        "label": "10011",
+        "raw": 200.0,
+        "score": 20.0,
+        "normalized": 0.2,
+        "stage": "stage_1",
+        "stage_key": "stage_1",
+        "stage_index": 1,
+        "stage_name": "陌生",
+        "stage_type": "陌生",
+        "trust": null,
+        "familiarity": null,
+        "boundary": null,
+        "frozen": false,
+        "source_completeness": "partial",
+        "sources": [
+          {
+            "context_id": "8bea336f974443c4c11057900f7ed8652adc31754428a84ee4b83b85b2fe44e1",
+            "platform": "qq",
+            "view_scope": "private",
+            "scene_id": "synthetic-chat"
+          }
+        ],
+        "version": 0,
+        "updated_at": 0.0,
+        "note": ""
+      }
+    ],
+    "list_snapshot": {
+      "day": "2027-01-15",
+      "timezone": "Asia/Shanghai",
+      "computed_at": 1800000001.0,
+      "scheduled_for": 1799942400.0,
+      "initial": true
+    },
     "total": 24,
     "displayed": 24,
     "page": 1,
@@ -11141,18 +8111,18 @@ export const nativeDTO = {
   }
 };
 export const nativeDTOEvidence = {
-  "captured_at": "2026-11-19T09:26:15.085039+00:00",
-  "field_count": 133,
+  "captured_at": "2026-11-20T15:20:36.682230+00:00",
+  "field_count": 136,
   "scope": "real Console DTO / synthetic host / temporary database",
   "sources_sha256": {
-    "config.py": "8918138f2826e428e4b849626afddbadd0a17cc62a875fcec2968bc0e9e12a6e",
-    "contracts.py": "e6c4babe398c89c1c5816fca3e88e275fd9609d290e955d4b2ca74e037dc542f",
-    "runtime/console.py": "0b93df824af15ac1f6947b2868123d1d58c4389bb8e9e850573785e26302b0bd",
-    "runtime/config_help.py": "254cc84aa3c4a854b48f3991db38ef59a26ce78f726b26cd69c258a43f883e5c",
-    "storage/schema.py": "174a775f57e7fe8c9eb39192fe1278fc89439595e43e486abd106ce1ef715616",
-    "storage/sqlite.py": "e9d3203d14177408d5a792affeabf00c264de37ff1faa006d88979cb17dc594a",
-    "storage/state_scope.py": "c34ab212acdc989579c3b69dee8a314fbf1fef29cfe6a24928c8c34ca67987d5",
-    "storage/console_data.py": "7dcb4516e3141b28268dcd1f244eac8260e48c1ce13e7e4918d4863e025ff315",
+    "config.py": "dd52dc440b67c599db014dee47bc3a7116e555d0d57338a610c23b529e05c9f1",
+    "contracts.py": "9dbac4479c40cd83a476f7499cf35fce5ab994df87111cfe3eac111f5a87c0eb",
+    "runtime/console.py": "ffaea0030a2ac33e83f087694945c6ca684f2ce6e3cf5755a1b6ecc786512240",
+    "runtime/config_help.py": "ccfdd0bcac20533334b0d20f9e050afb1a5fa719a5400186feb712bcc7594dd0",
+    "storage/schema.py": "096a90b582af5d6694f957ff4df29a8d6230fa5dc880f8bff5fd33c2eba17115",
+    "storage/sqlite.py": "85c2addffc409e90323e3f79cf9a539c946223f661c13f0afc9a397d16e820a9",
+    "storage/state_scope.py": "2b8e9fc28c36ea0d880aa0a21b7f98c1308d7b143f4a0db6be74734dbccb12e5",
+    "storage/console_data.py": "c893e499a8564fde4f100ddf4a95b7eb6640cc961f02fd8e9e68e9a9badf7f61",
     "domain/relationship_inference.py": "73f329394e7094180b7824a0d329826bc7cda3a524c4f5f64a839284b5ec01e9",
     "domain/proactivity.py": "e300cdb9e4130f1312060a9a6865ecaa8bfd9ec6fc7fc51c1c7701e36dcde326",
     "storage/proactivity.py": "003859c71234f93c8a004363de459ccc0471e0b81e10023c4e6530d91ec13e54"

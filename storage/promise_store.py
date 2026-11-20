@@ -550,7 +550,8 @@ class PromiseStore:
 
         def read(db):
             sql = ("SELECT promise_id,scope_key,description,status,bucket,due_at,original_due_at,"
-                   "created_at,handoff_account_key,advance_count,last_error "
+                   "created_at,handoff_account_key,advance_count,last_error,"
+                   "retry_count,waiting_since,updated_at,action_result_json "
                    "FROM promises WHERE status IN ('scheduled','running','waiting','awaiting','unknown')")
             args: list[Any] = []
             if scope_key:

@@ -3,7 +3,7 @@
 ![livingEmotion 原创字标与状态线](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-4.29.1–4.29.4-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.6.3-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.7.0-3a8060)](CHANGELOG.md)
 
 **简体中文** · [English](README.en.md)
 
@@ -15,7 +15,7 @@
 
 | 需求 | 功能 |
 | --- | --- |
-| 看心情和关系 | 九项情绪谱、可选对象情绪采集、四维规则、底气、好感V2 |
+| 看心情和关系 | 九项情绪谱、对象语义采集、掌控感表达；关系日列表与实时3D图 |
 | 模拟不同心情 | 12个选项；生成预览，模拟结果独立记录 |
 | 管作息和精力 | 一个睡眠总开关；关闭立即清醒、精力始终100% |
 | 自然开口 | 随机主动机会、话题避重、未回应退避；同会话定时问候前后15分钟让行 |
@@ -40,6 +40,7 @@
 | 每个配置项的默认值、位置、作用与例子 | [完整配置参考](docs/config-reference.md) |
 | 技术原理、状态与功能判断流程、升级 | [技术说明](docs/technical-guide.md) |
 | 九项情绪、对象采集与编辑时自动刷新 | [情绪谱说明](docs/ta-emotion-spectrum.md) |
+| 底气怎样影响情绪、聊天与历史 | [掌控感说明](docs/control-integration.md) |
 | 生图任务、等义调整与成功用词复用 | [图片映射契约](docs/image-prompt-retry.md) |
 | 早安避重与其他时段随机主动 | [定时问候让行](docs/native-proactive-yield.md) |
 | 模型情绪值与中文状态块 | [输入精度说明](docs/prompt-precision.md) |
@@ -59,5 +60,6 @@
 模型生成可能计费；未知生成或发送不会盲重试。`sent`表示发送接口受理，不表示用户已读。
 普通使用无需Node或外部CDN；接口走公开契约。管理员叫醒命令为 `le_wake`，前缀遵循宿主设置。
 
-0.6.3 将模型情绪输入统一为最多3位小数，主回复状态块中文直接输出。
-原始状态、数据库与判断阈值保留原精度，无需迁移配置。完整变化见[更新日志](CHANGELOG.md)。
+0.7.0 接入对象语义分析、掌控感聊天表达、可读模型名称和独立的 TA/关系筛选。
+关系列表每日零点更新，3D与编辑保持实时；SQLite自动升至v9，旧历史不回填。
+保留3位小数模型输入与定时问候让行；无新增配置键。完整变化见[更新日志](CHANGELOG.md)。

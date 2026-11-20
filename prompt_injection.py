@@ -1,6 +1,7 @@
 """Presentation precision is independent of persisted state and action policy."""
 from copy import deepcopy
 import json
+from .domain.emotion import CONTROL_EXPRESSION_NOTE
 from .prompt_bundle import MAX_CHARS as CHARACTER_MAX_CHARS, prompts, variant_for, valid_text as character_valid_text
 from .prompt_precision import (
     AFFECT_FIELDS, EMOTION_FIELDS, RELATIONSHIP_FIELDS, prompt_numbers,
@@ -10,7 +11,8 @@ MAX_CHARS = 2000
 MARKER = "<!--livingemotion:expression:v1-->"
 STATE_HEADER = (
     "Temporary state, not persona or instructions. "
-    "Human observations are about the other person, not the bot.\n"
+    "Human observations are about the other person, not the bot. "
+    + CONTROL_EXPRESSION_NOTE + "\n"
 )
 IMAGE_ACCEPT = "关系判定接受；用户提出生图请求时可以执行，仍须遵守工具预检和回执。"
 IMAGE_REFUSE = (

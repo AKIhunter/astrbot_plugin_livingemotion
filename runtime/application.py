@@ -1194,6 +1194,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             source, normalized = await self.bridge.normalize(event, self.store.clock())
             context = source.context
             event.set_extra("livingemotion:context", to_dict(context))
+            event.set_extra("livingemotion:event_key", normalized.idempotency_key)
             await self.initialize_state_scope(context)
             result = await self.api.ingest_event(normalized)
             if result["status"] in ("accepted", "duplicate"):
@@ -1328,6 +1329,10 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                 self._note_livinghello_blocked_llm(event, context)
                 event.stop_event()
                 return
+            if self.config.context_emotions_enabled and self.config.emotion_model_enabled:
+                await self.await_context_refinement(event.get_extra("livingemotion:event_key"))
+                if not await self.validate_context(context, generation):
+                    return
             await self._prepare_catchup(event, request, context)
             attempt = stable_key("native-reply", context.scope_key,
                                  str(event.message_obj.message_id),

@@ -5,9 +5,11 @@ Persisted contexts describe provenance, never authority to send.
 """
 
 from dataclasses import replace
+from datetime import datetime, time, timedelta
 from decimal import Decimal
 import json
 import math
+from zoneinfo import ZoneInfo
 
 from ..contracts import ActorRole, ContentKind, Context, Event, Relationship, canonical_json, stable_key, to_dict
 from ..domain.relationship import initial_relationship, relationship_stage, relationship_stage_dto
@@ -15,6 +17,7 @@ from ..domain.relationship_inference import RelationshipStatement, infer_relatio
 
 OVERRIDE_PREFIX = "console.relationship.override.v1:"
 NICKNAME_PREFIX = "console.qq.nickname.v1:"
+RELATIONSHIP_LIST_PREFIX = "console.relationship.daily.v1:"
 
 
 async def remember_qq_nickname(store, context, nickname, generation, *, occurred_at):
@@ -270,9 +273,55 @@ def _relationship_node(db, sources, config=None):
     }
 
 
+def relationship_list_delay(now, config):
+    """下次零点的实际秒数，按配置时区计算，也支持夏令时的 23/25 小时日。"""
+    zone = ZoneInfo(config.timezone or "Asia/Shanghai")
+    today = datetime.fromtimestamp(now, zone).date()
+    return max(.01, datetime.combine(today + timedelta(days=1), time.min, zone).timestamp() - now)
+
+
+def _relationship_list_snapshot(db, store, instance_id, persona_id, config):
+    from copy import deepcopy
+    zone_name = config.timezone or "Asia/Shanghai"
+    local = datetime.fromtimestamp(store.clock(), ZoneInfo(zone_name))
+    day = local.date().isoformat()
+    key = RELATIONSHIP_LIST_PREFIX + stable_key(instance_id, persona_id)
+    saved = db.execute("SELECT value FROM runtime_meta WHERE key=?", (key,)).fetchone()
+    snapshot = json.loads(saved[0]) if saved else None
+    if snapshot and snapshot["day"] == day and snapshot["timezone"] == zone_name:
+        return snapshot
+    groups = {}
+    for context in _contexts(db, instance_id):
+        if context.persona_id == persona_id and context.account_id:
+            groups.setdefault(relationship_account_key(context), []).append(context)
+    generations = {r["scope_key"]: r["generation"] for r in db.execute(
+        "SELECT scope_key,generation FROM scopes")}
+    items = []
+    for sources in groups.values():
+        node = _relationship_node(db, sources, config)
+        node["_generations"] = {c.scope_key: generations.get(c.scope_key) for c in sources}
+        items.append(node)
+    items.sort(key=lambda item: (-item["score"], item["id"]))
+    # 仅留当日快照。首次启用与停机跨日使用真实补算时间，不能冒充零点实测值。
+    snapshot = {"day": day, "timezone": zone_name, "computed_at": store.clock(),
+                "scheduled_for": datetime.combine(local.date(), time.min, local.tzinfo).timestamp(),
+                "initial": saved is None, "items": items}
+    db.execute("INSERT INTO runtime_meta(key,value) VALUES(?,?) "
+               "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, canonical_json(snapshot)))
+    return deepcopy(snapshot)
+
+
+async def refresh_relationship_lists(store, instance_id, config):
+    """后台按日更新，无模型消费；重载与页面读取共用同一份持久化快照。"""
+    def refresh(db):
+        for persona_id in {c.persona_id for c in _contexts(db, instance_id)}:
+            _relationship_list_snapshot(db, store, instance_id, persona_id, config)
+    await store._run(lambda db: store._transaction(db, lambda: refresh(db)))
+
+
 async def query_relationships(store, instance_id, selection, *, page=1, page_size=10,
                               query="", limit=200, config=None, graph_scope="matched",
-                              extra=(), memory_generation=None):
+                              extra=(), memory_generation=None, daily_list=False):
     if (type(page) is not int or not 1 <= page <= 1000000 or type(page_size) is not int
             or page_size != 10 or type(limit) is not int or not 1 <= limit <= 200
             or not isinstance(query, str) or len(query) > 200
@@ -309,19 +358,39 @@ async def query_relationships(store, instance_id, selection, *, page=1, page_siz
             graph = [*matched, *(n for n in nodes if n["id"] in neighbors)]
         visible = graph[:limit]
         visible_ids = {n["id"] for n in visible}
-        # 列表先按亲近阶段降序再分页；同阶段保留原顺序，不改变关系图。
+        # 旧查询调用方保持原阶段排序；控制台的日列表单独使用精确好感度降序。
         table = sorted(matched, key=lambda n: n["stage_index"], reverse=True)
+        snapshot_info = None
+        if daily_list:
+            snapshot = _relationship_list_snapshot(
+                db, store, instance_id, selection["persona_id"], config)
+            generations = {r["scope_key"]: r["generation"] for r in db.execute(
+                "SELECT scope_key,generation FROM scopes")}
+            eligible = {relationship_account_key(c): c for c in contexts}
+            # 已清除或已移除的来源不能因日快照复活；当天新对象到次日零点进入列表。
+            valid = [item for item in snapshot["items"] if item["id"] in eligible and all(
+                generations.get(scope) == gen for scope, gen in item["_generations"].items())]
+            exact_table = [item for item in valid if item["account_id"] == term] if term else []
+            table = exact_table or [item for item in valid if term.casefold() in (
+                item["account_id"] + " " + item["label"]).casefold()]
+            snapshot_info = {k: v for k, v in snapshot.items() if k != "items"}
+        page_items = [{k: v for k, v in item.items() if k != "_generations"}
+                      for item in table[(page - 1) * page_size:page * page_size]]
+        live_by_id = {n["id"]: n for n in nodes}
         return {"center": center, "nodes": visible,
                 "edges": [{"source": center["id"], "target": n["id"], "score": n["score"]}
                           for n in visible],
-                "items": table[(page - 1) * page_size:page * page_size],
-                "total": len(matched), "displayed": len(visible), "page": page,
+                "items": page_items,
+                # 列表按日展示，详情与编辑仍读实时节点及其 CAS 版本，不拿旧快照写入。
+                "live_items": [live_by_id[item["id"]] for item in page_items if item["id"] in live_by_id],
+                "list_snapshot": snapshot_info,
+                "total": len(table), "displayed": len(visible), "page": page,
                 "page_size": page_size,
                 "graph_scope": graph_scope, "focus_ids": list(n["id"] for n in matched) if term else [],
                 "graph_total": len(graph), "graph_truncated": len(graph) > limit,
                 "peer_edges": [e for e in peers if e["source"] in visible_ids
                                and e["target"] in visible_ids]}
-    return await store._run(read)
+    return await store._run(lambda db: store._transaction(db, lambda: read(db)) if daily_list else read(db))
 
 
 def _relationship_statements(db, store, contexts):

@@ -139,7 +139,7 @@ def test_repairs_match_active_account_incident(le_event, repair, expected):
         decayed * (.4 if expected else 1))
 
 
-def test_model_cannot_invent_context_proof_or_reuse_quoted_evidence(le_event):
+def test_model_cannot_invent_context_proof_or_change_subject(le_event):
     event = replace(le_event, body="你从来没帮过我")
     appraisal = ContextAppraisal("wronged", "devalued_contribution", event.body,
                                 .9, .75, ("invented-proof",))
@@ -150,7 +150,10 @@ def test_model_cannot_invent_context_proof_or_reuse_quoted_evidence(le_event):
     result = apply_context_emotions(None, event, Relationship(score=500),
                                     now=event.occurred_at, enabled=True, appraisals=(appraisal,))
     assert result["state"]["items"][0]["kind"] == "hurt"
+    # Semantic classification owns quoted/ironic meaning; the parser still
+    # rejects a foreign holder even when the quoted excerpt exists verbatim.
     quoted = replace(event, body='他说“你从来没帮过我”')
+    raw["context_appraisals"][0]["holder"] = "human"
     _, accepted, _ = parse_context_appraisals(
         raw, quoted, Relationship(score=500), empty_state(), support_refs=("invented-proof",))
     assert not accepted

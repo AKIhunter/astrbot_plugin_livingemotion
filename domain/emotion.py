@@ -34,6 +34,13 @@ BASELINE_CEILING = 0.85
 CONTROL_NEUTRAL = 0.5
 CONTROL_BLEND = 0.2
 CONTROL_HALF_LIFE = 3600.0
+CONTROL_MIN_CONFIDENCE = 0.75
+# 各聊天出口共用说明，动态状态自带此约束，不依赖可关闭的通用提示词。
+CONTROL_EXPRESSION_NOTE = (
+    "control是你此刻应对互动、解释处境和表达意愿的掌控感，不是好感或知识准确率。"
+    "按control_style调整语气，不报告数值；事实断言仍依据证据，工具许可和已接受任务照常遵守。"
+    "低掌控不索取安慰、不逃避任务，高掌控不攻击或压迫对方。"
+)
 # 情绪强度预设：只放大规则增量与单次/同类闸门，不改半衰期与衰减速度。
 INTENSITY_PRESETS = {"gentle": 1.35, "normal": 1.6, "intense": 2.0}
 DEFAULT_EVENT_CAP = 0.15
@@ -98,18 +105,33 @@ def control_value(state: BotAffect, now: float) -> float:
         -elapsed / CONTROL_HALF_LIFE)
 
 
-def apply_control(state: BotAffect, value: Any, *, now: float) -> BotAffect:
+def apply_control(state: BotAffect, value: Any, *, now: float,
+                  confidence: float = 1.0) -> BotAffect:
     """模型判定的底气：先按时间衰减，再用 EMA 0.2 平滑写入。
 
-    只写 control/control_at，不动 updated_at，因此不会打断四维的情绪衰减。
+    缺值或置信度不足不写；只写 control/control_at，不动 updated_at，
+    因此不会打断四维的情绪衰减。
     """
     _number(now, "now", 0)
     if value is None:
         return state
-    current = control_value(state, now)
     target = _number(value, "control", 0, 1)
+    if _number(confidence, "control_confidence", 0, 1) < CONTROL_MIN_CONFIDENCE:
+        return state
+    current = control_value(state, now)
     return replace(state, control=current + (target - current) * CONTROL_BLEND,
                    control_at=now)
+
+
+def control_expression(state: BotAffect) -> dict[str, Any]:
+    """只读取调用方已按本轮时间衰减的状态；生成策略，不写库或授予权限。"""
+    value = state.control
+    style = ("谨慎解释，必要时澄清一个关键点。"
+             if value < .35 else
+             "更直接、坚定地表达意愿和边界。"
+             if value > .65 else
+             "按当前情绪和人格自然表达。")
+    return {"control": value, "control_style": style}
 
 # Deltas describe the Bot's appraisal, never a copy of the speaker's feeling.
 RULES = {
@@ -709,7 +731,7 @@ def expression_context(
     value = {
         "namespace": "livingEmotion",
         "bot": {"holder": "bot", **{name: getattr(state, name) for name in DIMENSIONS},
-                "labels": state.labels},
+                "labels": state.labels, **control_expression(state)},
         "human_observation": (
             {"holder": observation.subject_id, "labels": observation.labels,
              "confidence": observation.confidence, "expires_at": observation.expires_at}

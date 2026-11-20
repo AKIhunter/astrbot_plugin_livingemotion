@@ -7,6 +7,7 @@ import heapq
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from dataclasses import fields, replace
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from ..config import Config, LEGACY_FIELDS
@@ -36,6 +37,40 @@ class ApplicationError(Exception):
                             "edit_disabled": 403, "version_conflict": 409,
                             "generation_in_progress": 409, "unavailable": 503}[code]
         super().__init__(message)
+
+
+def provider_option_label(provider, model):
+    """Use the same readable names as LH; provider IDs remain option values."""
+    config = getattr(provider, "provider_config", None)
+    config = config if isinstance(config, dict) else {}
+    model = model.strip()
+    name = next((value.strip() for key in ("display_name", "label", "name")
+                 if isinstance(value := config.get(key), str) and value.strip()), "")
+    # 官方 DeepSeek 的同名模型可能配置不同思考模式；仅修饰标签，
+    # 以实际 thinking 配置为准，不凭 quiet ID 推断模型行为。
+    if type(provider).__name__ == "ProviderOpenAIOfficial" and model.lower().startswith("deepseek-"):
+        try:
+            official = urlsplit(str(config.get("api_base") or "")).hostname == "api.deepseek.com"
+        except ValueError:
+            official = False
+        extra = config.get("custom_extra_body", {})
+        thinking = extra.get("thinking", {}) if isinstance(extra, dict) else None
+        if official and isinstance(thinking, dict):
+            mode = str(thinking.get("type") or "").lower()
+            suffix = ""
+            if mode == "disabled":
+                suffix = ("quiet 不思考" if str(config.get("id") or "").endswith("-quiet")
+                          else "不思考")
+            elif mode == "enabled":
+                suffix = "思考"
+            elif not thinking and model.lower() in {"deepseek-flash", "deepseek-v4-pro"}:
+                suffix = "默认思考"
+            if suffix:
+                name = f"{name or model}（{suffix}）"
+    if name and model and name != model:
+        return f"{name} · {model}"
+    return name or model or "未命名模型"
+
 
 def behavior_transport_health(application, context):
     """A matching platform name alone does not prove a usable native route."""
@@ -1312,7 +1347,8 @@ class Console:
                 group = target is not None and target.scene_kind == "group"
                 import json
                 try:
-                    artifact = json.loads(row["action_result_json"])
+                    # 旧管理 DTO 可能没有结果字段；未提供不表示有重试或已发送。
+                    artifact = json.loads(row.get("action_result_json") or "{}")
                     prompt_retries = int(artifact.get("prompt_retry_count") or 0)
                 except (ValueError, TypeError, AttributeError):
                     prompt_retries = 0
@@ -1469,7 +1505,7 @@ class Console:
             result = await query_relationships(self.store, self.instance_id, selection,
                                                page=page, page_size=page_size,
                                                query=query, limit=limit, config=self.config,
-                                               graph_scope=graph_scope)
+                                                graph_scope=graph_scope, daily_list=True)
         except ValueError:
             raise ApplicationError("validation_error", "Invalid relationship query") from None
         if self.config.memory_read and contexts and result["nodes"]:
@@ -1482,7 +1518,7 @@ class Console:
             result = await query_relationships(
                 self.store, self.instance_id, selection, page=page, page_size=page_size,
                 query=query, limit=limit, config=self.config, graph_scope=graph_scope,
-                extra=extra, memory_generation=memory_generation)
+                 extra=extra, memory_generation=memory_generation, daily_list=True)
         return {"api_version": 1, "selection": selection, **result}
 
     async def _relationship_memory(self, contexts):
@@ -1736,7 +1772,9 @@ class Console:
                     if (isinstance(identifier, str) and identifier and isinstance(model, str)
                             and identifier.startswith(prefix) and identifier not in seen):
                         seen.add(identifier)
-                        options.append({"value": identifier, "label": f"{identifier} / {model}"})
+                        # ID 只用于绑定与保存；标签取宿主提供的名称，不显示 upstream_N。
+                        options.append({"value": identifier,
+                                        "label": provider_option_label(provider, model)})
                 except Exception:
                     continue
             return options

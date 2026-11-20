@@ -1,6 +1,6 @@
 import { t, locale } from "../i18n.mjs?v=eff0d6f932b0";
 import { node, button, svgNode, labelled } from "../dom.mjs?v=eff0d6f932b0";
-import { object, list, text, percent, scopeParams, relationshipStage } from "../model.mjs?v=eff0d6f932b0";
+import { object, list, text, percent, date, scopeParams, relationshipStage } from "../model.mjs?v=eff0d6f932b0";
 import { pageError } from "../api.mjs?v=eff0d6f932b0";
 import { seedPeople, constrain3D, separate3D, createForce3D } from "./force3d.mjs?v=eff0d6f932b0";
 export const NODE_CAP = 200;
@@ -57,14 +57,14 @@ const DIMENSION_NOTES = [
   ["arousal", "唤醒", "被骂、突发消息、意外惊吓", "安静一段时间、话题变平", "约 20 分钟"],
   ["stress", "压力", "被冒犯、起冲突、被催促", "对方道歉、语气缓和", "约 40 分钟"],
   ["social_need", "社交需求", "被关心、被感谢、对方难过", "收到回复、互动得到满足", "约 60 分钟"],
-  ["control", "底气", "模型判断这次对话有把握", "没把握、拿不准时回落", "约 60 分钟到 50%"],
+  ["control", "底气", "知道如何应对、解释和表达意愿", "处境突然受限、难以应对", "约 60 分钟到 50%"],
 ];
 const DIMENSION_HELP = {
   pleasure: "被夸、被感谢、被关心会升高；被侮辱、被冷落会下降；没有新互动就慢慢回到基准。",
   arousal: "突发消息、被骂、意外会升高；安静下来后回落最快，所以它波动最明显。",
   stress: "冲突、被指责、被催促会升高；道歉、安抚、话题变轻松会下降。",
   social_need: "被关心、被感谢、对方难过时想靠近，会升高；收到回复、陪伴需求被满足会下降。",
-  control: "只由模型判断这次回复有多少把握，本地规则不改它；它只影响页面展示，不参与情绪计算，也不会传给回复模型。",
+  control: "掌控感表示此刻能否应对互动、解释处境和表达意愿。由模型联合分析更新，影响愤怒、悲伤、恐惧及聊天语气；不改变好感、事实依据或工具许可。到「设置 → 情绪」开启模型辅助分析；关闭后不新增样本，底气缓慢回落到中性。",
 };
 const INTENSITY_GAIN = { gentle: 1.35, normal: 1.6, intense: 2.0 };
 const INTENSITY_LABEL = { gentle: "保守", normal: "平常", intense: "激进" };
@@ -336,8 +336,6 @@ export function mountRelationships(root, {
     for (const [label, value] of [
       [t("亲近阶段"), stageLabel(item)], [t("好感"), relationshipScore(item) === null ? t("未提供") : relationshipScore(item).toFixed(1)],
       [t("熟悉"), item.familiarity === null ? t("未建立") : percent(item.familiarity)],
-      [t("信任"), item.trust === null ? t("未建立") : percent(item.trust)],
-      [t("边界"), item.boundary === null ? t("未建立") : percent(item.boundary)],
       [t("备注"), text(item.note, "")], [t("自动好感变化"), item.frozen ? t("已冻结") : t("未冻结")],
       [t("来源完整性"), text(item.source_completeness, t("未提供"))], [t("版本"), text(item.version)],
     ]) dl.append(node("dt", label), node("dd", value));
@@ -621,6 +619,10 @@ export function mountRelationships(root, {
   }
   function drawTable(data) {
     tableRoot.replaceChildren();
+    const snapshot = object(data.list_snapshot);
+    if (snapshot.day) tableRoot.append(node("p",
+      `${snapshot.day} · ${t("每日 00:00 更新 · 好感度降序")}` +
+      (snapshot.initial ? ` · ${t("首次计算")} ${date(snapshot.computed_at, snapshot.timezone)}` : ""), "micro"));
     const wrapper = node("div", undefined, "table-wrap"), table = node("table"), head = node("thead"), tr = node("tr");
     wrapper.tabIndex = 0; wrapper.setAttribute("role", "region"); wrapper.setAttribute("aria-label", t("关系表，可左右滚动；每页10条"));
     table.className = "relationship-table";
@@ -629,6 +631,7 @@ export function mountRelationships(root, {
     const body = node("tbody");
     const items = data.page_size === 10 ? list(data.items) : data.items.slice((page - 1) * 10, page * 10);
     for (const item of items.slice(0, 10)) {
+      const current = list(data.live_items).find(value => value.id === item.id) || item;
       const row = node("tr"); row.dataset.relationshipId = item.id;
       // 昵称与平台/账号合并到一列：两列拆开会让每行多占一截高度，信息也更散。
       const person = node("td", undefined, "relationship-person");
@@ -636,10 +639,10 @@ export function mountRelationships(root, {
         node("span", `${text(item.platform)} / ${text(item.account_id)}`, "micro"));
       const action = node("td", undefined, "relationship-actions");
       action.append(button(t("查看"), () => {
-        show(item); detail.querySelector("h2")?.focus();
+        show(current); detail.querySelector("h2")?.focus();
       }));
       if (editEnabled) action.append(button(t("编辑"), () => {
-        openRowEditor(item); editor.querySelector("input")?.focus({ preventScroll: true });
+        openRowEditor(current); editor.querySelector("input")?.focus({ preventScroll: true });
         editor.scrollIntoView({ block: "nearest", behavior: "instant" });
       }));
       row.append(person, node("td", relationshipScore(item) === null ? t("未提供") : relationshipScore(item).toFixed(1)),
@@ -686,11 +689,11 @@ export function mountRelationships(root, {
       if (disposed || current !== sequence) return;
       drawTable(data);
       if (selected) {
-        const updated = [...data.nodes, ...data.items].find(item => item.id === selected.id);
+        const updated = [...data.nodes, ...list(data.live_items), ...data.items].find(item => item.id === selected.id);
         if (updated) show(updated); else hideDetail();
       }
       if (edited) {
-        const updated = [...data.nodes, ...data.items].find(item => item.id === edited.id);
+        const updated = [...data.nodes, ...list(data.live_items), ...data.items].find(item => item.id === edited.id);
         // Automatic reads keep the exact form, focus, selection and expected version.
         // A save still detects an external change through the original CAS version.
         if (updated && (!preserve || review)) openRowEditor(updated, review);

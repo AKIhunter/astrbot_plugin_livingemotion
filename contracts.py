@@ -359,8 +359,8 @@ class BotAffect:
     # 基准是否已被模型轮询写过。没写过时基准取 EmotionPolicy.baseline，
     # 这样改了策略常量后，还没细化过的状态也一起跟着走。
     baseline_refined: bool = False
-    # 底气（掌控感）：只由模型轮询写入、只给页面展示，不参与本地规则、
-    # 衰减基准和 LivingHello 注入。没有样本时保持中性 0.5。
+    # 底气（掌控感）：模型联合分析写入，调节负面情绪投影和聊天表达；
+    # 不改变四维规则、衰减基准、关系计分或工具权限。没有样本时中性 0.5。
     control: float = 0.5
     control_at: float = 0.0
 
@@ -387,10 +387,16 @@ class ContextAppraisal:
     confidence: float = 1.0
     strength: float = 0.5
     context_refs: tuple[str, ...] = ()
+    action: str = "increase"
+    holder: str = "bot"
+    target: str = "current_interlocutor"
 
     def __post_init__(self):
         if self.kind not in ("wronged", "hurt", "shyness"):
             raise ValueError("context_emotion_kind")
+        if (self.action not in ("increase", "decrease", "clear", "none")
+                or self.holder != "bot" or self.target != "current_interlocutor"):
+            raise ValueError("context_emotion_subject_or_action")
         _text(self.cause_code, "cause_code")
         if not isinstance(self.evidence, str) or not 2 <= len(self.evidence) <= 256:
             raise ValueError("context_emotion_evidence")

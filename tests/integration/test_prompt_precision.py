@@ -196,7 +196,10 @@ async def test_proactive_generation_rounds_mood_and_normalized_relationship(tmp_
         await drain(app)
         assert len(binding.calls) == 1
         data = json.loads(binding.calls[0][1])
-        assert data["mood"] == {"pleasure": .25, "social_need": .235, "stress": .005}
+        assert {k: data["mood"][k] for k in ("pleasure", "social_need", "stress")} == {
+            "pleasure": .25, "social_need": .235, "stress": .005}
+        assert data["mood"]["control"] == .912
+        assert data["mood"]["control_style"] == "更直接、坚定地表达意愿和边界。"
         assert data["relationship"]["closeness"] == .5
         assert data["relationship"]["trust"] == .235 and data["relationship"]["boundary"] == .123
     finally:

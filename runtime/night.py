@@ -557,9 +557,13 @@ class NightRuntime:
         return task
 
     async def _tick_loop(self):
+        from ..storage.console_data import refresh_relationship_lists, relationship_list_delay
         while not self.closed and self.config.enabled:
-            await asyncio.sleep(self.config.scheduler_seconds)
+            await asyncio.sleep(min(self.config.scheduler_seconds,
+                                    relationship_list_delay(self.store.clock(), self.config)))
             try:
+                # 即使无人打开控制台，零点也更新日列表；3D 和运行时好感继续实时计算。
+                await refresh_relationship_lists(self.store, self.instance_id, self.config)
                 await self.tick()
                 self._task_fault = ""
             except asyncio.CancelledError:

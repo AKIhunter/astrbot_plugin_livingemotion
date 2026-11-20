@@ -237,6 +237,10 @@ jobs:
         run: npm --prefix tests/ui run build && git diff --exit-code -- pages/livingemotion/vendor/d3-force.mjs
       - name: UI unit tests
         run: npm --prefix tests/ui test
+      - name: Scoped TA, daily relationships and editing browser checks
+        run: |
+          node tests/ui/ta-relationships-browser.test.mjs
+          node tests/ui/omissions-browser.test.mjs
       - name: Remove checked-in evidence before this run
         run: node --input-type=module -e "import { rm } from 'node:fs/promises'; await rm('tests/ui/evidence', { recursive:true, force:true });"
       - name: Synthetic browser checks

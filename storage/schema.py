@@ -169,6 +169,10 @@ MIGRATIONS: tuple[tuple[str, ...], ...] = ((
     "ALTER TABLE emotion_samples ADD COLUMN baseline_stress REAL",
     "ALTER TABLE emotion_samples ADD COLUMN baseline_social_need REAL",
     "ALTER TABLE emotion_samples ADD COLUMN baseline_refined INTEGER",
+), (
+    # 旧历史缺少掌控感，不用今天的数值回填；NULL 显式保留采集缺口。
+    "ALTER TABLE emotion_samples ADD COLUMN control REAL",
+    "ALTER TABLE emotion_samples ADD COLUMN control_at REAL",
 ))
 
 

@@ -73,5 +73,8 @@ export function emotionChart(raw) {
   if (points.some(point => point.basis === "legacy_baseline_unknown")) {
     figure.append(node("p", t("旧样本未记录情绪基准，部分历史曲线按默认基准推算。"), "hint"));
   }
+  if (points.some(point => point.control_basis === "legacy_control_unknown")) {
+    figure.append(node("p", t("旧样本未采集底气，相关历史按中性掌控感推算。"), "hint"));
+  }
   return figure;
 }
