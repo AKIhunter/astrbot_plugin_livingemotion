@@ -6,11 +6,12 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-import logging
 import time
 from typing import Any, Protocol
 from weakref import WeakValueDictionary
 from zoneinfo import ZoneInfo
+
+from astrbot.api import logger
 
 from ..adapters.memory.base import material_allowed
 from ..contracts import (
@@ -23,8 +24,6 @@ from ..domain.emotion import decay_affect
 from ..ports.memory import Material, MemoryRequest, RecallResult, ValidationResult
 from ..storage import SQLiteStore
 from .output import public_text_allowed
-
-logger = logging.getLogger("astrbot_plugin_livingemotion.promise")
 
 SEND_POOL = "send"
 SEND_PURPOSE = "behavior"

@@ -12,7 +12,6 @@ from __future__ import annotations
 import asyncio
 from contextvars import ContextVar
 import json
-import logging
 import math
 import random
 import re
@@ -22,6 +21,8 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
+
+from astrbot.api import logger
 
 from ..adapters.memory.base import MemoryGateway
 from ..adapters.weather import WeatherReport
@@ -65,10 +66,6 @@ def log_dream_skip(reason: str, *, key: str = "auto") -> None:
     if _DREAM_SKIP.get(key) == reason:
         return
     _DREAM_SKIP[key] = reason
-    try:
-        from astrbot.api import logger
-    except ImportError:  # 离线测试/独立运行没有宿主 logger。
-        logger = logging.getLogger("astrbot_plugin_livingemotion")
     logger.info("dream skipped: %s (scope=%s)", reason, key)
 
 
@@ -1292,7 +1289,7 @@ class ExperienceService:
                         period if kind == ContentKind.DIARY else
                         datetime.fromtimestamp(self._now(), ZoneInfo(self.policy.timezone)).date().isoformat()),
                         attempted_at=self._now(), http_status=getattr(exc, "http_status", None))
-                    logging.getLogger("astrbot_plugin_livingemotion").info(
+                    logger.info(
                         "%s preflight failed: %s HTTP=%s", kind.value, code, result["http_status"])
                     return result
         except _Rejected as exc:
@@ -1478,7 +1475,7 @@ class ExperienceService:
                             period if kind == ContentKind.DIARY else
                             datetime.fromtimestamp(requested_at, ZoneInfo(self.policy.timezone)).date().isoformat()),
                             "attempted_at": requested_at, "finished_at": self._now()})
-                logging.getLogger("astrbot_plugin_livingemotion").info(
+                logger.info(
                     "%s completed: day=%s status=%s reason=%s", kind.value, period, status, reason)
 
         requested_at = self._now()

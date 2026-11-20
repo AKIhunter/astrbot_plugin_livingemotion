@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import random
 import re
 import time
@@ -14,6 +13,8 @@ from datetime import datetime, time as wall_time, timedelta
 from pathlib import Path
 from uuid import uuid4
 from zoneinfo import ZoneInfo
+
+from astrbot.api import logger
 
 from ..adapters.astrbot import AstrBotBridge
 from ..adapters.behavior_sender import AstrBotBehaviorSender
@@ -49,7 +50,6 @@ from .console import ApplicationError as ApplicationError
 from .console import Console
 from .lifecycle import Lifecycle
 
-logger = logging.getLogger("astrbot_plugin_livingemotion.promise")
 from .materials import Materials
 from .models import Generation
 from .memory import AutoMemoryIngestor, build_memory_backend

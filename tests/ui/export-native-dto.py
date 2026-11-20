@@ -13,6 +13,10 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT.parent))
 
+from astrbot_plugin_livingemotion.scripts.offline_host import install_offline_api
+
+install_offline_api()
+
 from astrbot_plugin_livingemotion.config import Config
 from astrbot_plugin_livingemotion.contracts import BotAffect, Context, Event, NightState, SceneKind, StateWrite, to_dict
 from astrbot_plugin_livingemotion.domain.emotion import EmotionPolicy

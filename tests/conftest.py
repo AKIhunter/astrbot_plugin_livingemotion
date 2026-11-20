@@ -2,8 +2,22 @@ from dataclasses import replace
 
 import pytest
 
+# Runtime code always uses the host API; only this offline lane supplies a double.
+from astrbot_plugin_livingemotion.scripts.offline_host import install_offline_api
+
+install_offline_api()
+
 from astrbot_plugin_livingemotion.contracts import ActorRole, Context, Event, SceneKind
 from astrbot_plugin_livingemotion.storage import SQLiteStore
+
+
+@pytest.fixture
+def le_log():
+    from astrbot.api import logger
+
+    logger.clear()
+    yield logger
+    logger.clear()
 
 
 @pytest.fixture

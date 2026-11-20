@@ -10,6 +10,8 @@ from dataclasses import fields, replace
 from urllib.parse import urlsplit
 from uuid import uuid4
 
+from astrbot.api import logger
+
 from ..config import Config, LEGACY_FIELDS
 from .config_help import field_help, field_parent
 from .. import contracts
@@ -1222,8 +1224,7 @@ class Console:
         # 首次装配打一条，确认契约真的读到了，而不是静默降级。
         if not getattr(self, "_coupling_probe_logged", False):
             self._coupling_probe_logged = True
-            import logging
-            logging.getLogger("astrbot_plugin_livingemotion.promise").warning(
+            logger.warning(
                 "[LE-coupling] 探测 %s", [(row["kind"], row["connected"], row["effective"])
                                           for row in items] +
                 [("promise_actions", payload["promise_actions"]["active"], mode)])
@@ -1321,8 +1322,7 @@ class Console:
                 rows = await self._promises().promises.active(
                     scope_key=scope_key, limit=None)
             except Exception as exc:
-                import logging
-                logging.getLogger("astrbot_plugin_livingemotion.promise").warning(
+                logger.warning(
                     "[LE-promise] 面板查询失败 %r", exc)
                 rows = []
             # 全局面板不能拿当前查看对象当收件人；按任务自己的会话还原发送目标。
@@ -1376,9 +1376,8 @@ class Console:
                     "target_label": ("QQ群号" if group else "QQ号") if target and target.platform == "qq"
                                     else ("群 ID" if group else "用户 ID"),
                 })
-        import logging
         # 页面每 8 秒轮询一次 records，这条只能是 debug，否则日志会被刷屏。
-        logging.getLogger("astrbot_plugin_livingemotion.promise").debug(
+        logger.debug(
             "[LE-promise] 面板挂载 enabled=%s items=%d", enabled, len(items))
         return {"enabled": enabled, "items": items, "total": len(items)}
 

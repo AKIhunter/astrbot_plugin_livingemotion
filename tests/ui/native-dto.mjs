@@ -8111,16 +8111,16 @@ export const nativeDTO = {
   }
 };
 export const nativeDTOEvidence = {
-  "captured_at": "2026-11-20T15:20:36.682230+00:00",
+  "captured_at": "2026-11-20T15:38:25.215532+00:00",
   "field_count": 136,
   "scope": "real Console DTO / synthetic host / temporary database",
   "sources_sha256": {
     "config.py": "dd52dc440b67c599db014dee47bc3a7116e555d0d57338a610c23b529e05c9f1",
     "contracts.py": "9dbac4479c40cd83a476f7499cf35fce5ab994df87111cfe3eac111f5a87c0eb",
-    "runtime/console.py": "ffaea0030a2ac33e83f087694945c6ca684f2ce6e3cf5755a1b6ecc786512240",
+    "runtime/console.py": "b4832e21c40bcea981968e179278c459e7002da304ca7b3e63d440f642dfaf53",
     "runtime/config_help.py": "ccfdd0bcac20533334b0d20f9e050afb1a5fa719a5400186feb712bcc7594dd0",
     "storage/schema.py": "096a90b582af5d6694f957ff4df29a8d6230fa5dc880f8bff5fd33c2eba17115",
-    "storage/sqlite.py": "85c2addffc409e90323e3f79cf9a539c946223f661c13f0afc9a397d16e820a9",
+    "storage/sqlite.py": "aa7ec68eb8e57c7dd4fb948b5491677ca9b8858c69af34af3171f3ae3a8713b6",
     "storage/state_scope.py": "2b8e9fc28c36ea0d880aa0a21b7f98c1308d7b143f4a0db6be74734dbccb12e5",
     "storage/console_data.py": "c893e499a8564fde4f100ddf4a95b7eb6640cc961f02fd8e9e68e9a9badf7f61",
     "domain/relationship_inference.py": "73f329394e7094180b7824a0d329826bc7cda3a524c4f5f64a839284b5ec01e9",

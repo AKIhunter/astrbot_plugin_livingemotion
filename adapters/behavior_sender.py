@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-import logging
 import re
+
+from astrbot.api import logger
 
 from ..contracts import Context, stable_key
 from ..services.behavior import SendReceipt, SendRequest
 
-
-logger = logging.getLogger("astrbot_plugin_livingemotion.promise")
 
 # 分段之间的间隔：同一瞬间连发三条容易被适配器合并或触发频率限制。
 BUBBLE_GAP = 0.35

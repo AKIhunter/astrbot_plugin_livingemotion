@@ -15,16 +15,15 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import math
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from astrbot.api import logger
+
 from ..adapters.weather import WeatherReport
 from ..domain.dreaming import weather_affect
-
-logger = logging.getLogger("astrbot_plugin_livingemotion.weather")
 
 NEUTRAL = (0.0, 0.0, 0.0, 0.0)
 DEFAULT_POLL = 14400

@@ -24,6 +24,10 @@ import time
 PLUGIN = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PLUGIN.parent))
 
+from astrbot_plugin_livingemotion.scripts.offline_host import install_offline_api
+
+install_offline_api()
+
 from astrbot_plugin_livingemotion.api import LivingEmotionAPI
 from astrbot_plugin_livingemotion.config import Config
 from astrbot_plugin_livingemotion.contracts import Context, Event

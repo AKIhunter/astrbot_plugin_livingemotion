@@ -14,6 +14,10 @@ from collections import Counter
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT.parent))
+from offline_host import install_offline_api
+
+install_offline_api()
+
 from astrbot_plugin_livingemotion.config import Config, LEGACY_FIELDS
 from astrbot_plugin_livingemotion.runtime.console import Console, SETTINGS_GROUPS
 from astrbot_plugin_livingemotion.runtime.config_help import field_help

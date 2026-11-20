@@ -2,6 +2,24 @@
 
 适用0.7.0。metadata限定AstrBot 4.29.1–4.29.4，声明范围不代替各环境真实验收。
 
+## 支持平台
+
+`metadata.yaml.support_platforms`声明基础消息接入。各平台仍须提供原生发送者、Bot身份、
+私聊/群聊会话路由及有效人格；平台名称不替代来源校验。
+
+| 平台 / 适配器 | 源码支持范围 | 验证与投递边界 |
+| --- | --- | --- |
+| QQ · OneBot / `aiocqhttp` | 私聊/群聊状态、回复注入、QQ号码名单主动聊天 | 已有真实宿主与合成OneBot链路验收；原生通道取得有效message_id才确认发送，不能据此宣称真实平台最终送达 |
+| QQ · 官方机器人 / `qq_official` | 消息归一为QQ，接入情绪、关系和回复状态 | 非OneBot直发通道；后台使用宿主投递，其布尔结果不能作为平台确认，当前未独立验收官方机器人平台 |
+| Telegram / `telegram`、Discord / `discord` | 原生消息接入、情绪、关系和回复状态 | 源码接入，真实平台未实测；当前主动号码/群号名单仅面向QQ，不声明同等级主动投递能力 |
+| WebChat / `webchat` | 当前不支持 | 桥接入口明确返回webchat_special_persona_unsupported，不使用其他人格静默替代 |
+| 其他AstrBot适配器 | 可能满足通用原生事件契约 | 未逐项验证，不列入本次支持声明 |
+
+消息接入见[宿主桥](../adapters/astrbot.py)，来源要求见[身份校验](../adapters/identity.py)，
+主动名单见[运行入口](../runtime/application.py)，回执见[发送适配](../adapters/behavior_sender.py)。
+
+## 功能兼容
+
 | 路径 | 当前支持与边界 |
 | --- | --- |
 | 独立情绪、关系、作息、精力、主动行为 | 插件自己实现；按observe_only/active等实际模式执行 |

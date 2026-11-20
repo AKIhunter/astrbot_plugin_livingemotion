@@ -6,13 +6,14 @@ Only upstream transport/decorator/base dependencies are fixtures, never source m
 
 import asyncio
 import importlib.util
-import logging
 import os
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
+from astrbot.api import logger
+
 from astrbot_plugin_livingemotion.adapters.embedding import NativeEmbedding
 
 
@@ -23,7 +24,7 @@ def native(monkeypatch):
     for name in ("astrbot", "astrbot.core", prefix, prefix + ".sources"):
         module = ModuleType(name)
         module.__path__ = []
-        module.logger = logging.getLogger("p4-offline")
+        module.logger = logger
         monkeypatch.setitem(sys.modules, name, module)
 
     class Base:

@@ -8,18 +8,17 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 import re
 import time
 
 from dataclasses import replace
 
+from astrbot.api import logger
+
 from ..contracts import Context, rebuild_route, stable_key
 from ..storage.promise_store import (
     PromiseStore, bucket_label, fingerprint, parse_bucket,
 )
-
-logger = logging.getLogger("astrbot_plugin_livingemotion.promise")
 
 # 模型在回复末尾附带的指令；装饰阶段剔除，用户永远看不到。
 MARK = re.compile(r"<!--\s*promise\s*:\s*([^:：|]{1,12})\s*[:：|]\s*([^>\n]{1,300}?)\s*-->")

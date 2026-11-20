@@ -105,7 +105,7 @@ async def test_other_conversation_is_never_cancelled(scenario):
     assert (await s.service.promises.get(pid))["status"] == "scheduled"
 
 
-async def test_split_component_marker_is_hidden_and_cancelled_only_on_flush(scenario, caplog):
+async def test_split_component_marker_is_hidden_and_cancelled_only_on_flush(scenario, le_log):
     s = scenario
     pid = await seed(s, "窗边", kind="provider_error")
     event = Event()
@@ -125,7 +125,7 @@ async def test_split_component_marker_is_hidden_and_cancelled_only_on_flush(scen
     assert (await s.service.promises.get(pid))["status"] == "waiting"
     await Application.flush_promises(app, s.context, event, cleaned)
     assert (await s.service.promises.get(pid))["status"] == "cancelled"
-    assert "承诺取消 状态=cancelled 数量=1" in caplog.text
+    assert "承诺取消 状态=cancelled 数量=1" in le_log.text
 
 
 async def test_blocked_reply_does_not_cancel(scenario):

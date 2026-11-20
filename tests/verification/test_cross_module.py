@@ -241,7 +241,7 @@ async def test_application_interaction_trace_expression_behavior_and_mode_contro
 
 
 async def test_correlation_records_and_health_exclude_private_body_and_exception(
-    le_store, le_event, real_history_behavior, caplog, capsys,
+    le_store, le_event, real_history_behavior, le_log, capsys,
 ):
     marker = "SYNTHETIC_PRIVATE_BODY_NOT_FOR_DIAGNOSTICS"
     api = facade(le_store)
@@ -279,7 +279,7 @@ async def test_correlation_records_and_health_exclude_private_body_and_exception
         assert intents["items"][0]["reason_code"]
         plain = json.dumps([records, diagnostic, intents, await le_store.health()])
         captured = capsys.readouterr()
-        assert marker not in plain + caplog.text + captured.out + captured.err
+        assert marker not in plain + le_log.text + captured.out + captured.err
     finally:
         await runtime.stop()
 

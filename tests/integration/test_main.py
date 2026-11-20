@@ -8,6 +8,8 @@ from types import ModuleType, SimpleNamespace
 
 import pytest
 
+from astrbot.api import logger
+
 from astrbot_plugin_livingemotion.contracts import Context
 from astrbot_plugin_livingemotion.runtime.application import SUFFIX
 from test_application import Message, application
@@ -40,7 +42,7 @@ def hooks(monkeypatch):
     )
     surfaces = {
         "astrbot": {},
-        "astrbot.api": {"AstrBotConfig": dict},
+        "astrbot.api": {"AstrBotConfig": dict, "logger": logger},
         "astrbot.api.event": {"AstrMessageEvent": HostMessage, "filter": event_filter},
         "astrbot.api.provider": {"ProviderRequest": SimpleNamespace},
         "astrbot.api.star": {"Context": object, "Star": object,

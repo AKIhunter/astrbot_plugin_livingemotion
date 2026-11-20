@@ -9,7 +9,6 @@ import asyncio
 import dataclasses
 import enum
 import json
-import logging
 import os
 from pathlib import Path
 import sys
@@ -69,6 +68,8 @@ async def run(livinghello):
     sys.path.insert(0, str(livinghello))
     import run_offline_tests
     run_offline_tests.install_framework_stubs()
+    from astrbot.api import logger
+
     sys.path.insert(0, str(livinghello / "tests"))
     import host_fixtures
     from astrbot.core.agent.tool import FunctionTool, ToolSet
@@ -82,7 +83,7 @@ async def run(livinghello):
         builtin_tool=lambda **_: lambda cls: cls,
         _CRON_TOOL_CONFIG={},
         CronJobSchedulingError=type("CronJobSchedulingError", (Exception,), {}),
-        logger=logging.getLogger("promise-native"), ZoneInfo=__import__("zoneinfo").ZoneInfo,
+        logger=logger, ZoneInfo=__import__("zoneinfo").ZoneInfo,
         datetime=__import__("datetime").datetime, dt_timezone=__import__("datetime").timezone,
         _parse_run_at=lambda value: __import__("datetime").datetime.fromisoformat(value),
     )

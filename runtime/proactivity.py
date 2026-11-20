@@ -3,6 +3,8 @@
 import asyncio
 import random
 
+from astrbot.api import logger
+
 from ..contracts import BehaviorIntent, stable_key
 from ..domain.proactivity import choose_motive, initiative_probability, motives
 from ..storage.proactivity import claim_opportunity, finish_opportunity, last_activity
@@ -37,9 +39,7 @@ class Proactivity:
             logged = getattr(self, "_native_yield_logged", set())
             if context.scope_key not in logged:
                 self._native_yield_logged = logged | {context.scope_key}
-                import logging
-
-                logging.getLogger("astrbot_plugin_livingemotion.promise").warning(
+                logger.warning(
                     "[LE-behavior] 宿主任务 %s target=%s，前后15分钟随机主动让行",
                     [job.get("id") for job in yielding], context.scene_id)
             return

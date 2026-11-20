@@ -160,7 +160,7 @@ async def test_console_save_schema_and_handoff_read_the_same_limit(tmp_path):
         await app.terminate()
 
 
-async def test_prompt_extra_is_bounded_with_many_long_paused_items(tmp_path, caplog):
+async def test_prompt_extra_is_bounded_with_many_long_paused_items(tmp_path, le_log):
     app, _, _ = await application(tmp_path, {"timezone": "UTC"})
     try:
         msg = Message("source", "请画猫")
@@ -176,7 +176,7 @@ async def test_prompt_extra_is_bounded_with_many_long_paused_items(tmp_path, cap
         text = request.extra_user_content_parts[0].text
         assert "共6条，列出前3条" in text
         assert text.count("暂停 ID=") == 3
-        assert "总数=6 展示=3" in caplog.text
+        assert "总数=6 展示=3" in le_log.text
         assert len(text) - len(PROMISE_CONTRACT) <= 1200
         assert len(await service.active(context)) == 6
     finally:

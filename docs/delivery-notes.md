@@ -19,6 +19,9 @@ node tests/ui/promise-cancel-browser.test.mjs
 ## 检查分层
 
 默认pytest覆盖规则、存储、运行时、便携预算和F6回归。
+插件日志统一从`astrbot.api`导入`logger`，由宿主控制插件日志级别和归属。
+便携测试、文档检查和UI样本导出通过`scripts/offline_host.py`提供隔离的API记录器；
+生产代码不使用内置`logging`，也不为缺少宿主提供日志兜底。
 tests/host、tests/console/test_console.py、tests/budgets/test_model_payload.py为显式宿主层；
 依赖固定AstrBot快照，不能把缺依赖跳过当作通过。
 显式双插件映射使用LIVINGHELLO_SOURCE，命令见[提示词调整](image-prompt-retry.md#离线复测)。

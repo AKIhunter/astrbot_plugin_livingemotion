@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-import logging
 import json
 import sqlite3
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..contracts import rebuild_route
+from astrbot.api import logger
 
-logger = logging.getLogger("astrbot_plugin_livingemotion.promise")
+from ..contracts import rebuild_route
 
 # 只认明确指向"主动找人说话"的措辞。不要把「提醒」「日记」这类
 # 也算了进来——它们各有自己的通道，算进来会让主动行为被永久让行。

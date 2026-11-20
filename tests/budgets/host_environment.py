@@ -29,6 +29,11 @@ def configure_host(source=None):
         host_version = tomllib.load(stream)["project"]["version"]
     if any(value is None for value in packages(("openai", "httpx")).values()):
         raise RuntimeError("host_sdk_dependencies_missing")
+    # Portable collection uses a minimal API double; the explicit native lane
+    # replaces only that double before importing its supplied host snapshot.
+    from astrbot_plugin_livingemotion.scripts.offline_host import remove_offline_api
+
+    remove_offline_api()
     loaded = sys.modules.get("astrbot")
     if loaded is not None and not Path(loaded.__file__).resolve().is_relative_to(root):
         raise RuntimeError("different_host_already_imported")

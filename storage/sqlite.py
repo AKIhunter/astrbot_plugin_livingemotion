@@ -15,6 +15,8 @@ from pathlib import Path
 from typing import Any, TypeVar
 from weakref import WeakValueDictionary
 
+from astrbot.api import logger
+
 from ..config import Config
 from ..contracts import (
     BehaviorIntent,
@@ -1085,8 +1087,7 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
                     previous_context = value["context"]
                     if any(previous_context[name] != getattr(context, name) for name in
                            ("identity_revision", "persona_revision", "route")):
-                        import logging as _logging
-                        _logging.getLogger("astrbot_plugin_livingemotion.promise").warning(
+                        logger.warning(
                             "[LE-intent] context 变化 %r",
                             {n: (previous_context.get(n), getattr(context, n))
                              for n in ("identity_revision", "persona_revision", "route")

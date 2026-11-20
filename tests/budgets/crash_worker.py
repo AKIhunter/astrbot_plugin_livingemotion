@@ -7,6 +7,10 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
+from astrbot_plugin_livingemotion.scripts.offline_host import install_offline_api
+
+install_offline_api()
+
 from budget_support import Rig
 
 

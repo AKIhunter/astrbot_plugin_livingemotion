@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from astrbot.api import logger
+
 from ..adapters.weather import WeatherReport
 from ..contracts import ContentKind, Experience, prompt_json
 from ..prompt_precision import EMOTION_FIELDS, prompt_mood, prompt_numbers
@@ -170,8 +172,7 @@ class ManualExperienceService:
                 http_status = getattr(exc, "http_status", None)
                 if type(http_status) is int:
                     reason = f"{reason}:{http_status}"
-                import logging
-                logging.getLogger("astrbot_plugin_livingemotion").info(
+                logger.info(
                     "%s completed: day=%s status=%s reason=%s", snapshot.kind, snapshot.day, status, reason)
                 await self.store.mark_experience_job(snapshot.request_id, status, reason)
                 if dispatched:

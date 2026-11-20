@@ -1,9 +1,8 @@
 """AstrBot entry point; domain/storage imports remain independent of this file."""
 
-import logging
 import sys
 
-from astrbot.api import AstrBotConfig
+from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star, StarTools, register
@@ -11,9 +10,6 @@ from astrbot.api.star import Context, Star, StarTools, register
 from .runtime.application import Application
 from .runtime.reply_alert import ALERT_ID, ALERT_TEXT, ReplyBlockAlert
 from .livinghello_coupling import allowed as coupling_allowed
-
-logger = logging.getLogger(__name__)
-
 
 def _private_route(event) -> str | None:
     """只在私聊里回告警：群里冒出技术提示会毁掉角色扮演。"""

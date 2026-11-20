@@ -1,5 +1,7 @@
 """Host-registered private console handlers; no autonomous tasks or business I/O."""
 
+from astrbot.api import logger
+
 from .errors import ConsoleError, public_error
 from .guard import require_dashboard_user
 from .protocols import ConsoleApplication, HostContext
@@ -137,8 +139,7 @@ class PageAPI:
             return json_response({"status": "ok", "data": result}, headers=RESPONSE_HEADERS)
         except Exception as exc:
             # 兜底错误会把真实原因吞成 unavailable，排障时必须留原始栈。
-            import logging
-            logging.getLogger("astrbot_plugin_livingemotion.console").warning(
+            logger.warning(
                 "[LE-api] %s 失败: %r", operation, exc, exc_info=True)
             error = public_error(exc)
             return json_response(
