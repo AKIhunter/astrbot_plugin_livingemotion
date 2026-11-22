@@ -177,7 +177,7 @@ class ImagePromiseAction:
                                 notice="自动调整次数已经用完，我先保留当前需求。")
                 return await self.hold(context, pid, artifact, prompt, original)
             kind = artifact.get("kind")
-            if kind in {"content_rejected", "prompt_too_long"}:
+            if kind in {"content_rejected", "prompt_too_long", "prompt_adjustment_required"}:
                 method = getattr(peer, "prepare_image_prompt_repair", None)
                 if count >= limit or artifact.get("use_reference") or not callable(method):
                     return await self.hold(context, pid, artifact, prompt, original)
@@ -194,6 +194,8 @@ class ImagePromiseAction:
                     context, "closing",
                     "为同一张图片整理提示词，只允许等义局部替换，不规避内容规则。"
                     "不能改变人物、年龄、衣着覆盖度、场景、风格、姿势或表情。"
+                    "替换后的短句必须保留原句出现过的身体部位词（如肚脐、腰部、锁骨、肩）"
+                    "与覆盖度词（如露出来、若隐若现），只替换修饰词；"
                     "若必须改变画面，changes_scene=true，等待用户确认。"
                     "只输出JSON：{\"changes_scene\":false,\"substitutions\":["
                     "{\"from\":\"原词\",\"to\":\"等义词\"}]}。"
@@ -239,7 +241,7 @@ class ImagePromiseAction:
                            "prompt_retry_count": count,
                            "adjustment_round": int(prior.get("adjustment_round") or 0)}
                 kind = failure.get("kind")
-                if kind in {"content_rejected", "prompt_too_long"}:
+                if kind in {"content_rejected", "prompt_too_long", "prompt_adjustment_required"}:
                     prompt = str(failure.get("attempted_prompt") or failure["prompt"])
                     artifact = failure
                     if not await store.checkpoint_action(pid, "retry_ready", artifact):
