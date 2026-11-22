@@ -602,25 +602,17 @@ class PromiseService:
                     and current.get("adjustment_notice_attempt") == attempt
                     and current.get("action_result_json") == payload)
 
-        # 只说用户听得懂的情况；编号、执行状态和上游正文留在内部。
+        # 目标导向 + 人格化：失败时像人一样找个生活化的借口（手机出问题、晚点拍），
+        # 绝不暴露内部状态；承诺仍挂着（defer 重试），只是给用户一句「晚点给」。
+        # 耗尽预算的 hold 也不例外——下次轮询还会自动再试，不需要用户做任何事。
         kind = artifact.get("kind") or claimed.get("last_error")
-        if kind in ("result_unknown", "image_action_unknown", "action_interrupted"):
-            text = "这张还没能确认有没有做好，我先不重复做。你想先核对一下，还是这次就算了？"
-        elif kind == "delivery_unknown" or artifact.get("stage") == "delivery":
-            text = "图片已经弄好了，但还不能确认你有没有收到。你收到这张了吗？如果这次算了，我就停止后续处理。"
-        elif kind == "quota_exhausted":
-            text = "今天的画图额度已经用完，这张还没开始。你想之后重新约时间，还是这次就算了？"
-        elif artifact.get("notice"):
-            # guard 拦截类：用户没法对着内部校验规则「调整」；只报结论给二选一。
-            text = "这张暂时没画成，我换个时机再试试，或者你说句别的我重新来。"
-        elif kind not in ("content_rejected", "prompt_too_long", "prompt_adjustment_required"):
-            text = "这张没能弄好，我先停一下。你想调整一下描述再试，还是这次就算了？"
-        elif int(artifact.get("adjustment_round") or 0) > 0:
-            text = ("按你刚才改的想法又试了一下，还是没能弄好，有些内容我暂时做不了。"
-                    "我先停在这里。你想再调整一下，还是这次就算了？")
-        else:
-            text = ("这张没能弄好，有些内容我暂时做不了。"
-                    "你想换个人物、场景或风格再试试，还是这次就算了？")
+        excuses = [
+            "手机好像有点卡，图还没渲染完，晚点再给你哈",
+            "刚才网络抽了一下，这张得晚点才出，别急",
+            "拍到一半手机出了点小问题，我过会儿重新拍一张发你",
+            "图片处理到一半卡住了，晚点我重新给你拍",
+        ]
+        text = excuses[int(claimed.get("adjustment_notice_attempt") or 0) % len(excuses)]
         if context.scene_kind.value == "group":
             text = f"@{context.account_id} " + text
         try:
