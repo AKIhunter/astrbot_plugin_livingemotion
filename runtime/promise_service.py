@@ -451,6 +451,15 @@ class PromiseService:
                                     or artifact.get("stage") == "delivery"
                                     or artifact.get("kind") == "delivery_unknown"
                                     else "result_unknown")
+                if artifact["kind"] == "result_unknown":
+                    # 结果未知 = 上游瞬时故障（失败不计费）。目标导向：预算内静默
+                    # defer 重试，不追问——用户既不知道也无法「核对」什么。
+                    # （2026-11-22 f5e507fb：同 prompt 立即复测 200。）
+                    await self.promises.defer(
+                        promise_id, retry_at=self.store.clock() + RETRY_BACKOFF,
+                        error="image_result_unknown",
+                        max_retry=max(0, self.retry_limit - int(artifact.get("prompt_retry_count") or 0)))
+                    return False
                 await self.promises.hold_image_failure(context, promise_id, artifact, state="unknown")
                 return False
             if status == "waiting":
@@ -602,7 +611,8 @@ class PromiseService:
         elif kind == "quota_exhausted":
             text = "今天的画图额度已经用完，这张还没开始。你想之后重新约时间，还是这次就算了？"
         elif artifact.get("notice"):
-            text = str(artifact["notice"])[:200] + "你想调整一下，还是这次就算了？"
+            # guard 拦截类：用户没法对着内部校验规则「调整」；只报结论给二选一。
+            text = "这张暂时没画成，我换个时机再试试，或者你说句别的我重新来。"
         elif kind not in ("content_rejected", "prompt_too_long", "prompt_adjustment_required"):
             text = "这张没能弄好，我先停一下。你想调整一下描述再试，还是这次就算了？"
         elif int(artifact.get("adjustment_round") or 0) > 0:
