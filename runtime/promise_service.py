@@ -30,7 +30,7 @@ MAX_DEPTH = 3
 MAX_ADVANCE = 3
 # 默认重试3次，可在配置中设0–10；每次推后5分钟。
 RETRY_BACKOFF = 300.0
-MAX_RETRY = 3
+MAX_RETRY = 5
 # 会话不在内存时多久再试。用户一说话 source 就回来，所以不必等太久。
 CONTEXT_WAIT = 60.0
 
@@ -428,8 +428,8 @@ class PromiseService:
                     "generating", "sending", "unknown") else "unavailable"}
                 if phase == "sent":
                     outcome = {"status": "sent", "text": current.get("delivered_text") or "图片已发送"}
-                logger.warning("[LE-promise] 图片执行异常 %s phase=%s type=%s",
-                               promise_id[:8], phase, type(exc).__name__)
+                logger.warning("[LE-promise] 图片执行异常 %s phase=%s type=%s detail=%s",
+                               promise_id[:8], phase, type(exc).__name__, str(exc)[:160])
             status = outcome.get("status")
             if status == "sent":
                 text = str(outcome.get("text") or "图片已发送")

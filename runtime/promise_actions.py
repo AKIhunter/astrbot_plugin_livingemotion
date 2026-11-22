@@ -183,6 +183,13 @@ class ImagePromiseAction:
                     return await self.hold(context, pid, artifact, prompt, original)
                 if not await allowed():
                     return {"status": "rejected"}
+                learned_pairs = []
+                learn_method = getattr(peer, "get_image_prompt_learned", None)
+                if callable(learn_method):
+                    try:
+                        learned_pairs = learn_method() or []
+                    except Exception:
+                        learned_pairs = []
                 answer = await self.app.purpose_model(
                     context, "closing",
                     "为同一张图片整理提示词，只允许等义局部替换，不规避内容规则。"
@@ -194,7 +201,8 @@ class ImagePromiseAction:
                     "不能保证通过生图服务；没有合适等义调整就给空列表。",
                     prompt_json({"prompt": prompt, "reason": kind,
                                  "image_model": policy.get("scope", {}).get("model"),
-                                 "limits": policy.get("limits")}),
+                                 "limits": policy.get("limits"),
+                                 "tested_pairs": learned_pairs}),
                     stable_key("promise-image-repair", pid, count, prompt),
                     max_output_tokens=500, delivery=True)
                 try:

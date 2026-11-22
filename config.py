@@ -150,7 +150,7 @@ class Config:
     promise_max_depth: int = 3
     promise_advance_limit: int = 3
     promise_tick_seconds: int = 15
-    promise_retry_limit: int = 3
+    promise_retry_limit: int = 5
     promise_wait_timeout_hours: int = 24
     # 承诺兑现的片段缓存：兑现后一段时间内，用户追问直接读这份快照，
     # 不再走向量检索。默认一天；到期即释放，回到正常检索。

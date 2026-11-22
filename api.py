@@ -334,8 +334,12 @@ class LivingEmotionAPI:
         if not self._active or not self._config.enabled or app is None or app.closed:
             raise ValueError("plugin_unavailable")
         timed = bool(event.get_extra("cron_job") or event.get_extra("livingemotion:promise_id"))
-        if context is None and timed:
+        handoff = bool(event.get_extra("_livinghello_image_failure"))
+        if context is None and (timed or handoff):
             # 宿主 cron 没有入站消息钩子：只从已登记的真实会话重建来源。
+            # 聊天直出的失败交接（issue #9）：LH 侧事件没有 context 参数，
+            # 但事件自带 sender/route——与 cron 同样只认已登记的真实会话，
+            # 不从文本或昵称推导身份。交接发生在原始请求之后，用 delivery 校验。
             sender = str(event.get_sender_id())
             route = str(event.unified_msg_origin)
             candidates = [c for c in await self._store.list_contexts()
@@ -345,7 +349,8 @@ class LivingEmotionAPI:
             context = next((replace(c, route=route) for c in candidates
                             if rebuild_route(c) == route), None)
         scope = self._context(context)
-        check = app.validate_delivery if timed else app.validate_context
+        check = (app.validate_delivery if (timed or handoff)
+                 else app.validate_context)
         if (scope.instance_id != self._instance_id or not scope.route
                 or scope.route != getattr(event, "unified_msg_origin", None)
                 or scope.account_id != str(event.get_sender_id())
