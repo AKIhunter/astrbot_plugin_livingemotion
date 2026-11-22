@@ -602,17 +602,46 @@ class PromiseService:
                     and current.get("adjustment_notice_attempt") == attempt
                     and current.get("action_result_json") == payload)
 
-        # 目标导向 + 人格化：失败时像人一样找个生活化的借口（手机出问题、晚点拍），
-        # 绝不暴露内部状态；承诺仍挂着（defer 重试），只是给用户一句「晚点给」。
-        # 耗尽预算的 hold 也不例外——下次轮询还会自动再试，不需要用户做任何事。
+        # 目标导向 + 人格化（2026-11-22 定稿）：失败不重复用户消息、不问「怎么改」，
+        # 用 closing 模型按人格/情绪/关系生成一句生活化的「晚点给」话术；
+        # 生成失败回退到固定借口。承诺 defer 重试在后台继续，用户无感。
         kind = artifact.get("kind") or claimed.get("last_error")
-        excuses = [
-            "手机好像有点卡，图还没渲染完，晚点再给你哈",
-            "刚才网络抽了一下，这张得晚点才出，别急",
-            "拍到一半手机出了点小问题，我过会儿重新拍一张发你",
-            "图片处理到一半卡住了，晚点我重新给你拍",
-        ]
-        text = excuses[int(claimed.get("adjustment_notice_attempt") or 0) % len(excuses)]
+        text = None
+        try:
+            persona = await self.app.persona_style(
+                context.persona_id, getattr(self.app.config, "persona_prompt", ""))
+            try:
+                emo = await self.app._snapshot(context, "emotion", {}) or {}
+                mood = emo.get("mood") or emo.get("value") or {}
+                mood_desc = "、".join(
+                    f"{k}{v:+.1f}" for k, v in list(mood.items())[:3]) if isinstance(mood, dict) and mood else "平静"
+            except Exception:
+                mood_desc = "平静"
+            from ..contracts import prompt_json
+            text = await self.app.purpose_model(
+                context, "closing",
+                "你正在和关系亲密的人聊天。刚才答应给对方拍一张图片，但后台出了点小状况，"
+                "一时半会儿出不来。请按你的人设和当前情绪，用一两句生活化的口语告诉对方"
+                "「晚点才能给」，可以找个自然的借口（手机卡了、网络抽了、拍到一半出问题等），"
+                "语气要符合你们当下的关系和你的情绪状态。"
+                "只输出这句话本身，不要解释原因细节，不要承诺具体时间。"
+                "不要重复对方的消息，不要问对方该怎么办。",
+                prompt_json({"persona": persona[:800], "mood": mood_desc,
+                             "relation": str(getattr(context, "relation", "亲密"))}),
+                stable_key("promise-excuse", pid, str(artifact.get("request_id")),
+                           str(claimed.get("adjustment_notice_attempt") or 0)),
+                max_output_tokens=120, delivery=True)
+            text = (text or "").strip().strip('"')[:120]
+        except Exception:
+            text = None
+        if not text:
+            excuses = [
+                "手机好像有点卡，图还没渲染完，晚点再给你哈",
+                "刚才网络抽了一下，这张得晚点才出，别急",
+                "拍到一半手机出了点小问题，我过会儿重新拍一张发你",
+                "图片处理到一半卡住了，晚点我重新给你拍",
+            ]
+            text = excuses[int(claimed.get("adjustment_notice_attempt") or 0) % len(excuses)]
         if context.scene_kind.value == "group":
             text = f"@{context.account_id} " + text
         try:
