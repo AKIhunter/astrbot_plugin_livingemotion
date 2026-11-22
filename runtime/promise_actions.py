@@ -208,7 +208,11 @@ class ImagePromiseAction:
                     prompt_json({"prompt": prompt, "reason": kind,
                                  "image_model": policy.get("scope", {}).get("model"),
                                  "limits": policy.get("limits"),
-                                 "tested_pairs": learned_pairs}),
+                                 "tested_pairs": learned_pairs,
+                                 "retry_note": (
+                                     "上一轮提议因可能改变姿势、表情、年龄或衣着覆盖度被拒。"
+                                     "请换一处词，或改用不含上述敏感概念的等义写法。"
+                                     if count else "")}),
                     stable_key("promise-image-repair", pid, count, prompt),
                     max_output_tokens=500, delivery=True)
                 try:
@@ -219,9 +223,16 @@ class ImagePromiseAction:
                 if not await allowed():
                     return {"status": "rejected"}
                 if not isinstance(repair, dict) or repair.get("status") != "ready":
+                    # 改词提议被拒是「这一轮不行」，不是「需要用户决策」：
+                    # 计数器 +1 后重提（最多 limit 轮），只有预算耗尽才 hold 交出。
+                    # 2026-11-22 实测 19983c5d：只提一次就 hold 挂死 30 分钟。
                     if isinstance(repair, dict) and repair.get("notice"):
                         artifact.update(kind="prompt_adjustment_required", notice=repair["notice"])
-                    return await self.hold(context, pid, artifact, prompt, original)
+                    artifact["prompt_retry_count"] = count + 1
+                    artifact["prompt"] = prompt
+                    if not await store.checkpoint_action(pid, "retry_ready", artifact):
+                        return {"status": "rejected"}
+                    continue
                 artifact.update(prompt_repair=repair, kind="adjusted_prompt",
                                 prompt=prompt, original_prompt=original, prompt_retry_count=count + 1)
                 count += 1
