@@ -55,7 +55,7 @@ jobs:
           cache-dependency-path: astrbot_plugin_livingemotion/requirements-dev.txt
       - name: Install test dependencies
         # Paired acceptance compiles the real host tool and validates its parameters.
-        run: python -m pip install --index-url https://pypi.org/simple -r requirements-dev.txt pydantic==2.14.3 jsonschema==4.26.0
+        run: python -m pip install --index-url https://pypi.org/simple -r requirements-dev.txt pydantic==2.14.3 jsonschema==4.26.0 mcp==2.3.0
       - name: Check dependency consistency
         run: python -m pip check
       - name: Record resolved dependencies
