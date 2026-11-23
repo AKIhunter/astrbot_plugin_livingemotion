@@ -6,6 +6,8 @@
 
 [简体中文](README.md) · **English**
 
+DSH prerelease: `dsh/v0.1.0-alpha.1`. See the [DSH compatibility guide](docs/DSH.md) for the separate package and limited scope. The following describes AstrBot.
+
 Give AstrBot personas persistent mood, relationships and daily routines, with expression that follows
 their current state and delayed promises that execute when due. Local mood rules need no model calls.
 The console refreshes automatically while preserving drafts; proactive chat, journals, dreams and memory
