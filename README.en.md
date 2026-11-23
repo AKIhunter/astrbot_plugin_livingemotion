@@ -2,7 +2,7 @@
 
 ![livingEmotion wordmark and state lines](.github/img/Banner.png)
 
-[![Version](https://img.shields.io/badge/version-0.7.0-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.7.1-3a8060)](CHANGELOG.md)
 
 [简体中文](README.md) · **English**
 
@@ -50,6 +50,6 @@ Successful wording substitutions are scoped by the actual image provider, model 
 Model generation can incur provider charges. Normal use needs neither Node nor an external CDN.
 Developer: [AKIhunter](https://github.com/AKIhunter). Feedback QQ group: 991350637.
 
-0.7.0 adds contextual object analysis, control-based expression and readable model names.
+0.7.1 preserves image failure diagnostics, separates user adjustment rounds, and prevents automatic regeneration of unknown results. Pair with LH 2.9.6.
 SQLite upgrades automatically to v9 without filling missing historical control values.
 No new configuration keys; three-decimal model inputs and scheduled greeting coordination remain.

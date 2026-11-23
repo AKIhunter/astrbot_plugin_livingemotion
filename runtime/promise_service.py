@@ -428,8 +428,19 @@ class PromiseService:
                     "generating", "sending", "unknown") else "unavailable"}
                 if phase == "sent":
                     outcome = {"status": "sent", "text": current.get("delivered_text") or "图片已发送"}
-                logger.warning("[LE-promise] 图片执行异常 %s phase=%s type=%s detail=%s",
-                               promise_id[:8], phase, type(exc).__name__, str(exc)[:160])
+                # 异常正文可能含上游凭据；回执只保留异常类型（issue #9）。
+                try:
+                    artifact = json.loads(current.get("action_result_json") or "{}")
+                except (ValueError, TypeError):
+                    artifact = {}
+                if not isinstance(artifact, dict):
+                    artifact = {}
+                artifact["exception_type"] = type(exc).__name__
+                if phase not in ("sent",):
+                    await self.promises.checkpoint_action(
+                        promise_id, phase or "retry_ready", artifact)
+                logger.warning("[LE-promise] 图片执行异常 %s phase=%s type=%s",
+                               promise_id[:8], phase, type(exc).__name__)
             status = outcome.get("status")
             if status == "sent":
                 text = str(outcome.get("text") or "图片已发送")
@@ -451,15 +462,7 @@ class PromiseService:
                                     or artifact.get("stage") == "delivery"
                                     or artifact.get("kind") == "delivery_unknown"
                                     else "result_unknown")
-                if artifact["kind"] == "result_unknown":
-                    # 结果未知 = 上游瞬时故障（失败不计费）。目标导向：预算内静默
-                    # defer 重试，不追问——用户既不知道也无法「核对」什么。
-                    # （2026-11-22 f5e507fb：同 prompt 立即复测 200。）
-                    await self.promises.defer(
-                        promise_id, retry_at=self.store.clock() + RETRY_BACKOFF,
-                        error="image_result_unknown",
-                        max_retry=max(0, self.retry_limit - int(artifact.get("prompt_retry_count") or 0)))
-                    return False
+                # 超时、丢图或未知回执不证明上游未执行，不能换 ID 再收费。
                 await self.promises.hold_image_failure(context, promise_id, artifact, state="unknown")
                 return False
             if status == "waiting":
@@ -608,6 +611,9 @@ class PromiseService:
         kind = artifact.get("kind") or claimed.get("last_error")
         text = None
         try:
+            # 未知结果不能用「重新拍」借口掩盖；也无需额外付费生成核对说明。
+            if kind in {"result_unknown", "delivery_unknown"}:
+                raise ValueError("unknown_result_notice")
             persona = await self.app.persona_style(
                 context.persona_id, getattr(self.app.config, "persona_prompt", ""))
             try:
@@ -635,13 +641,10 @@ class PromiseService:
         except Exception:
             text = None
         if not text:
-            excuses = [
-                "手机好像有点卡，图还没渲染完，晚点再给你哈",
-                "刚才网络抽了一下，这张得晚点才出，别急",
-                "拍到一半手机出了点小问题，我过会儿重新拍一张发你",
-                "图片处理到一半卡住了，晚点我重新给你拍",
-            ]
-            text = excuses[int(claimed.get("adjustment_notice_attempt") or 0) % len(excuses)]
+            text = {
+                "result_unknown": "这张还没拿到结果，我先核对一下，暂时不重复生成。",
+                "delivery_unknown": "图片已经做好了，不过还不确定你有没有收到，我先核对一下。",
+            }.get(kind, "这张暂时还没弄好，我先保留着。")
         if context.scene_kind.value == "group":
             text = f"@{context.account_id} " + text
         try:

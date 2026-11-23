@@ -41,7 +41,7 @@ async def test_legacy_waiting_is_asked_once_across_restart(scenario):
     assert await s.service.run_due() == 0
     notice.assert_awaited_once()
     text = notice.call_args.args[1]
-    assert "换个人物、场景或风格" in text and "还是这次就算了？" in text
+    assert "暂时还没弄好" in text and "保留" in text
     assert not any(word in text for word in ("任务", "接口", "待办", "服务", pid[:8]))
     assert (await s.service.promises.get(pid))["adjustment_notice_state"] == "sent"
     assert s.peer.calls == 0 and not s.sends
@@ -74,9 +74,11 @@ async def test_non_content_failures_receive_one_followup_without_image_retry(sce
     await s.service.run_due()
     notice.assert_awaited_once()
     text = notice.call_args.args[1]
-    assert "算了" in text
     if "unknown" in kind:
         assert "核对" in text or "收到" in text
+        s.app.purpose_model.assert_not_awaited()
+    else:
+        assert "暂时还没弄好" in text
     await s.service.run_due()
     notice.assert_awaited_once()
     assert s.peer.calls == 0
@@ -317,8 +319,7 @@ async def test_adjusted_request_can_ask_again_after_new_rejection(scenario):
     assert notice.call_args_list[0].args[2] != notice.call_args_list[1].args[2]
     assert s.peer.generate_deferred_image.await_count == 1
     text = notice.call_args.args[1]
-    assert "按你刚才改的想法又试了一下" in text
-    assert "再调整一下" in text and "还是这次就算了？" in text
+    assert "暂时还没弄好" in text and "保留" in text
     assert not any(word in text for word in ("任务", "接口", "待办", "服务", pid[:8]))
     row = await s.service.promises.get(pid)
     assert json.loads(row["action_result_json"])["adjustment_round"] == 1
@@ -362,7 +363,9 @@ async def test_photo_selfie_and_drawing_share_adjustment_choice(scenario, descri
     s = scenario
     pid = await add(s, description)
     notice = isolate_notice(s)
-    s.app.purpose_model = AsyncMock(return_value="窗边的自拍")
+    s.app.purpose_model = AsyncMock(side_effect=[
+        "窗边的自拍", "这张暂时还没弄好，晚点再给你。",
+        "这张暂时还没弄好，晚点再给你。"])
     s.peer.generate_deferred_image = AsyncMock(return_value={
         "status": "unknown", "failure": {**failure(), "prompt": "窗边的自拍"}})
     await s.service.run_due()
@@ -374,7 +377,7 @@ async def test_photo_selfie_and_drawing_share_adjustment_choice(scenario, descri
     await s.service.run_due()
     assert notice.await_count == 2
     text = notice.call_args.args[1]
-    assert "还是没能弄好" in text and "再调整一下" in text and "还是这次就算了？" in text
+    assert text == "这张暂时还没弄好，晚点再给你。"
     assert "画" not in text
     assert (await s.service.cancel(s.context))["status"] == "cancelled"
     await s.service.run_due()
@@ -457,7 +460,7 @@ async def test_facade_never_interprets_cancel_as_adjustment(tmp_path, text):
         await app.terminate()
 
 
-async def test_actual_notice_executor_sends_once_without_model(tmp_path):
+async def test_actual_notice_executor_falls_back_once_when_closing_unavailable(tmp_path):
     app, host, scope, pid = await api_app(tmp_path)
     try:
         app._preparation_guard = AsyncMock(return_value=True)
@@ -467,7 +470,7 @@ async def test_actual_notice_executor_sends_once_without_model(tmp_path):
         assert host.sends == 1
         row = await app._promises().promises.get(pid)
         assert row["status"] == "waiting" and row["adjustment_notice_state"] == "sent"
-        app.purpose_model.assert_not_awaited()
+        app.purpose_model.assert_awaited_once()
     finally:
         await app.terminate()
 

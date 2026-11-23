@@ -38,7 +38,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: AKIhunter/astrbot_plugin_livinghello
-          ref: c507f7a1dbff4414adc53f1eb31e5a8b41f389fc
+          ref: 20bdd7c1b5efee475b81ad6be6e28802a3b119ae
           path: .image-prompt-peer
           persist-credentials: false
       - name: Pin isolated AstrBot image contract source

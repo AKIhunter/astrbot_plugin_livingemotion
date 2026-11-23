@@ -3,7 +3,7 @@
 ![livingEmotion 原创字标与状态线](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-4.29.1–4.29.4-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.7.0-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.7.1-3a8060)](CHANGELOG.md)
 
 **简体中文** · [English](README.en.md)
 
@@ -73,6 +73,6 @@
 模型生成可能计费；未知生成或发送不会盲重试。`sent`表示发送接口受理，不表示用户已读。
 普通使用无需Node或外部CDN；接口走公开契约。管理员叫醒命令为 `le_wake`，前缀遵循宿主设置。
 
-0.7.0 接入对象语义分析、掌控感聊天表达、可读模型名称和独立的 TA/关系筛选。
+0.7.1 修复图片失败原因交接、用户调整后的轮次去重，以及未知结果的恢复保护；配套 LH 2.9.6。
 关系列表每日零点更新，3D与编辑保持实时；SQLite自动升至v9，旧历史不回填。
 保留3位小数模型输入与定时问候让行；无新增配置键。完整变化见[更新日志](CHANGELOG.md)。

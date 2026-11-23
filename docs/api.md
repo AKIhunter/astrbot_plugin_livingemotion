@@ -1,6 +1,6 @@
 # API v1
 
-适用0.7.0；按api.py、page_api/routes.py、validation.py和Console核对。
+适用0.7.1；按api.py、page_api/routes.py、validation.py和Console核对。
 本页同时列出公开进程内门面和全部21项注册管理路由。
 注册不等于应用已接通：emotion-image-save当前缺少应用入口，返回503。
 

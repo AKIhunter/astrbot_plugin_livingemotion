@@ -144,7 +144,9 @@ async def test_non_repairable_failures_do_not_request_rewrite(mapping, kind):
     s.reject = kind
     pid = await add(s)
     await s.service.run_due()
-    assert s.app.purpose_model.await_count == 1 and s.peer.calls == 1
+    assert s.peer.calls == 1
+    assert not any("整理提示词" in call.args[2] for call in s.app.purpose_model.await_args_list)
+    assert s.app.purpose_model.await_count == (1 if "unknown" in kind else 2)
     row = await s.service.promises.get(pid)
     assert row["status"] == ("unknown" if "unknown" in kind else "waiting")
     s.clock[0] += 3600
@@ -162,12 +164,14 @@ async def test_disabled_noop_or_scene_change_waits_without_second_image(mapping,
     answer = {"noop": json.dumps({"changes_scene": False, "substitutions": []}),
               "invalid": "invalid",
               "pose": proposal(changes_scene=True, notice="建议改站姿，需要你确认。")}.get(cause, proposal())
-    s.app.purpose_model.side_effect = ["blue blouse", answer]
+    # 被拒的提议会在预算内重新提议；通知生成有自己的模型调用。
+    s.app.purpose_model.side_effect = ["blue blouse", answer, answer, "这张暂时还没弄好。"]
     pid = await add(s)
     await s.service.run_due()
     assert s.peer.calls == 1 and (await s.service.promises.get(pid))["status"] == "waiting"
     if cause == "pose":
-        assert "站姿" in s.app.send_promise_notice.call_args.args[1]
+        artifact = json.loads((await s.service.promises.get(pid))["action_result_json"])
+        assert "站姿" in artifact["notice"]
 
 
 async def test_cancel_during_rewrite_prevents_paid_retry(mapping):
@@ -228,6 +232,39 @@ async def test_user_adjustment_resets_budget_and_clears_old_candidate(mapping):
     artifact = json.loads((await s.service.promises.get(pid))["action_result_json"])
     assert artifact["prompt_retry_count"] == 0 and artifact["original_prompt"] == "花园里的橙色猫"
     assert "prompt_repair" not in artifact and "notice" not in artifact
+
+
+async def test_new_adjustment_round_can_return_to_old_prompt_without_reusing_quota(mapping):
+    """A→B→A is a new authorized round; historical reservations remain immutable."""
+    s = mapping
+    s.image_values["prompt_guard_retry_limit"] = 1
+    s.app.config.promise_retry_limit = 1
+    keys = []
+
+    async def budgeted(context, purpose, system, data, job_id, **_):
+        if "只输出这句话本身" in system:
+            return "这张暂时还没弄好。"
+        generation = await s.service.store.get_generation(context)
+        receipt = await s.service.store.reserve_quota(
+            job_id, context, generation, period="2026-11-23",
+            purpose=purpose, limit=200)
+        assert receipt["status"] == "reserved"
+        await s.service.store.finish_quota(job_id, status="succeeded", reason_code="completed")
+        keys.append(job_id)
+        return proposal() if "整理提示词" in system else "blue blouse"
+
+    s.app.purpose_model.side_effect = budgeted
+    pid = await add(s)
+    await s.service.run_due()
+    for index, prompt in enumerate(("red blouse", "blue blouse"), 1):
+        assert (await s.service.promises.resume_image_handoff(
+            s.context, pid, prompt=prompt, source_event_id=f"new-source-{index}"))["status"] == "resumed"
+        s.service = PromiseService(s.service.store, s.app)
+        s.clock[0] += 301
+        await s.service.run_due()
+        assert (await s.service.promises.get(pid))["status"] == "waiting"
+    assert len(keys) == len(set(keys)) == 4
+    assert s.peer.calls == 6
 
 
 async def test_rate_limit_after_repair_preserves_recipe_and_does_not_rewrite_again(mapping):

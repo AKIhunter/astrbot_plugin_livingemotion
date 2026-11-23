@@ -1,6 +1,6 @@
 # 图片承诺的提示词调整
 
-适用 LE 0.7.0 / LH 2.9.2。原 SQLite 任务、状态和额度保留；
+适用 LE 0.7.1 / LH 2.9.6。原 SQLite 任务、状态和额度保留；
 候选、原文和计数写入原动作结果字段，旧任务没有新字段时按零次调整恢复。
 
 LH 拥有映射表、实际生图连接、额度和成功词语账本。
@@ -8,7 +8,7 @@ LE 只通过 `livinghello.image-prompt-mapping.v1` 契约取得长度与模型�
 使用自己的 `closing` 收尾模型提议局部等义替换，再由 LH 校验。
 详细格式见配套 LH 的 `docs/image-prompt-mapping.md`。
 
-明确内容拒绝与超长描述才调整；LH次数0–10、默认2，LE自动重试0–10、默认3。
+明确内容拒绝与超长描述才调整；LH次数0–10、默认2，LE自动重试0–10、默认5。
 实际调整次数取LH限制与LE剩余预算的较小值，延迟重试共用LE预算；任一端设0关闭自动改词。
 `get_image_prompt_retry_policy` 告诉 LH 当前 LE 是否能接手，旧版或未开启兑现时沿用用户调整询问。
 handoff 只给同一义务添加恢复状态，不重复创建承诺。
@@ -23,7 +23,7 @@ handoff 只给同一义务添加恢复状态，不重复创建承诺。
 | held / waiting | 等待用户明确调整或取消 |
 | sent / cancelled | 不再执行 |
 
-每次改词增加 `prompt_retry_count`，追加到固定事件 ID；收费前先落 `generating`。
+每次改词增加 `prompt_retry_count`；事件 ID 和模型预算键同时包含用户调整轮次与尝试编号。收费前先落 `generating`，同轮重放去重；用户 A→B→A 属于新的合法轮次。
 模型提出改变姿势、表情、年龄、场景等建议时，不生图，发送确认说明。
 原画面保存在 `original_prompt`，实际尝试文字保存在 `attempted_prompt`。
 用户明确修改后沿用同一 promise_id，清除旧候选并重置新画面的调整预算。

@@ -6,6 +6,8 @@ import json
 import re
 from pathlib import Path
 
+from astrbot.api import logger
+
 from ..contracts import prompt_json, stable_key
 from ..livinghello_coupling import discover
 
@@ -159,7 +161,8 @@ class ImagePromiseAction:
                 prompt_json({"persona": await self.app.persona_style(context.persona_id, persona),
                              "promised": row.get("description"), "detail": row.get("note"),
                              "context": row.get("context_summary")}),
-                stable_key("promise-image-prompt", pid), max_output_tokens=500, delivery=True)
+                self.model_job_key("promise-image-prompt", row, prior),
+                max_output_tokens=500, delivery=True)
         prompt = str(prompt or "").strip()
         if not prompt:
             return {"status": "unavailable"}
@@ -233,7 +236,7 @@ class ImagePromiseAction:
                                      "上一轮提议因可能改变姿势、表情、年龄或衣着覆盖度被拒。"
                                      "请换一处词，或改用不含上述敏感概念的等义写法。"
                                      if count else "")}),
-                    stable_key("promise-image-repair", pid, count, prompt),
+                    self.model_job_key("promise-image-repair", row, artifact, count, prompt),
                     max_output_tokens=500, delivery=True)
                 try:
                     proposal = json.loads(re.sub(r"^```(?:json)?\s*|\s*```$", "", str(answer).strip()))
@@ -262,13 +265,21 @@ class ImagePromiseAction:
             if not await allowed():
                 return {"status": "rejected"}
             event = self.make_event(context, row)
-            event.message_obj.message_id += ":prompt:" + str(count)
+            # 用户明确调整是新一轮；同一轮重放仍保持固定收费 ID。
+            event.message_obj.message_id += (
+                ":round:" + str(int(artifact.get("adjustment_round") or 0))
+                + ":prompt:" + str(count))
             event.set_extra("_livinghello_image_original_prompt", original)
             event.set_extra("_livinghello_prompt_retry_count", count)
             event.set_extra("_livinghello_image_prompt_repair", artifact.get("prompt_repair"))
             if not await store.checkpoint_action(pid, "generating", artifact):
                 return {"status": "rejected"}
             outcome = await peer.generate_deferred_image(event, prompt)
+            if not isinstance(outcome, dict):
+                artifact.update(kind="result_unknown", reason_code="invalid_peer_receipt")
+                await store.checkpoint_action(pid, "unknown", artifact)
+                logger.warning("[LE-promise] 图片回执 %s reason=invalid_peer_receipt", pid[:8])
+                return {"status": "unknown"}
             failure = outcome.get("failure")
             if isinstance(failure, dict):
                 failure = {**failure, "prompt": failure.get("prompt") or prompt,
@@ -276,14 +287,16 @@ class ImagePromiseAction:
                            "prompt_retry_count": count,
                            "adjustment_round": int(prior.get("adjustment_round") or 0)}
                 kind = failure.get("kind")
+                logger.warning("[LE-promise] 图片失败 %s request=%s kind=%s reason=%s type=%s",
+                               pid[:8], str(failure.get("request_id") or "-")[:16], kind,
+                               failure.get("reason_code") or kind,
+                               failure.get("exception_type") or "-")
                 if kind in {"content_rejected", "prompt_too_long", "prompt_adjustment_required"}:
                     prompt = str(failure.get("attempted_prompt") or failure["prompt"])
                     artifact = failure
                     if not await store.checkpoint_action(pid, "retry_ready", artifact):
                         return {"status": "unknown"}
                     continue
-                if kind == "prompt_adjustment_required":
-                    return await self.hold(context, pid, failure, prompt, original)
                 # 超时或投递未知即使带 failure 字段也不能进入重试队列。
                 if kind in {"result_unknown", "delivery_unknown"}:
                     await store.checkpoint_action(pid, "unknown", failure)
@@ -299,10 +312,18 @@ class ImagePromiseAction:
                 await store.checkpoint_action(pid, "retry_ready", artifact)
                 return outcome
             if outcome.get("status") != "generated":
+                artifact.update(reason_code=str(outcome.get("reason") or "peer_result_unknown"))
                 await store.checkpoint_action(pid, "unknown", artifact)
                 return {"status": "unknown"}
             return {**outcome, "prompt": prompt, "original_prompt": original,
                     "prompt_retry_count": count}
+
+    @staticmethod
+    def model_job_key(purpose, row, artifact, *parts):
+        """新调整轮次可用新预算；不复用或删除已结算的额度记录（issue #9）。"""
+        return stable_key(purpose, row["promise_id"],
+                          int(artifact.get("adjustment_round") or 0),
+                          int(row.get("retry_count") or 0), *parts)
 
     async def hold(self, context, pid, failure, prompt, original):
         failure = {**failure, "prompt": prompt, "original_prompt": original,
