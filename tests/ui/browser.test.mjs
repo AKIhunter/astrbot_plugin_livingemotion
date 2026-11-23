@@ -31,12 +31,15 @@ for (const name of ["fixtures.mjs", "fixture-bridge.mjs", "native-dto.mjs", "exp
   report.fixture_sha256[name] = createHash("sha256").update(source).digest("hex");
 }
 for (const name of ["index.html", "theme.js", "style.css", "app.mjs", "api.mjs", "model.mjs",
-  "settings.mjs", "dom.mjs", "experience.mjs", "charts/radar.mjs", "charts/energy.mjs", "charts/relationships.mjs",
+  "settings.mjs", "dom.mjs", "experience.mjs", "charts/radar.mjs", "charts/emotion-spectrum.mjs",
+  "charts/emotion-spectrum.css", "charts/energy.mjs", "charts/relationships.mjs",
   "charts/force3d.mjs", "vendor/d3-force.mjs"]) {
   const source = await readFile(new URL(`../../pages/livingemotion/${name}`, import.meta.url));
   report.source_sha256[name] = createHash("sha256").update(source).digest("hex");
 }
 const navigation = ["overview", "persona", "relationships", "behavior", "night", "experience", "memory", "settings"];
+// docs/ta-emotion-spectrum.md: the PC console keeps a 700px minimum canvas.
+const minimumConsoleWidth = 700;
 async function open(scenario = "normal", options = {}, init) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, colorScheme: "light", reducedMotion: "reduce", ...options });
   if (init) await context.addInitScript(init);
@@ -157,7 +160,8 @@ try {
               element.getBoundingClientRect().height < (element.matches(".help-button") ? 18 : 24) - 1).length,
           }));
           report.layouts.push({ width, theme, section: name, ...metrics });
-          assert.ok(metrics.scrollWidth <= width, `${width}/${theme}/${name} 页面横向溢出`);
+          assert.ok(metrics.scrollWidth <= Math.max(width, minimumConsoleWidth),
+            `${width}/${theme}/${name} 页面超出桌面画布`);
           assert.equal(metrics.unnamed, 0); assert.equal(metrics.small, 0); assert.equal(metrics.navigationCount, navigation.length);
           const contrast = await page.evaluate(inspectContrast);
           report.contrast.push({ width, theme, section: name, ...contrast });
@@ -284,7 +288,7 @@ try {
   });
   await caseRun("恶意文本仅作为文字、私人正文不展示素材与置顶控件", async () => {
     const { context, page } = await open("malicious");
-    assert.equal(await page.locator(".hero-value").textContent(), ATTACK);
+    assert.equal(await page.locator(".ta-emotion-word").textContent(), ATTACK);
     await section(page, "experience");
     const first = page.locator("#record-body > article").first();
     await first.locator("summary").click();
@@ -302,14 +306,15 @@ try {
     for (const scenario of ["missing-state", "invalid-numbers", "empty", "records-error", "bad-pagination", "missing-bridge", "no-context", "malformed-optional"]) {
       const { context, page } = await open(scenario);
       if (scenario === "missing-state") {
-        assert.equal(await page.locator(".hero-value").textContent(), "尚无 TA 状态");
-        assert.doesNotMatch(await page.locator(".hero").textContent(), /只有对方观察/);
+        assert.equal(await page.locator(".ta-emotion-word").textContent(), "未采集");
+        assert.doesNotMatch(await page.locator("[data-emotion-spectrum]").textContent(), /只有对方观察/);
       } else if (scenario === "invalid-numbers") {
-        assert.equal(await page.locator(".radar3d-figure").getAttribute("data-current-complete"), "false");
-        assert.equal(await page.locator(".radar3d-values dd").allTextContents().then(values => values.every(value => value.includes("未提供"))), true);
+        assert.equal(await page.locator("[data-emotion-spectrum] [data-value]").count(), 18);
+        assert.deepEqual(await page.locator("[data-emotion-spectrum] [data-value]").evaluateAll(
+          items => [...new Set(items.map(item => item.dataset.value))]), ["uncollected"]);
       } else if (scenario === "missing-bridge") {
         assert.match(await page.locator("#notice").textContent(), /missing_bridge/);
-        assert.equal(await page.locator(".hero").count(), 0);
+        assert.equal(await page.locator("[data-emotion-spectrum]").count(), 0);
       } else if (scenario === "no-context") {
         await page.locator('[data-section="experience"]').click();
         await page.locator("#record-body[aria-busy=false]").waitFor();
@@ -330,7 +335,7 @@ try {
       const { context, page } = await open(scenario);
       if (scenario === "records-denied") await page.locator('[data-section="behavior"]').click();
       await page.getByText("私人内容已清空。请在 AstrBot 宿主重新登录并确认管理权限。", { exact: true }).waitFor();
-      assert.equal(await page.locator(".hero").count(), 0);
+      assert.equal(await page.locator("[data-emotion-spectrum]").count(), 0);
       assert.equal(await page.locator("#context, #view-scope").count(), 0);
       assert.equal(await page.locator("#records > *").count(), 0);
       assert.equal(await page.locator("#settings > *").count(), 0);
@@ -377,7 +382,7 @@ try {
           await fixture.page.locator("#refresh").click();
           await fixture.page.locator("#connection").filter({ hasText: "旧快照 · 写操作已停用" }).waitFor({ state: "attached" });
           assert.match(await fixture.page.locator("#notice").textContent(), /合成刷新失败/);
-          assert.equal(await fixture.page.locator(".hero").count(), 1);
+          assert.equal(await fixture.page.locator("[data-emotion-spectrum]").count(), 1);
         } else if (scenario !== "unauthorized") await section(fixture.page, "experience");
         await measure(fixture.page, theme, scenario);
         await fixture.context.close();
@@ -531,7 +536,7 @@ try {
     assert.equal(await page.locator("#config-energy_reply_cost").inputValue(), "4.1");
     assert.equal(await page.locator("#config-persona_shared_state").isChecked(), true);
     await section(page, "overview");
-    assert.equal(await page.locator(".hero").count(), 1);
+    assert.equal(await page.locator("[data-emotion-spectrum]").count(), 1);
     assert.equal(await page.locator("#settings").isVisible(), false);
     await section(page, "persona");
     await page.locator("#persona-picker").selectOption("fixture-persona-b");
@@ -541,9 +546,11 @@ try {
     assert.equal(last.payload.context_id, undefined);
     await context.close();
   });
-  await caseRun("情绪球缺失基准不补造、TA不读日记与日梦二级键盘", async () => {
+  await caseRun("情绪谱缺失投影不补造、TA不读日记与日梦二级键盘", async () => {
     const { context, page } = await open("missing-baseline");
-    assert.equal(await page.locator(".radar3d-figure").getAttribute("data-baseline-complete"), "false");
+    assert.equal(await page.locator(".ta-emotion-word").textContent(), "平静而关切");
+    assert.deepEqual(await page.locator("[data-emotion-spectrum] [data-value]").evaluateAll(
+      items => [...new Set(items.map(item => item.dataset.value))]), ["uncollected"]);
     assert.equal(await page.locator('[data-section="emotion"]').count(), 0);
     const recordCalls = await page.evaluate(() => window.__fixture.calls.filter(call => call.path === "console/records"));
     assert.equal(recordCalls.length, 0);

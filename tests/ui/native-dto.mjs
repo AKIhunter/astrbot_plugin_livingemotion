@@ -1,7 +1,7 @@
 // Generated from real Console; synthetic host, no model or sends.
 export const nativeDTO = {
   "config": {
-    "revision": "12eabae8fe64d452bf060fc11add0856b98fa905298eda55b77d8c8bf301ee31",
+    "revision": "ccbb93ac7db82f26c9eef28b1dd023e220eacbbeec0b6007393d3b516869cbf0",
     "source": "AstrBot native plugin configuration",
     "values": {
       "enabled": true,
@@ -90,7 +90,7 @@ export const nativeDTO = {
       "promise_max_depth": 3,
       "promise_advance_limit": 3,
       "promise_tick_seconds": 15,
-      "promise_retry_limit": 3,
+      "promise_retry_limit": 5,
       "promise_wait_timeout_hours": 24,
       "promise_trace_ttl_hours": 24.0,
       "promise_recall_limit": 4,
@@ -1513,7 +1513,7 @@ export const nativeDTO = {
         "key": "promise_retry_limit",
         "label": "失败后自动重试次数",
         "section": "promise",
-        "value": 3,
+        "value": 5,
         "type": "integer",
         "advanced": false,
         "help": "初次失败后的自动重试次数。",
@@ -2926,7 +2926,7 @@ export const nativeDTO = {
     },
     "revision": "config-1",
     "config": {
-      "revision": "12eabae8fe64d452bf060fc11add0856b98fa905298eda55b77d8c8bf301ee31",
+      "revision": "ccbb93ac7db82f26c9eef28b1dd023e220eacbbeec0b6007393d3b516869cbf0",
       "source": "AstrBot native plugin configuration",
       "values": {
         "enabled": true,
@@ -3015,7 +3015,7 @@ export const nativeDTO = {
         "promise_max_depth": 3,
         "promise_advance_limit": 3,
         "promise_tick_seconds": 15,
-        "promise_retry_limit": 3,
+        "promise_retry_limit": 5,
         "promise_wait_timeout_hours": 24,
         "promise_trace_ttl_hours": 24.0,
         "promise_recall_limit": 4,
@@ -4438,7 +4438,7 @@ export const nativeDTO = {
           "key": "promise_retry_limit",
           "label": "失败后自动重试次数",
           "section": "promise",
-          "value": 3,
+          "value": 5,
           "type": "integer",
           "advanced": false,
           "help": "初次失败后的自动重试次数。",
@@ -8111,11 +8111,11 @@ export const nativeDTO = {
   }
 };
 export const nativeDTOEvidence = {
-  "captured_at": "2026-11-20T15:38:25.215532+00:00",
+  "captured_at": "2026-11-23T06:40:44.127119+00:00",
   "field_count": 136,
   "scope": "real Console DTO / synthetic host / temporary database",
   "sources_sha256": {
-    "config.py": "dd52dc440b67c599db014dee47bc3a7116e555d0d57338a610c23b529e05c9f1",
+    "config.py": "5ec972373700ecd8274e19f1f812f151f31727ef07bf2d8aa67b372ebf9b8177",
     "contracts.py": "9dbac4479c40cd83a476f7499cf35fce5ab994df87111cfe3eac111f5a87c0eb",
     "runtime/console.py": "b4832e21c40bcea981968e179278c459e7002da304ca7b3e63d440f642dfaf53",
     "runtime/config_help.py": "ccfdd0bcac20533334b0d20f9e050afb1a5fa719a5400186feb712bcc7594dd0",

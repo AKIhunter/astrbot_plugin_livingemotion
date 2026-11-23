@@ -65,6 +65,9 @@ if (scenario === "model-diagnostics") {
 if (scenario === "no-capabilities") { data.capabilities = []; data.actions = []; }
 if (scenario === "invalid-numbers") {
   data.bot_state.dimensions = { pleasure: NaN, arousal: Infinity, stress: -.1, social_need: 2 };
+  data.emotion_analysis = { bot: { emotions: {
+    joy: NaN, anger: Infinity, sadness: -.1, fear: 2, surprise: "0.5", affection: null,
+  } } };
   data.night.energy = null;
 }
 if (scenario === "missing-baseline") delete data.bot_state.baseline;

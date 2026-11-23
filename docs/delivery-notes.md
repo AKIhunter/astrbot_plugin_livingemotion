@@ -39,6 +39,9 @@ ASTRBOT_NATIVE_SOURCE仅指向源码快照，不启动宿主或连接平台。
 
 UI测试读取真实Console DTO与实际页面，配置保存由合成桥处理。
 浏览器外联全部阻断；自动刷新、草稿保存、列表展开与多分辨率独立核对。
+TA页按[情绪谱设计](ta-emotion-spectrum.md)检查当前情绪谱和缺失投影，不再使用旧情绪球选择器。
+控制台最小宽度为700px；390px宿主窗口检查不超出700px画布，同时保留控件和对比度检查。
+睡眠页脚本先安装隔离API，再读取真实Console DTO；可用LIVINGEMOTION_TEST_PYTHON指定解释器。
 UI_EVIDENCE_DIR可指向仓库外证据目录；PLAYWRIGHT_MODULE可复用已安装依赖。
 新增TA/关系脚本使用REPORT_PATH、PW_MODULE；编辑与布局脚本使用LE_UI_REPORT、PW_MODULE。
 CI先独立执行这两组检查，再运行原合成浏览器矩阵，以便分别查看结果。

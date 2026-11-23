@@ -17,6 +17,8 @@ const code = `import json,sys
 from pathlib import Path
 from types import SimpleNamespace
 sys.path.insert(0,str(Path.cwd().parent))
+from astrbot_plugin_livingemotion.scripts.offline_host import install_offline_api
+install_offline_api()
 from astrbot_plugin_livingemotion.config import Config
 from astrbot_plugin_livingemotion.runtime.console import Console
 obj=SimpleNamespace(config=Config(timezone="UTC",allow_sleep=True),
