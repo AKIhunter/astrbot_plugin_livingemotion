@@ -89,6 +89,10 @@ PROMISE_TRACE_HINTS = (
 _GOODNIGHT_RE = re.compile(r"晚安|该睡了|先睡了|去睡了|这就睡|要睡了|休息了|早点休息")
 
 
+# 回复归档冲突：先短退避重试，仍冲突则放行发送并在后台补写。
+ARCHIVE_RETRY_DELAYS = (0.0, 0.05, 0.1, 0.2)
+ARCHIVE_BACKGROUND_DELAYS = (0.5, 1.0, 2.0, 4.0, 5.0)
+
 class Application(Console, NightRuntime, Generation, Materials, Refinement, Proactivity,
                   ManualExperienceRuntime, PersonaStyle):
     def __init__(self, host_context, native_config, data_dir: Path, *, bridge_factory=AstrBotBridge):
@@ -1469,6 +1473,34 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             return True
         return False
 
+    async def _ingest_reply_archive(self, event):
+        """提交 bot_reply_submitted 归档事件；version_conflict 时短退避重试。"""
+        result = None
+        for delay in ARCHIVE_RETRY_DELAYS:
+            if delay:
+                await asyncio.sleep(delay)
+            result = await self.api.ingest_event(event)
+            if result.get("status") in ("accepted", "duplicate"):
+                return result
+            if result.get("reason_code") != "version_conflict":
+                return result
+        return result
+
+    async def _retry_reply_archive(self, event, generation):
+        """归档事件不阻断发送；后台按幂等键补写，失败只记日志。"""
+        for delay in ARCHIVE_BACKGROUND_DELAYS:
+            await asyncio.sleep(delay)
+            result = await self.api.ingest_event(event)
+            if result.get("status") in ("accepted", "duplicate"):
+                if result.get("status") == "accepted":
+                    await self.auto_memory.ingest(event, generation=generation)
+                return
+            if result.get("reason_code") != "version_conflict":
+                logger.warning("[LE] 回复归档补写失败 reply=%s reason=%s",
+                               event.event_id, result.get("reason_code"))
+                return
+        logger.warning("[LE] 回复归档补写仍冲突，已放弃 reply=%s", event.event_id)
+
     async def record_host_submission(self, context, submission_id, text):
         """Record a single host submission, never a fabricated delivery receipt."""
         result = await self._record_host_submission(context, submission_id, text)
@@ -1494,10 +1526,19 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             ActorRole.BOT, self.store.clock(), submission_id,
             actor_id=context.bot_id, body=text[:self.config.body_max_chars],
         )
-        result = await self.api.ingest_event(event)
+        result = await self._ingest_reply_archive(event)
+        deferred = False
         if result["status"] not in ("accepted", "duplicate"):
-            return {"allowed": False, "reason_code": result.get(
-                "reason_code", "reply_submission_rejected")}
+            if result.get("reason_code") == "version_conflict":
+                # 回复门禁 reply_submitted 已通过；归档冲突不应吞掉用户回复。
+                deferred = True
+                logger.warning(
+                    "[LE] 回复归档 version_conflict，先放行发送并后台补写 reply=%s",
+                    submission_id)
+                self.spawn_action(self._retry_reply_archive(event, generation))
+            else:
+                return {"allowed": False, "reason_code": result.get(
+                    "reason_code", "reply_submission_rejected")}
         if result["status"] == "accepted":
             await self.auto_memory.ingest(event, generation=generation)
             self._participation[context.scope_key] = self.store.clock()
@@ -1509,7 +1550,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         self._reply_contexts.pop(submission_id, None)
         while len(self._host_submissions) > 512:
             self._host_submissions.popitem(last=False)
-        return {"allowed": True, "reason_code": "submitted"}
+        return {"allowed": True, "reason_code": "submitted_deferred" if deferred else "submitted"}
 
     @staticmethod
     def _discard(event, reason):

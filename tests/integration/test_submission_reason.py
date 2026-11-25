@@ -1,5 +1,6 @@
 """宿主提交保留底层拒绝原因；兼容既有 bool 回调，无实际发送。"""
 
+import asyncio
 from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -78,6 +79,28 @@ async def test_record_host_submission_preserves_bool_interface(tmp_path):
         assert await app.record_host_submission(context, identifier, "synthetic") is True
         assert await app.record_host_submission(context, identifier, "synthetic") is True
         assert await app.record_host_submission(context, "unstarted", "synthetic") is False
+        assert (await app.store.energy_history(context, category="reply"))["total"] == 1
+        assert host.sends == 0
+    finally:
+        await app.terminate()
+
+@pytest.mark.asyncio
+async def test_archive_version_conflict_allows_delivery_and_retries(tmp_path):
+    """归档事件撞版本时不能吞掉已经通过 reply_submitted 的回复。"""
+    app, host, _, _ = await at_time(tmp_path, 12, config={"night_schedule_enabled": False})
+    try:
+        message = FinalMessage(identifier="archive-conflict")
+        await app.on_llm_request(message, SimpleNamespace(extra_user_content_parts=[]))
+        context = Context.from_dict(message.get_extra("livingemotion:context"))
+        identifier = message.get_extra("livingemotion:reply_lease")["attempt_id"]
+        app.api.ingest_event = AsyncMock(return_value={
+            "status": "rejected", "reason_code": "version_conflict",
+        })
+        app._retry_reply_archive = AsyncMock()
+        assert await app.record_host_submission(context, identifier, "synthetic") is True
+        assert message.get_extra("_at_guard_delivery_blocked") is None
+        await asyncio.sleep(0)
+        app._retry_reply_archive.assert_awaited_once()
         assert (await app.store.energy_history(context, category="reply"))["total"] == 1
         assert host.sends == 0
     finally:
