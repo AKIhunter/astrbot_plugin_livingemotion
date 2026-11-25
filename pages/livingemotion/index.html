@@ -6,17 +6,19 @@
   <meta name="color-scheme" content="light dark">
   <title data-i18n="livingEmotion · TA 的生活控制台">livingEmotion · TA 的生活控制台</title>
   <script src="./theme.js?v=eff0d6f932b0"></script>
-  <link rel="stylesheet" href="./style.css?v=sleep-master-20261119">
-  <script type="module" src="./app.mjs?v=sleep-master-20261119"></script>
+  <link rel="stylesheet" href="./style.css?v=diagnostics-20261125">
+  <link rel="stylesheet" href="./charts/emotion-spectrum.css?v=ta-readable-20261119-r2">
+  <script type="module" src="./app.mjs?v=diagnostics-20261125"></script>
 </head>
 <body>
   <a class="skip-link" href="#main" data-i18n="跳到主要内容">跳到主要内容</a>
   <header class="masthead">
     <div class="identity">
       <div class="wordmark" aria-label="livingEmotion">living<span>Emotion</span><i aria-hidden="true"></i></div>
-      <p class="plugin-version">v0.4.3</p>
+      <p class="plugin-version">v0.7.1</p>
     </div>
     <div class="header-controls">
+      <button id="diagnosticsExport" type="button" aria-describedby="diagnosticsStatus" data-i18n="导出诊断日志（近3天）">导出诊断日志（近3天）</button>
       <button id="refresh" type="button" title="更新状态和列表，不会生成或删除内容" data-i18n="刷新" data-i18n-title="更新状态和列表，不会生成或删除内容">刷新</button>
       <span id="connection" class="sr-only" role="status" data-i18n="正在连接宿主">正在连接宿主</span>
       <div class="theme-control">
@@ -30,6 +32,7 @@
       </div>
     </div>
   </header>
+  <p id="diagnosticsStatus" class="diagnostics-status" role="status" aria-live="polite"></p>
   <div class="workspace">
     <aside class="sidebar">
     <nav id="navigation" aria-label="管理分区" data-i18n-aria-label="管理分区">

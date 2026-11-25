@@ -1,153 +1,144 @@
 # API v1
 
-进程内 v1 门面保持兼容；新版范围筛选、关系覆盖、精力日志和集中设置的管理 DTO
-见 [管理接入契约](internal-console-contract.md)。写操作仍要求 Dashboard 管理员 Bearer，
-全局筛选不创建真实发送路由。新增状态所有者、票据与回复提交端口见
-[状态接入契约](internal-state-contract.md)。
-日记与梦境置顶通过既有 `console/action` 的 `experience.pin`，带真实记录
-`context_id/entry_id/pinned/expected_pinned`、配置版本、原因及显式确认。
-同一认证身份注入、全记录事务比较与审计生效；旧置顶重放409，不调用模型。
-下文保留0.1原始接口参考，不以旧五端点计数代替新版路由集合。
-
-读者：受信插件和管理页面的开发者。本文件依据 `contracts.py`、`api.py`、
-`runtime/console.py` 和 `page_api`，2026-11-05 核对源码。
-维护者在签名、量纲、鉴权或版本变化时同步，每次交付复核。
-Application/宿主钩子已完成冻结版三场景验收，H01/H02/H03 与确认能力降级均通过；
-运行时仍以返回能力为准，不把本地验收当作外部能力或发送授权。
+适用0.7.1；按api.py、page_api/routes.py、validation.py和Console核对。
+本页同时列出公开进程内门面和全部21项注册管理路由。
+注册不等于应用已接通：emotion-image-save当前缺少应用入口，返回503。
 
 ## 进程内门面
 
-受信插件每次从宿主发现当前激活实例，再使用 `plugin.api`；
-重载后不得缓存旧实例，不读 `.store/.cfg/._lifecycle` 或私有 SQL。
-这是同进程协作契约，不是恶意插件安全沙箱，也不是可直接暴露给模型的工具。
+可信插件每次从宿主发现当前激活实例并使用plugin.api，不缓存重载前对象，
+不跨插件读私有配置或SQL。响应含api_version=1/status/reason_code，
+先核对status再读data；外层ok不保证内层业务成功。
 
-| async 方法 | 输入 | 主要输出 |
+| async方法 | 输入 | 结果与作用 |
 | --- | --- | --- |
-| `get_capabilities()` | 无 | api_version、schema_version、operations、instance_id、mode、memory_mode、domain_ready、autonomous_executor、model_generation |
-| `resolve_producer_context(source)` | 可信生产者来源字典 | `status=ok` 时 `data` 为完整 Context；不接受生产者自定实例/路由 |
-| `ingest_event(event)` | Event 或对应字典 | accepted/duplicate/rejected、reason_code、event_key、generation、versions、domain_applied |
-| `get_bot_state(context)` | Context 或字典 | type=bot、data、version、generation、context |
-| `get_observation(context)` | 同上，需 account_id | type=observation、data；没有或已过期为 null |
-| `get_relationship(context)` | 同上，需 account_id | type=relationship、score 和 normalized |
-| `get_availability(context)` | 同上 | 布尔 available/block_chat、reason_codes；不可用不是自主授权 |
-| `preview_behavior(context)` | 同上 | eligible、reason_codes、model_calls=0、sends=0 |
-| `get_health()` | 无 | 存储、队列/任务和结构化原因；不是完整成品已验收证明 |
+| get_capabilities | 可选context | schema_version、operations、实例、实际领域/执行/模型能力 |
+| resolve_producer_context | 受信source字典 | 完整Context；不接受自定实例或路由 |
+| ingest_event | Event或字典 | accepted/duplicate/rejected、event_key、generation、versions |
+| get_bot_state | Context | 当前bot状态、version、generation |
+| get_current_emotion | context或关键字event | 当前情绪、labels、affect、影响回复许可 |
+| get_observation | Context，含账号 | 对方观察；缺失/到期为null |
+| get_relationship | Context，含账号 | score/normalized及版本 |
+| get_availability | Context | available/block_chat及reason_codes |
+| preview_behavior | Context | eligible/reason_codes，model_calls=0/sends=0 |
+| get_health | 无 | 存储、队列和结构化健康原因 |
+| get_action_policy | context、关键字event | image-policy.v1，新需求生图许可；已有义务单独判定 |
+| get_image_prompt_retry_policy | 同上 | 新版有限改词是否可以接手 |
+| handoff_image_failure | 同上 | image-followup.v1，同一真实失败的交接 |
+| resume_image_followup | 同上及promise_id/prompt | 具体新画面恢复原waiting事项；纯重试、未知结果不授权 |
+| bind_image_promise | context、event | image-result.v1；读取受控binding，收费前原子领取 |
+| settle_image_promise | context、event | 同契约；sent/failed/unknown原事项回执结算 |
 
-普通响应含 `api_version=1/status/reason_code`，data 只在相应操作中提供。
-调用者先查版本、能力、status，不能假定每个响应都有 data。
-能力不是固定 false：`domain_ready` 取决于 projector，
-`autonomous_executor/model_generation` 取决于 Application 是否接入，
-不代表 Provider 可用、配置允许或已获授权。页面 `actions[].enabled` 是当前可尝试动作，
-最终执行仍须复核。未接服务的独立门面会出现 `domain_not_connected`、`executor_not_connected`；
-domain_ready=false 时即使事件已保存，也不能宣称领域状态已应用。
-完整共享类型及存储签名见 [CONTRACTS.md](CONTRACTS.md)；
-其中阶段描述与场景枚举可能早于 public_comment 增量，以当前源码为准。
+Context隔离宿主实例、Bot、适配器、平台、场景、会话、账号、人格及修订。
+producer resolver支持private/public_comment；private场景ID等于账号，
+公开评论使用真实稳定线程ID且无route。一般Context可有group，
+不代表producer入口支持group。resolver成功不等于事件提交或发送授权。
+Event必填event_id/producer/event_type/context/actor_role/occurred_at/source_id；
+human actor_id匹配来源。时间为有限非负UTC秒，bool不可冒充数字。
+authorization和代际须最终复核；历史、梦与摘要不伪造成新互动。
 
-## 来源与事件
+对象采集启用且存在有效同代关系状态时，`get_current_emotion.data` 可附加
+`context_emotions`、`context_emotions_version=1` 和 `context_emotions_state_version`。
+原 `emotions` 六项及 affect 等字段保持兼容；附加值仅含达到表达阈值的当前对象分量。
+`console/state.data.context_emotions` 则返回 version、scope_kind、context_id、target、
+enabled 与 emotions，提供实测零值及低于阈值的衰减值；全局、关闭、来源不匹配或未采集时为空。
+TA 概览迁为九项情绪谱，Console 不再返回已移除的 `emotion_curve` 历史曲线字段。
+0.7.0六项仍保留原字段，愤怒、悲伤、恐惧使用已衰减的掌控感调节；
+中性0.5与旧公式相同。普通回复状态的bot附加control/control_style，见[掌控感](control-integration.md)。
+`emotion_model_analysis`筛选匹配只忽略route，其余Context字段继续严格核对。
 
-Context 的完整隔离维度见 [architecture.md](architecture.md)。
-时间使用有限非负 UTC Unix 秒；revision 是不可解释的令牌；
-bool 不可冒充数字，NaN/Infinity 被拒绝。
-Bot pleasure 为 -1..1，其他情绪维度 0..1，关系 0..1000，night energy 0..100。
-页面 DTO 才将 pleasure 映射为 `(x+1)/2`、energy 映射为 `/100`，不要双重归一化。
+## 生图绑定与回执
 
-生产者来源必须精确包含：
-`producer/bot_account/adapter_id/platform/scene_kind/scene_id/account_id/persona_id/persona_revision`。
-当前生产者入口支持 private 和 public_comment；private 的 scene_id 必须等于 account_id，
-公开讨论使用真实稳定对象/线程 ID，不用作者裸 ID、正文哈希或秒时间代替。
-一般 Context 另支持 group，但不代表当前 producer resolver 接受 group。
-公开评论禁止 route，不参与主动/记忆/体验生成的支持承诺。
-解析来源成功仅得到 Context；事件是否持久接受须看 `ingest_event`，不能把 resolver 当发送路由注册。
+LH 2.9.2在同一受信事件extra写入受控结构，再调用公开门面：
 
-```python
-# 只供可信宿主适配器调用；verified_source 来自真实来源和原生人格。
-caps = await plugin.api.get_capabilities()
-if caps.get("api_version") == 1 and caps.get("status") == "ok":
-    resolved = await plugin.api.resolve_producer_context(verified_source)
-    if resolved.get("status") == "ok":
-        relationship = await plugin.api.get_relationship(resolved["data"])
+```json
+{"promise_id":"原事项ID","request_id":"原请求ID","prompt":"窗边的猫","use_reference":false}
 ```
 
-Event 字段：
-`event_id/producer/event_type/context/actor_role/occurred_at/source_id` 必填；
-可选 `actor_id/body/signals/confidence/evidence/reliable_source/rule_version`。
-actor_role=human/bot/unknown；human 的 actor_id 必须匹配来源账号。
-只用真实成功行为构造 `bot_action_succeeded`；不能把 bool、超时或模型“已发送”当回执。
-按真实平台来源生成稳定事件键；重复不二次生效，不拿新 ID 绕过拒绝。
-记忆、日记、梦、摘要与未知历史不能伪造成新的人类互动。
+binding存于_livinghello_image_binding；原事项scheduled、图片类型、来源和代次一致，
+且没有宿主所有权才返回data.status=bound。失败不调用上游。
+receipt存于_livinghello_image_result，在上面字段追加status=sent/failed/unknown，
+可含kind、revised、original_prompt、attempted_prompt、auto_prompt_retry、adjustment_asked。
+sent只表示发送调用受理；同请求重复回执幂等，成功不能降级。
+明确失败且新版许可有效才回到原ID retry_ready，未知图片副作用暂停。
+状态和trace同事务落库，缓存TTL使用当前配置。详见[承诺](promise.md)。
 
-EvidenceRef 保留 provider、source_id、Context、subject_id、holder_id、kind、
-occurred_at、expires_at、sensitive、exportable、authorization 和原 source_ids。
-authorization 是提供者复核凭据，不是字符串 admin 或永久访问权。
-请求/用途去重和最终授权规则见 [memory.md](memory.md)。
+## 管理HTTP与认证
 
-## 状态与重试
+页面通过宿主bridge-sdk访问console相对端点；外部当前v1路径：
 
-- `queued` 只表示排队；`accepted` 表示本地事务已提交，不表示生成或发送完成。
-- `duplicate` 不追加状态增量；`rejected`/`unavailable` 应展示原因，不切换提供者重复上报。
-- `version_conflict` 要重读并重新计算，不盲重放旧 patch；清除代际改变时丢弃旧结果。
-- sending 后超时、部分确认、异常、None 或宿主 True 都可能为 `unknown`；
-  不自动重发，不生成成功行为，额度不退款。False 只在可信发送端确定未发送时为 rejected。
-- availability.available=false 可否决自主；只有 block_chat=true 才代表聊天阻断请求。
-  接口故障不能反向当作主动许可，通常也不应阻断原生主聊天。
+```text
+/api/v1/plugins/extensions/astrbot_plugin_livingemotion/console/<端点>
+```
 
-固定 v4.29.4 的 `OnAfterMessageSentEvent` 在发送失败后也执行，
-`Context.send_message` 的 bool 仅表示找到平台；二者均不提供可靠确认能力。
-`Application.confirm_reply` 的 typed receipt 端口仅供具备可靠传输证据的适配器，
-不属于上表公开门面；成功用例只证明组件端口，不能称为生产投递。
-原生确认能力按 unsupported 处理；console health 的 `reply_confirmation=unavailable`
-及对应原因已由最终真实 HTTP/iframe 验证，不扩充进程内公开门面。
-待回复 `settling` 在既有 120 秒上限后取消回 `awake/drowsy`，不自动重发；
-无待回复的计划睡眠与手动睡眠可用。降级边界见[兼容矩阵](compatibility.md)。
+所有读写使用Dashboard管理员Bearer令牌。资源token、cookie-only、API Key、
+客户端actor_id/admin不能替代身份；handler注入实际actor并在请求前后复核。
+GET只接受单值白名单参数；POST不接受query，要求application/json，
+拒绝重复JSON键、NaN/Infinity、NUL、未知字段和类型混用。
+一般请求32KiB，config 512KiB，emotion-image-save 732KiB。
 
-`get_bot_state` 读取时按当前时间派生情绪恢复；不制造新刺激或更新持久版本。
-关系公开接口保留 H01 `storage_failed` 历史失败；最终三场景已返回 ok/snapshot，
-仍不能假定运行时返回恒为 ok。
-调用方发现 `unavailable` 应省略补充或停止自主，不以缓存的成功状态替代当前授权。
+成功为`{"status":"ok","data":{"api_version":1}}`，业务需继续核对data.status。
+失败为status=error/code/message/data=null；响应no-store。
+400 validation_error须修输入；401/403须核对身份/许可；
+409 version_conflict须重读，generation_in_progress等任务完成；
+503 unavailable须先读回状态，写操作不盲重试。
 
-## 图片失败交接
+## 全部21项管理路由
 
-LivingHello 2.7.8 调用 `handoff_image_failure(context, event=event)`，以及
-`resume_image_followup(context, event=event, promise_id=..., prompt=...)`；
-成功 envelope 带 `contract=livingemotion.image-followup.v1`。
-交接只读取同一真实请求中的受控失败信息，`adjustment_asked=true` 表示 LH 已确认发出
-调整问句，LE 持久记录，避免再问一次。登记接受不表示图片交付。
-恢复必须来自受信用户的新消息、具体新画面与明确的原等待图片；定时任务、
-纯确认/重试口令、图生图及未知结果不能用此接口绕过。详见[调整说明](promise-adjustment-20261118.md)。
+S为ScopeSelection：persona_id/view_scope=global/private/group/context_id/platform。
+context_id是后端发布的账号级account_key，不能替换QQ号或scope_key。
+global汇总真实来源，不创建全局发送路由。state/configuration可无参数或旧context_id，
+新范围参数需人格；records需kind及旧会话或新范围。
+列表page默认1（1–1000000）、page_size固定10，query最多200字。
 
-## 页面接口
+| 方法 / 端点 | 输入 | 主要结果或效果 |
+| --- | --- | --- |
+| GET state | 可选S | revision、config、actions、状态/健康、selection、action_target |
+| GET configuration | 同state | 轻量config对象；保存前优先读它 |
+| GET scopes | 可选S | 人格、平台、会话选择及counts |
+| GET records | S、kind=emotion/behavior/diary/dream、分页/query | items/total；行为含完整promises与总数，私人体验含正文/来源 |
+| POST config | patch、expected_revision；可选context_id/reason/receipt=state或config | 原生保存、运行态替换与回执 |
+| POST preview | context_id | 行为资格预览，0模型/0发送 |
+| POST action | context_id/action/expected_revision/confirmed=true；可选reason、置顶字段或promise_id | 下述动作；最终复核业务守卫 |
+| GET relationships | S、分页/query、limit、graph_scope=matched/all | items为日列表；nodes与live_items实时；list_snapshot提供日期/时区/计算时间 |
+| POST relationship | persona_id/platform/account_id或context_id、expected_version、score/frozen/note、reason | CAS编辑好感；需编辑许可 |
+| GET energy | S、分页、event_type | 精力事件与曲线 |
+| GET settings-options | 无 | 人格、chat/embedding模型选项，不含密钥 |
+| GET persona-description | persona_id | 原生人格说明，最多16000字符 |
+| GET style-summary | persona_id | 当前摘要、是否custom/available |
+| POST style-summary-save | persona_id/text；可选reason | 最多2000字符，空串恢复默认 |
+| POST memory-sync | 可选context_id | 当前提供者实际同步能力与结果 |
+| POST behavior-simulate | 可选context_id/persona_id/emotion/request_id | 生成模拟日志，sends=0；模型可收费 |
+| GET emotion-images | 无 | 情绪图片配置、各mood可用项 |
+| GET emotion-image | mood/index | 图片读取结果，不产生消息 |
+| POST emotion-image-save | mood及data_url/index/remove | 当前应用入口缺失，503 |
+| POST experience-generate | request_id/persona_id/kind=diary或dream | 接受或复用后台私人任务 |
+| GET experience-task | request_id | 同人格任务状态，查询不再次派发模型 |
+| GET diagnostics/export | 无；拒绝所有查询参数 | 管理员下载近72小时脱敏 ZIP；非 JSON DTO；单插件只允许一个任务 |
 
-生产页面经宿主 `/api/plugin/page/bridge-sdk.js` 的
-`AstrBotPluginView`（兼容 `AstrBotPluginPage`）调用相对端点：
+action白名单是night.sleep/night.wake/diary.generate/dream.generate/behavior.send/experience.pin/promise.cancel。
+睡眠动作仍需allow_sleep及当前可用动作；唤醒不加精力。
+behavior.send跳过时机/冷却等软条件，保留硬闸门；它会真实发送。
+experience.pin需entry_id、pinned与相反的expected_pinned；无模型、无发送。
+promise.cancel需promise_id；仅取消当前目标、同代次的scheduled/awaiting/waiting/unknown任务。
+事务中核对身份与状态，running拒绝取消；返回cancelled且model_calls=0/sends=0。
+取消只停止后续处理，不撤销上游请求、不补发未知图片。页面成功后自动读回。
+当前没有clear_context、全库删除或local_lite录入HTTP端点。
 
-| 方法/相对端点 | 请求 |
-| --- | --- |
-| GET `console/state` | 可选 context_id；空值取最近合法范围或空状态 |
-| GET `console/records` | context_id、kind=emotion/behavior/diary/dream、page>=1、page_size=10、可选 query |
-| POST `console/config` | context_id、patch、expected_revision、reason |
-| POST `console/preview` | context_id；必须无模型、无发送 |
-| POST `console/action` | context_id、action、expected_revision、reason、confirmed=true |
+## 配置保存与任务幂等
 
-action 白名单为 night.sleep/night.wake/diary.generate/dream.generate/behavior.send；
-仍需检查当前 State.actions 及服务最终硬闸门。生成可能计费，send 可能外发。
-context_id 只能使用后端发布的不透明值，不接受客户端 Context。
-当前 `context_id/contexts[].id` 为账号级 account_key；主动白名单用 scope_key，
-两者不可互换。`config.values/fields/revision` 来自同一原生 Config。
-无公开 HTTP 关系修正或全库删除动作；不要猜造端点。
-核心存在 `correct_relationship/clear_context/pin_experience` 管理方法，
-但本页五个 HTTP 入口没有发布这些动作，也没有 local_lite 录入端点。
+config.revision是配置版本，state.revision是动作版本，不混用。
+patch非空，仅接公开Config字段，合并当前值后做跨字段校验；
+原生保存失败不确认成功，冲突保留草稿。数字参数见[配置参考](config-reference.md)，
+天气过渡0–7200秒、缓存1–168小时步进0.1。可请求receipt=config快速读回。
 
-宿主注册路径为 `/astrbot_plugin_livingemotion/console/*`；
-legacy 实际路径 `/api/plug/astrbot_plugin_livingemotion/console/*`，
-v1 为 `/api/v1/plugins/extensions/astrbot_plugin_livingemotion/console/*`。
-成功 envelope 为 `{"status":"ok","data":...}`；错误使用 400/401/403/409/503，
-message 带 `[livingemotion:<code>]`，完整私有响应应 `Cache-Control: no-store`。
+```json
+{"expected_revision":"读取的config.revision","patch":{"allow_sleep":false},"receipt":"config"}
+```
 
-每个私有读写请求均须严格 Dashboard Bearer 验签、当前管理员匹配和 claims 用途白名单；
-页面资源 token 只能读页面资产，不能读私人状态或写配置。拒绝未知/OAuth claims、
-过期/伪签、admin=true 和客户端 actor_id；不把 cookie-only/API key 当作现有支持方式。
-actor_id 必须由 handler 从已验证身份提供。页面不代替业务层 CAS/审计/来源复核。
-详见 [console.md](console.md)、[host-contract.md](host-contract.md)。
-最终 single222/four230/conflict245，共697条宿主断言通过；原生浏览器44项
-（含28组布局）、0 pageerror。H01与五handler鉴权均覆盖，限制见[兼容矩阵](compatibility.md)。
-本轮仅同步报告，未重跑宿主或调用真实平台。
+experience request_id为16–64位ASCII字母/数字/下划线/连字符或UUID；
+同ID同人格/类型复用，身份/类型不同冲突，同日正在运行时返回已有ID。
+轮询返回ID，成功正文从records读取。手动生成无需自动开关，梦仍需dream_enabled。
+输入32768 UTF-8字节、输出请求8192 Token、90秒，模型费用与生成结果单独验收。
+情绪0–1、原生pleasure -1–1、关系0–1000、energy_percent 0–100；
+旧night.energy为0–1，不能重复归一化。来源/清晰度/置顶规则见[体验](experience.md)。

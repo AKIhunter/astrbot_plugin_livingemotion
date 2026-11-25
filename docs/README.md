@@ -1,46 +1,27 @@
-# 文档入口
+# LivingEmotion 当前文档
 
-当前版本0.4.3；维护者AKIhunter，2026-11-19按当前源码与离线验收核对。
-每种用途只保留一个权威总入口，**不重复维护同一份完整说明**。
-专题用于展开细节；标记历史的报告仅说明当时结果，不能覆盖当前操作、配置和算法。
+适用0.7.1，2026-11-23核对。历史变更统一见[CHANGELOG](../CHANGELOG.md)；
+旧测试报告仅证明当时范围，不替代当前代码或生产状态。
 
-## 从需求找到文档
+| 用途 | 权威入口 | 依据 |
+| --- | --- | --- |
+| 操作、开关、模拟与发送 | [使用手册](user-guide.md) | 实际页面、许可与动作 |
+| 所有配置项默认、位置、范围与例子 | [配置参考](config-reference.md) | schema、Config、同源帮助与Console DTO |
+| 模块、状态与功能判断流程 | [技术说明](technical-guide.md) | application、domain、storage、api |
+| 九项情绪谱、对象采集与草稿刷新 | [情绪谱](ta-emotion-spectrum.md) | collector、DTO、规则边界与页面 |
+| 掌控感、聊天表达与历史兼容 | [掌控感](control-integration.md) | 置信度、六项投影、表达策略和SQLite v9 |
+| 保存冲突、不生成与不发送 | [排障](troubleshooting.md) | 校验、理由码与当前接口 |
+| 导出近3天诊断包 | [诊断日志](diagnostics.md) | 受控采集、只读来源、管理员下载与清理 |
+| 安装与宿主支持 | [安装](installation.md)、[兼容](compatibility.md) | metadata、宿主契约 |
+| 可信插件与管理接口 | [API](api.md) | 实际注册端点与门面 |
+| 承诺、去重、到期与取消 | [承诺](promise.md) | PromiseService、PromiseStore、宿主仲裁 |
+| 图片映射与有限调整 | [映射](image-prompt-retry.md) | LH公开能力、LE修复模型与持久状态 |
+| 精力、睡眠与票据 | [睡眠规则](sleep-energy-rules.md) | domain/night、runtime/night、storage/night |
+| 模型、素材和体验 | [日记梦境](experience.md)、[记忆](memory.md) | 实际生成与来源许可 |
+| 开发测试与显式宿主分层 | [交付分层](delivery-notes.md)、[独立运行](local-runtime.md) | pytest、宿主、浏览器与双插件入口 |
+| 承诺重试、等待期限与取消 | [重试与收尾](promise-retry.md) | 配置预算、旧任务迁移和未知结果保护 |
+| 早安避重与其他时段随机主动 | [定时问候让行](native-proactive-yield.md) | 宿主目标、UTC时间与±15分钟窗口 |
+| 模型情绪输入精度与中文状态块 | [输入精度](prompt-precision.md) | 指定字段输出副本、原值阈值与消息体回归 |
 
-| 文档 | 类型 | 读者 / 用途 | 事实来源 | 核对与更新 |
-| --- | --- | --- | --- | --- |
-| [使用手册](user-guide.md) | tutorial / how-to | 用户；首次使用、32个开关、日常操作 | schema、页面、运行守卫 | 2026-11-19；每次功能/许可/页面变化及发布 |
-| [配置参考](config-reference.md) | reference | 管理员；101个非开关参数、默认值、单位 | config、schema、帮助与校验 | 2026-11-19；每次字段/默认/校验变化及发布 |
-| [技术说明](technical-guide.md) | reference / architectural | 开发者；模块、状态、契约、迁移 | runtime、domain、storage、API | 2026-11-19；每次契约/存储/路由变化及发布 |
-| [原理示例](principles-examples.md) | explanation | 用户/开发者；确定性算例与边界 | 领域公式、离线回归 | 2026-11-19；每次规则变化及发布 |
-| [排障](troubleshooting.md) | how-to / operational | 管理员；保存、状态、任务与恢复 | 回执、原因码、业务守卫 | 2026-11-19；每次故障修复及发布 |
-| [安装](installation.md) | tutorial | 安装者；入口与升级检查 | metadata、宿主发现规则 | 当前安装部分随入口/兼容变化及发布核对 |
-| [API](api.md)及internal契约 | reference | 可信插件/页面开发者 | 当前源码签名和DTO | 每次接口变化核对；早期枚举按历史标记阅读 |
-| [交付分层](delivery-notes.md) / verification报告 | reference / historical | 维护者；复测入口与历史证据 | 各报告对应的测试结果 | 历史数字冻结，不当作当前/生产验收 |
-
-责任路径统一为AKIhunter/对应代码改动维护者。每次发布复核当前五份总入口与相关专题；
-距最后核对超过90天，或依赖源码变化未同步时标为待核对。历史报告保留来源与适用版本，
-不提升为当前操作规范。CI校验文档链接、版本、配置覆盖和默认值，文档与代码一同提交。
-
-## 当前专题
-
-- 情绪：[四维与底气](emotion-five-dimension.md)、[开心窗口](joy-window.md)。
-- 关系：[好感V2](relationship-scoring-v2.md)、[生图婉拒](relationship-image-refusal.md)。
-- 睡眠：[状态、精力、补觉与在途回复](sleep-energy-rules.md)。
-- 任务：[承诺](promise.md)、[宿主未来事件](future-tasks.md)、
-  [承诺记忆](promise-memory.md)、[延迟动作](promise-actions-20261116.md)、
-  [图片调整](promise-adjustment-20261118.md)。
-- 主动：[选题、节奏与守卫](proactive-life.md)。
-- 协作：[API](api.md)、[LivingHello协作](cooperation-contract-20261116.md)、
-  [状态](internal-state-contract.md)、[管理](internal-console-contract.md)、
-  [记忆](internal-memory-contract.md)、[回复](internal-reply-contract.md)。
-- 兼容：[宿主矩阵](compatibility.md)、[本地运行/升级](local-runtime.md)、
-  [CI](../.github/workflows/ci.yml)、[CHANGELOG](../CHANGELOG.md)。
-
-## 旧入口与历史材料
-
-[plugin-manual.md](plugin-manual.md)保留为新五份文档的导航；
-architecture、life-console等旧总览也保留链接兼容，但当前总入口优先。
-FOUNDATION/DOMAIN/INTEGRATION/CONTRACTS、早期night/behavior/console/ui阶段文档、
-verification系列、带日期的修复报告和ui-progress是阶段说明或历史证据。
-它们的旧默认值、测试数字、早期端点数量或未接能力描述不能替代当前源码与五份文档。
-其中当前专题链接仍可用于细节，但出现冲突时以当前源码和新总入口为准，并修正对应专题。
+每项文档由对应功能修改者维护；配置字段每次提交自动校验，其他操作与原理每次行为变更更新，
+90天复核。超过周期或源码改变未更新时标记stale。README只作为当前产品入口。
