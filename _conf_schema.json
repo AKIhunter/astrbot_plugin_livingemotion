@@ -153,6 +153,12 @@
     "default": 2,
     "description": "连续未回应次数上限，未知发送结果保守计入。例：2次后先停止主动。"
   },
+  "emotion_provider_id": {
+    "type": "string",
+    "default": "",
+    "description": "情绪精炼专用模型。留空沿用默认或当前聊天模型；选小模型可显著缩短回复前等待。例：Qwen/Qwen3-8B。",
+    "editor_mode": "select_provider"
+  },
   "emotion_model_enabled": {
     "type": "bool",
     "default": false,
@@ -161,7 +167,7 @@
   "context_emotions_enabled": {
     "type": "bool",
     "default": false,
-    "description": "在 LivingEmotion 设置页 → 情绪勾选并保存，运行模式设为参与中；到 TA 页选择具体会话查看。关闭停止更新和表达，仅观察不新增采集。同页开启模型细化后，LLM按最近对话、语气和已有情绪判断，复用本轮分析；冷却期间补一次对象分析，共用每日额度，回复前最多等待5秒。超时或模型不可用只保留历史衰减。关闭模型细化时兼容本地规则，不具备语义理解。害羞需友好关系并尊重边界。"
+    "description": "在 LivingEmotion 设置页 → 情绪勾选并保存，运行模式设为参与中；到 TA 页选择具体会话查看。关闭停止更新和表达，仅观察不新增采集。同页开启模型细化后，LLM按最近对话、语气和已有情绪判断，复用本轮分析；冷却期间补一次对象分析，共用每日额度，回复前最多等待1秒。超时或模型不可用只保留历史衰减。关闭模型细化时兼容本地规则，不具备语义理解。害羞需友好关系并尊重边界。"
   },
   "emotion_interval_seconds": {
     "type": "int",

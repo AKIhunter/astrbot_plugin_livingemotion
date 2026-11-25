@@ -222,7 +222,7 @@ class Generation:
 
     async def _select_model_binding(self, purpose, route=None):
         selected = getattr(self.config, purpose + "_provider_id", "") if purpose in (
-            "diary", "dream", "catchup", "closing", "behavior",
+            "diary", "dream", "catchup", "closing", "behavior", "emotion",
         ) else ""
         candidates = [selected, self.config.provider_id]
         if not any(candidates) and route:
@@ -295,7 +295,10 @@ class Generation:
         # Keep existing one-argument host fixtures and consumers valid by default.
         if getattr(self.config, purpose + "_provider_id", ""):
             return await self.model_binding(context, purpose=purpose, delivery=delivery)
-        return await self.model_binding(context, delivery=delivery)
+        # 没有专用模型时保持原来的调用形态：宿主与测试桩可能只接受位置参数。
+        if delivery:
+            return await self.model_binding(context, delivery=True)
+        return await self.model_binding(context)
 
     async def purpose_model(self, context, purpose, system, data, job_id, *,
                             max_output_tokens=None, delivery=False):

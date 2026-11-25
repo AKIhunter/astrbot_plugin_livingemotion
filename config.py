@@ -167,6 +167,7 @@ class Config:
     dream_provider_id: str = ""
     catchup_provider_id: str = ""
     closing_provider_id: str = ""
+    emotion_provider_id: str = ""
     home_city: str = ""
     # 天气权重因子：本地按时轮询实况，只改四维回落目标，不经过大模型。
     weather_factor_enabled: bool = True

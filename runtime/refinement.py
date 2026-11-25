@@ -1,10 +1,13 @@
 """Optional asynchronous refinement of one committed rule event, never replay."""
 
 import asyncio
+import time
 from collections import OrderedDict
 from dataclasses import replace
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
+from astrbot.api import logger
 
 from ..contracts import BotAffect, StateWrite, prompt_json, to_dict, stable_key
 from ..domain.emotion import apply_control, apply_emotion, decay_affect, emotion_policy, shift_baseline
@@ -23,7 +26,10 @@ QUIET_START_HOUR = 3
 QUIET_END_HOUR = 8
 CONTEXT_INPUT_BUDGET = 8192
 CONTEXT_OUTPUT_BUDGET = 512
-CONTEXT_WAIT_SECONDS = 5.0
+CONTEXT_WAIT_SECONDS = 1.0
+# 专用精炼模型连续失败到这个次数就临时停用，交回 LE 默认候选链。
+EMOTION_PROVIDER_FAILURE_LIMIT = 3
+EMOTION_PROVIDER_COOLDOWN_SECONDS = 600
 CONTEXT_SYSTEM = (
     "根据近期对话、当前message的语气、人格、关系边界和已有短期情绪，判断bot对当前对象的"
     "委屈wronged、受伤hurt、害羞shyness。语义判断，不依赖固定词汇。"
@@ -63,6 +69,29 @@ class Refinement:
             return False
         return start <= hour < end if start < end else (hour >= start or hour < end)
 
+    async def _emotion_binding(self, context):
+        """专用模型可用时钉住它；熔断期间交回 LE 自己的默认候选链。"""
+        dedicated = str(getattr(self.config, "emotion_provider_id", "") or "").strip()
+        if dedicated and time.monotonic() >= getattr(self, "_emotion_blocked_until", 0.0):
+            return await self.model_binding(context, purpose="emotion")
+        return await self.model_binding(context)
+
+    def _note_emotion_failure(self):
+        """只在真的调用失败时累计；配置类错误由候选链自己回退，不在这里记。"""
+        if not str(getattr(self.config, "emotion_provider_id", "") or "").strip():
+            return
+        if time.monotonic() < getattr(self, "_emotion_blocked_until", 0.0):
+            return
+        count = getattr(self, "_emotion_failures", 0) + 1
+        self._emotion_failures = count
+        if count < EMOTION_PROVIDER_FAILURE_LIMIT:
+            return
+        self._emotion_failures = 0
+        self._emotion_blocked_until = time.monotonic() + EMOTION_PROVIDER_COOLDOWN_SECONDS
+        logger.warning(
+            "[LE-emotion] 情绪精炼专用模型连续失败 %d 次，%d 分钟内改走 LE 默认模型链",
+            count, EMOTION_PROVIDER_COOLDOWN_SECONDS // 60)
+
     def _analysis(self, event, status, reason_code, *, new_event=False, **fields):
         records = getattr(self, "_emotion_analyses", None)
         if records is None:
@@ -85,6 +114,11 @@ class Refinement:
             value["finished_at"] = now
         records[key] = value
         records.move_to_end(key)
+        if status == "completed":
+            self._emotion_failures = 0
+        elif status == "failed" or reason_code == "task_timeout":
+            # task_timeout 以 unknown 上报；其余 unknown（结果未知）不当作模型坏。
+            self._note_emotion_failure()
         while len(records) > 128:
             records.popitem(last=False)
 
@@ -214,7 +248,7 @@ class Refinement:
 
         if not await current():
             return
-        binding = await self.model_binding(context)
+        binding = await self._emotion_binding(context)
         binding_fingerprint = binding.fingerprint
         source = await self.bridge.current(context)
         if source is None:
@@ -306,7 +340,7 @@ class Refinement:
         async def generate():
             if not await memory_current() or not await current():
                 raise ValueError("context_changed")
-            selected = await self.model_binding(context)
+            selected = await self._emotion_binding(context)
             if selected.fingerprint != binding_fingerprint:
                 raise ValueError("provider_changed")
             self._analysis(event, "running", "running", memory_count=len(materials))
@@ -330,7 +364,7 @@ class Refinement:
             raise
         if not await current():
             return
-        if (await self.model_binding(context)).fingerprint != binding_fingerprint:
+        if (await self._emotion_binding(context)).fingerprint != binding_fingerprint:
             self._analysis(event, "discarded", "provider_changed")
             return
         if not await memory_current():
