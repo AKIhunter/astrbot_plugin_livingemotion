@@ -5,6 +5,11 @@ from dataclasses import asdict
 import os
 import secrets
 import time
+import io
+import json
+from pathlib import Path
+import tempfile
+import zipfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock
@@ -200,6 +205,86 @@ class HostHarness:
 
 
 class ConsoleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_diagnostic_zip_native_auth_both_plugins_and_send_failure_cleanup(self):
+        from astrbot_plugin_livingemotion.diagnostic_bundle import DiagnosticRecorder, download_response
+        from astrbot_plugin_LivingHello.diagnostic_bundle import DiagnosticRecorder as LHRecorder
+        from astrbot_plugin_livingemotion.storage import SQLiteStore
+        from astrbot_plugin_LivingHello.console.guard_webui import register_webui as register_lh
+        from astrbot.api import logger
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            store = SQLiteStore(root / "livingemotion.sqlite3")
+            await store.open()
+            le_recorder = DiagnosticRecorder(root, PLUGIN_NAME, root)
+            lh_recorder = LHRecorder(root / "lh", "astrbot_plugin_LivingHello", root)
+            le = SimpleNamespace(data_dir=root, config=Config(), closed=False, host=self.host,
+                                 diagnostics=le_recorder, effective_mode=lambda: "active")
+            lh = SimpleNamespace(data_dir=root / "lh", config={}, context=self.host,
+                                 diagnostics=lh_recorder, request_trace=None)
+            self.page._application = le
+            register_lh(lh, self.host)
+            try:
+                le_recorder.record("test", {"at": time.time() - 1, "status": "failed"})
+                lh_recorder.record("test", {"at": time.time() - 1, "status": "failed"})
+                for plugin, recorder in ((PLUGIN_NAME, le_recorder),
+                                         ("astrbot_plugin_LivingHello", lh_recorder)):
+                    for prefix in (f"/api/plug/{plugin}", f"/api/v1/plugins/extensions/{plugin}"):
+                        endpoint = prefix + "/console/diagnostics/export"
+                        for token in ("", self.issue({"username": "synthetic-admin",
+                                                     "exp": time.time() - 1}),
+                                      self.issue({"username": "synthetic-admin",
+                                                  "exp": time.time() + 60, "scope": "plugin_asset"})):
+                            denied = await self.client.get(endpoint, headers={"Authorization": "Bearer " + token})
+                            self.assertIn(denied.status_code, (401, 403))
+                            self.assertFalse(list((recorder.directory / "exports").glob("*.zip")))
+                        response = await self.client.get(endpoint, headers={"Authorization": "Bearer " + self.token})
+                        self.assertEqual(response.status_code, 200, response.text[:80] if response.status_code != 200 else "")
+                        self.assertEqual(response.headers["content-type"], "application/zip")
+                        self.assertEqual(response.headers["cache-control"], "no-store")
+                        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+                            manifest = json.loads(archive.read("manifest.json"))
+                            self.assertEqual(manifest["plugin"], plugin)
+                            self.assertEqual(manifest["files"]["runtime.jsonl"]["records"], 1)
+                        self.assertFalse(list((recorder.directory / "exports").glob("*.zip")))
+                        self.assertFalse(recorder._export_lock.locked())
+                        invalid = await self.client.get(endpoint + "?path=anything",
+                                                        headers={"Authorization": "Bearer " + self.token})
+                        self.assertEqual(invalid.status_code, 400)
+                    held = recorder.export({}, {})
+                    busy = await self.client.get(endpoint, headers={"Authorization": "Bearer " + self.token})
+                    self.assertEqual(busy.status_code, 409)
+                    held.close()
+                    bundle = recorder.export({}, {})
+                    response = download_response(bundle)
+                    async def send(_):
+                        raise OSError("synthetic disconnected")
+                    async def receive():
+                        return {"type": "http.disconnect"}
+                    with self.assertRaises(Exception):
+                        await response({"type": "http", "asgi": {"spec_version": "2.4"}}, receive, send)
+                    self.assertFalse(bundle.path.exists())
+                    self.assertFalse(recorder._export_lock.locked())
+                # Exercise the real API logger proxy, rather than injecting a LogRecord.
+                le_recorder.plugin_root = Path(__file__).resolve().parents[2]
+                le_recorder.install(logger)
+                exec(compile(
+                    "from astrbot.api import logger\nlogger.warning('diagnostic test %s', 'private-log-sentinel')",
+                    str(le_recorder.plugin_root / "runtime/diagnostics.py"), "exec"),
+                    {"__name__": "astrbot_plugin_livingemotion.runtime.diagnostics"})
+                logged = le_recorder.export({}, {})
+                try:
+                    with zipfile.ZipFile(logged.path) as archive:
+                        runtime = archive.read("runtime.jsonl").decode()
+                        self.assertIn("diagnostic test %s", runtime)
+                        self.assertNotIn("private-log-sentinel", runtime)
+                finally:
+                    logged.close()
+            finally:
+                le_recorder.close()
+                lh_recorder.close()
+                await store.close()
+
     async def asyncSetUp(self):
         self.host = HostHarness()
         self.business = SyntheticApplication()

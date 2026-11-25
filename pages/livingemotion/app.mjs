@@ -14,6 +14,7 @@ import { emotionSpectrum } from "./charts/emotion-spectrum.mjs?v=ta-omissions-20
 import { renderSettings as settingsView, jumpToSettingsGroup, syncSettingsValues } from "./settings.mjs?v=model-labels-20261120-r1";
 import { EXPERIENCE_TABS, experienceTabs, selectExperienceTab, turnPage, cancelPageTurn } from "./experience.mjs?v=eff0d6f932b0";
 import { reconcileDraft } from "./draft.mjs?v=eff0d6f932b0";
+import { bindDiagnosticExport } from "./diagnostics.mjs?v=20261125";
 
 const $ = id => document.getElementById(id);
 const api = createApi(() => window.AstrBotPluginView || window.AstrBotPluginPage);
@@ -1946,6 +1947,8 @@ function navigate(section, focus = false) {
 }
 async function boot() {
   staticUI();
+  bindDiagnosticExport($("diagnosticsExport"), $("diagnosticsStatus"),
+    () => window.AstrBotPluginView || window.AstrBotPluginPage, t);
   matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", event => {
     if (event.matches) {
       cancelPageTurn();

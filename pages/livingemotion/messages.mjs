@@ -1,5 +1,14 @@
 // 明确的界面资源表。每行依次为中文、英文、日文，插值不参与翻译。
-const rows = `未采集|Uncollected|未取得
+const rows = `导出诊断日志（近3天）|Export diagnostics (last 3 days)|診断ログを出力（過去3日）
+正在打包…|Preparing ZIP…|ZIPを作成中…
+正在收集近3天的可用记录…|Collecting available records from the last 3 days…|過去3日の取得可能な記録を収集中…
+当前宿主不支持诊断包下载，请升级宿主后重试。|This host does not support diagnostic downloads. Upgrade it and try again.|このホストは診断ログのダウンロードに対応していません。更新後に再試行してください。
+已发起诊断包下载。提交问题时请补充发生时间和异常现象。|Diagnostic download started. Include the time and symptoms when reporting the issue.|診断ログのダウンロードを開始しました。問題報告には発生日時と症状を添えてください。
+登录已失效或无权限，请重新登录宿主后重试。|Your login expired or access was denied. Sign in again and retry.|ログインが失効したか権限がありません。再ログインして試してください。
+已有诊断包正在打包或下载，请稍后重试。|A diagnostic ZIP is being prepared or downloaded. Try again shortly.|診断ログを作成またはダウンロード中です。しばらくしてから再試行してください。
+下载尚未确认，可能仍在打包，请稍后检查下载记录。|Download not confirmed yet. Check your downloads shortly; preparation may still be running.|ダウンロードは未確認です。作成中の可能性があるため、後ほど履歴を確認してください。
+诊断包导出失败，请稍后重试。|Diagnostic export failed. Try again shortly.|診断ログの出力に失敗しました。しばらくしてから再試行してください。
+未采集|Uncollected|未取得
 人格总体 · 不含对象情绪|Persona overall · excludes per-person emotions|人格全体 · 相手ごとの感情を除く
 会话对象|Conversation partner|会話の相手
 仅观察模式不新增这三项采集；在设置 → 快速开始将运行模式改为参与中后生效。|Observe-only mode does not collect these three emotions; set the run mode to Active in Settings → Quick start.|観察のみではこの3種の感情を新規記録しません。設定 → クイックスタートで動作モードを「参加中」にしてください。

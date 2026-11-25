@@ -18,6 +18,7 @@ ROUTES = (
     ("memory-sync", "POST"), ("behavior-simulate", "POST"),
     ("emotion-images", "GET"), ("emotion-image", "GET"), ("emotion-image-save", "POST"),
     ("experience-generate", "POST"), ("experience-task", "GET"),
+    ("diagnostics/export", "GET"),
 )
 
 
@@ -33,7 +34,7 @@ class PageAPI:
         for operation, method in ROUTES:
             self._host.register_web_api(
                 f"/{PLUGIN_NAME}/console/{operation}",
-                getattr(self, operation.replace("-", "_")), [method],
+                getattr(self, operation.replace("-", "_").replace("/", "_")), [method],
                 f"livingEmotion authenticated console {operation}",
             )
 
@@ -102,6 +103,36 @@ class PageAPI:
 
     async def experience_task(self):
         return await self._dispatch("experience-task")
+
+    async def diagnostics_export(self):
+        from astrbot.api.web import json_response, request
+        from ..diagnostic_bundle import DiagnosticBusy, download_response, export_async
+        from ..runtime.diagnostics import prepare
+        bundle = None
+        try:
+            actor = require_dashboard_user(self._host, request)
+            if self._closed:
+                raise ConsoleError("unavailable")
+            if request.method != "GET" or request.query.keys():
+                raise ConsoleError("validation_error")
+            bundle = await export_async(*prepare(self._application))
+            if self._closed:
+                raise ConsoleError("unavailable")
+            if require_dashboard_user(self._host, request) != actor:
+                raise ConsoleError("forbidden")
+            response = download_response(bundle)
+            bundle = None
+            return response
+        except DiagnosticBusy:
+            return json_response({"status": "error", "message": "diagnostic busy"},
+                                 status_code=409, headers=RESPONSE_HEADERS)
+        except Exception as exc:
+            error = public_error(exc)
+            return json_response({"status": "error", "code": error.code, "message": error.message},
+                                 status_code=error.status_code, headers=RESPONSE_HEADERS)
+        finally:
+            if bundle is not None:
+                bundle.close()
 
     async def _dispatch(self, operation: str):
         from astrbot.api.web import json_response, request

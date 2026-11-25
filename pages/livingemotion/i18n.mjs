@@ -1,4 +1,4 @@
-import { messages } from "./messages.mjs?v=ta-omissions-20261119-r3";
+import { messages } from "./messages.mjs?v=diagnostics-20261125";
 const reverseMessages = new Map(Object.entries(messages).flatMap(([key, values]) => values.map(value => [value, key])));
 const storageKey = "livingemotion.locale.v1";
 export const locales = ["zh-CN", "en", "ja"];

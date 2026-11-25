@@ -2,7 +2,7 @@
 
 ![livingEmotion wordmark and state lines](.github/img/Banner.png)
 
-[![Version](https://img.shields.io/badge/version-0.7.1-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.8.0-3a8060)](CHANGELOG.md)
 
 [简体中文](README.md) · **English**
 
@@ -50,6 +50,6 @@ Successful wording substitutions are scoped by the actual image provider, model 
 Model generation can incur provider charges. Normal use needs neither Node nor an external CDN.
 Developer: [AKIhunter](https://github.com/AKIhunter). Feedback QQ group: 991350637.
 
-0.7.1 preserves image failure diagnostics, separates user adjustment rounds, and prevents automatic regeneration of unknown results. Pair with LH 2.9.6.
+0.8.0 adds a diagnostic ZIP download at the top of the console for the last 72 hours, covering events, emotion, proactive behavior and promise status. Independent records are capped at 32 MiB with 1 MiB files and automatic expiry cleanup every minute. No configuration or database migration is required, and export makes no model calls. LivingHello 2.10.0 provides its own export; each plugin works independently. See the [diagnostic guide](docs/diagnostics.md).
 SQLite upgrades automatically to v9 without filling missing historical control values.
 No new configuration keys; three-decimal model inputs and scheduled greeting coordination remain.

@@ -18,12 +18,16 @@ def test_all_sources_reject_builtin_logging_and_runtime_uses_api_logger():
         sources.extend((ROOT / directory).rglob("*.py"))
     for path in sources:
         tree = ast.parse(path.read_text(), filename=str(path))
+        # The recorder only defines a Handler attached to astrbot.api.logger;
+        # its isolated test constructs synthetic LogRecords. Neither adds a backend.
+        handler_only = path.relative_to(ROOT).as_posix() in (
+            "diagnostic_bundle.py", "tests/test_diagnostic_bundle.py")
         runtime = path.parent == ROOT or path.relative_to(ROOT).parts[0] in RUNTIME_DIRS
         imports = []
         uses_logger = False
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
-                assert all(item.name.split(".")[0] != "logging" for item in node.names), path
+                assert handler_only or all(item.name.split(".")[0] != "logging" for item in node.names), path
             if isinstance(node, ast.ImportFrom):
                 assert (node.module or "").split(".")[0] != "logging", path
                 imports.extend((node.module, item.asname or item.name)
@@ -40,3 +44,11 @@ def test_all_sources_reject_builtin_logging_and_runtime_uses_api_logger():
                     "astrbot_plugin_livingemotion." +
                     ".".join(path.relative_to(ROOT).with_suffix("").parts))
                 assert module.logger is logger, path
+
+
+def test_diagnostic_handler_never_constructs_a_logging_backend():
+    tree = ast.parse((ROOT / "diagnostic_bundle.py").read_text())
+    accesses = {node.attr for node in ast.walk(tree)
+                if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
+                and node.value.id == "logging"}
+    assert accesses == {"Handler", "INFO"}

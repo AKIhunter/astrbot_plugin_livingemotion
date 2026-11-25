@@ -16,7 +16,10 @@ async def simulation_record(store, request_id, value=None):
                        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                        (key, canonical_json(value)))
         return json.loads(old[0]) if old else None
-    return await store._run(access)
+    result = await store._run(access)
+    if value is not None:
+        store.record_diagnostic("behavior_simulation", {**value, "simulated": True})
+    return result
 
 
 async def query_behavior_logs(store, instance_id, selection, *, page=1, page_size=10, query=""):

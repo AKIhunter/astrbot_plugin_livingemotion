@@ -154,8 +154,11 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             raise
 
     async def _initialize(self):
+        from .diagnostics import start
+        self.diagnostics = start(self)
         await self.lifecycle.initialize()
         self.store, self.runtime = self.lifecycle.store, self.lifecycle.runtime
+        self.store.diagnostics = self.diagnostics
         self.instance_id = self.lifecycle.instance_id
         self.bridge = self.bridge_factory(self.host, self.instance_id, lambda: self.config)
         # 承诺这类“几十分钟后才到期”的消息要靠会话表重建 route，
@@ -173,6 +176,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                                    config_for_context=self.scoped_config)
         self.api._project_event = self.projector
         self.closed = False
+        self.diagnostics.record("lifecycle", {"status": "loaded"})
         await self.initialize_manual_experience()
         for context in reversed(await self.store.list_contexts()):
             self._contexts[context.account_key] = context
@@ -2089,7 +2093,13 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         try:
             await self._stop_business()
         finally:
-            await self.lifecycle.terminate()
+            try:
+                await self.lifecycle.terminate()
+            finally:
+                diagnostics = getattr(self, "diagnostics", None)
+                if diagnostics is not None:
+                    diagnostics.record("lifecycle", {"status": "unloaded"})
+                    await asyncio.to_thread(diagnostics.close)
         self._contexts.clear()
         self._pending_replies.clear()
         self._participation.clear()

@@ -3,7 +3,7 @@
 ![livingEmotion 原创字标与状态线](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-4.29.1–4.29.4-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.7.1-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.8.0-3a8060)](CHANGELOG.md)
 
 **简体中文** · [English](README.en.md)
 
@@ -58,6 +58,7 @@
 | 早安避重与其他时段随机主动 | [定时问候让行](docs/native-proactive-yield.md) |
 | 模型情绪值与中文状态块 | [输入精度说明](docs/prompt-precision.md) |
 | 常见问题、保存冲突、不生成、不发送 | [排障手册](docs/troubleshooting.md) |
+| 一键导出近3天的脱敏诊断包 | [诊断日志](docs/diagnostics.md) |
 | 兼容性与宿主版本 | [兼容说明](docs/compatibility.md) |
 | 使用指令 `le_wake` | 管理员叫醒；[睡眠规则](docs/sleep-energy-rules.md) |
 | 开发、管理接口与专题 | [文档索引](docs/README.md) |
@@ -73,6 +74,6 @@
 模型生成可能计费；未知生成或发送不会盲重试。`sent`表示发送接口受理，不表示用户已读。
 普通使用无需Node或外部CDN；接口走公开契约。管理员叫醒命令为 `le_wake`，前缀遵循宿主设置。
 
-0.7.1 修复图片失败原因交接、用户调整后的轮次去重，以及未知结果的恢复保护；配套 LH 2.9.6。
+0.8.0 在页面顶部增加近3天脱敏诊断包下载，涵盖事件、情绪、主动行为和承诺状态。独立记录最多32 MiB，单文件1 MiB，每分钟自动清理过期文件；无需配置或数据库迁移，导出不调用模型。配套 LH 2.10.0 提供各自诊断入口，两个插件均可独立导出。详见[诊断日志](docs/diagnostics.md)。
 关系列表每日零点更新，3D与编辑保持实时；SQLite自动升至v9，旧历史不回填。
 保留3位小数模型输入与定时问候让行；无新增配置键。完整变化见[更新日志](CHANGELOG.md)。

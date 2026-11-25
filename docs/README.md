@@ -1,6 +1,6 @@
 # LivingEmotion 当前文档
 
-适用0.7.1，2026-11-23核对。历史变更统一见[CHANGELOG](../CHANGELOG.md)；
+适用0.8.0，2026-11-25核对。历史变更统一见[CHANGELOG](../CHANGELOG.md)；
 旧测试报告仅证明当时范围，不替代当前代码或生产状态。
 
 | 用途 | 权威入口 | 依据 |
@@ -11,6 +11,7 @@
 | 九项情绪谱、对象采集与草稿刷新 | [情绪谱](ta-emotion-spectrum.md) | collector、DTO、规则边界与页面 |
 | 掌控感、聊天表达与历史兼容 | [掌控感](control-integration.md) | 置信度、六项投影、表达策略和SQLite v9 |
 | 保存冲突、不生成与不发送 | [排障](troubleshooting.md) | 校验、理由码与当前接口 |
+| 导出近3天诊断包 | [诊断日志](diagnostics.md) | 受控采集、只读来源、管理员下载与清理 |
 | 安装与宿主支持 | [安装](installation.md)、[兼容](compatibility.md) | metadata、宿主契约 |
 | 可信插件与管理接口 | [API](api.md) | 实际注册端点与门面 |
 | 承诺、去重、到期与取消 | [承诺](promise.md) | PromiseService、PromiseStore、宿主仲裁 |

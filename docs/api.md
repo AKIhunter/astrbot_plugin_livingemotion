@@ -1,7 +1,7 @@
 # API v1
 
-适用0.7.1；按api.py、page_api/routes.py、validation.py和Console核对。
-本页同时列出公开进程内门面和全部21项注册管理路由。
+适用0.8.0；按api.py、page_api/routes.py、validation.py和Console核对。
+本页同时列出公开进程内门面和全部22项注册管理路由。
 注册不等于应用已接通：emotion-image-save当前缺少应用入口，返回503。
 
 ## 进程内门面
@@ -114,6 +114,7 @@ global汇总真实来源，不创建全局发送路由。state/configuration可�
 | POST emotion-image-save | mood及data_url/index/remove | 当前应用入口缺失，503 |
 | POST experience-generate | request_id/persona_id/kind=diary或dream | 接受或复用后台私人任务 |
 | GET experience-task | request_id | 同人格任务状态，查询不再次派发模型 |
+| GET diagnostics/export | 无；拒绝所有查询参数 | 管理员下载近72小时脱敏 ZIP；非 JSON DTO；单插件只允许一个任务 |
 
 action白名单是night.sleep/night.wake/diary.generate/dream.generate/behavior.send/experience.pin/promise.cancel。
 睡眠动作仍需allow_sleep及当前可用动作；唤醒不加精力。

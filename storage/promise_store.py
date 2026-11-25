@@ -245,7 +245,11 @@ class PromiseStore:
 
             return self.store._transaction(db, mutate)
 
-        return await self.store._run(create)
+        result = await self.store._run(create)
+        self.store.record_diagnostic("promise_created", {
+            "at": now, "scope_key": context.scope_key, "due_at": due_at, **result,
+        })
+        return result
 
     async def accept_image_handoff(self, context: Context, *, request_id: str,
                                    source_event_id: str, failure: dict,
@@ -487,7 +491,11 @@ class PromiseStore:
                          now + max(3600, min(168 * 3600, float(ttl_seconds)))))
                 return {"status": "sent" if sent else "settled", "promise_id": pid}
             return self.store._transaction(db, mutate)
-        return await self.store._run(write)
+        result = await self.store._run(write)
+        self.store.record_diagnostic("promise_image_receipt", {
+            "at": now, "scope_key": context.scope_key, **result,
+        })
+        return result
 
     async def delivered_images(self, context: Context) -> list[dict]:
         await self.ensure()
@@ -636,7 +644,11 @@ class PromiseStore:
 
             return self.store._transaction(db, mutate)
 
-        return await self.store._run(write)
+        result = await self.store._run(write)
+        self.store.record_diagnostic("promise_transition", {
+            "at": now, "promise_id": promise_id, **result,
+        })
+        return result
 
     async def reschedule(self, promise_id: str, *, due_at: float, bucket: str,
                          max_advance: int = 3) -> dict[str, Any]:
@@ -710,7 +722,11 @@ class PromiseStore:
 
             return self.store._transaction(db, mutate)
 
-        return await self.store._run(write)
+        result = await self.store._run(write)
+        self.store.record_diagnostic("promise_retry", {
+            "at": now, "promise_id": promise_id, "due_at": retry_at, **result,
+        })
+        return result
 
     async def reclaim(self, promise_id: str) -> dict[str, Any]:
         """把卡在 running/unknown 的行拉回 scheduled，供重启后自愈。"""

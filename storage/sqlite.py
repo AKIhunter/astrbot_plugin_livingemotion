@@ -128,6 +128,16 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
         self._state_modes = {}
         self._owner_generations = {}
         self._state_keys = {}
+        self.diagnostics = None
+
+    def record_diagnostic(self, operation, value):
+        # Optional evidence must never affect a committed business operation.
+        if self.diagnostics is not None:
+            try:
+                from ..runtime.diagnostics import summary
+                self.diagnostics.record(operation, summary(value))
+            except Exception:
+                self.diagnostics.dropped += 1
 
     async def _thread(self, operation: Callable[[], T]) -> T:
         # Cancelling to_thread does not stop SQLite; drain before releasing the lock.
@@ -533,7 +543,16 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
             except _Rejected as exc:
                 return CommitResult("rejected", exc.reason, event_key,
                                     self._generation(db, context))
-        return await self._run(commit)
+        result = await self._run(commit)
+        self.record_diagnostic("event", {
+            "at": now, "event_id": event.event_id, "event_key": result.event_key,
+            "scope_key": context.scope_key, "account_id": context.account_id,
+            "status": result.status, "reason_code": result.reason_code,
+            "generation": result.generation,
+        })
+        for trace in traces if result.accepted else ():
+            self.record_diagnostic("projection", {"at": now, "event_key": result.event_key, **trace})
+        return result
 
     async def write_states(self, context: Context, expected_generation: int,
                            writes: Sequence[StateWrite]) -> CommitResult:
@@ -550,7 +569,15 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
             except _Rejected as exc:
                 return CommitResult("rejected", exc.reason,
                                     generation=self._generation(db, context))
-        return await self._run(commit)
+        result = await self._run(commit)
+        if result.accepted:
+            for write in writes:
+                if write.kind in ("bot", "night"):
+                    self.record_diagnostic("state_projection", {
+                        "at": now, "scope_key": context.scope_key, "kind": write.kind,
+                        "generation": expected_generation, "after": write.value,
+                    })
+        return result
 
     async def refine_emotion(self, event: Event, generation: int, version: int,
                              value: dict, trace: dict, *, owner=None,
@@ -622,7 +649,10 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
                 return self._transaction(db, mutate)
             except _Rejected as exc:
                 return CommitResult("rejected", exc.reason, event.idempotency_key, generation)
-        return await self._run(commit)
+        result = await self._run(commit)
+        if result.accepted:
+            self.record_diagnostic("emotion_refined", trace)
+        return result
 
     async def refine_context_emotions(self, event: Event, generation: int,
                                       write: StateWrite, trace: dict) -> CommitResult:
@@ -666,7 +696,10 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
                 return self._transaction(db, mutate)
             except _Rejected as exc:
                 return CommitResult("rejected", exc.reason, event.idempotency_key, generation)
-        return await self._run(commit)
+        result = await self._run(commit)
+        if result.accepted:
+            self.record_diagnostic("context_emotions_refined", {"at": now, **trace})
+        return result
 
     def _prune_window(self, db: sqlite3.Connection, now: float,
                       scope_key: str | None = None) -> None:
@@ -1017,7 +1050,13 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
                 return self._transaction(db, mutate)
             except _Rejected as exc:
                 return {"status": "rejected", "reason_code": exc.reason}
-        return await self._run(create)
+        result = await self._run(create)
+        self.record_diagnostic("intent_created", {
+            "intent_id": intent.intent_id,
+            "scope_key": intent.context.scope_key, "purpose": intent.purpose,
+            "simulated": False, **result,
+        })
+        return result
 
     async def get_intent(self, context: Context, intent_id: str) -> dict[str, Any] | None:
         def read(db: sqlite3.Connection) -> dict[str, Any] | None:
@@ -1121,7 +1160,12 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
                 return self._transaction(db, mutate)
             except _Rejected as exc:
                 return {"status": "rejected", "reason_code": exc.reason}
-        return await self._run(transition)
+        result = await self._run(transition)
+        self.record_diagnostic("intent_transition", {
+            "intent_id": intent_id, "scope_key": context.scope_key,
+            "to": status, "transport_receipt": transport_receipt, "simulated": False, **result,
+        })
+        return result
 
     async def recover_inflight(self) -> dict[str, int]:
         """Use on startup after exclusive ownership; never resume an old send."""
