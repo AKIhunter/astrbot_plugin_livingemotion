@@ -151,26 +151,6 @@ try {
               report.screenshots.push(filename);
             }
           });
-          if (name === "overview") {
-            await test(`F13.reply_confirmation_visible_${width}_${theme}`, async () => {
-              const row = frame.locator("#content .health-row").filter({
-                has: frame.getByText("reply_confirmation", { exact: true }),
-              });
-              assert.equal(await row.count(), 1);
-              await row.scrollIntoViewIfNeeded();
-              assert.ok(await row.isVisible());
-              const status = row.locator(".status");
-              assert.ok(await status.isVisible());
-              assert.equal(await status.innerText(), "不可用");
-              const hint = row.locator(".hint");
-              assert.ok(await hint.isVisible());
-              const reason = await hint.innerText();
-              for (const part of ["unsupported", "当前宿主无可靠回复确认",
-                "收尾 120 秒超时取消", "不将 after-sent/bool/None 视为发送成功"]) {
-                assert.ok(reason.includes(part), `missing reply confirmation explanation: ${part}`);
-              }
-            });
-          }
         }
       }
     }

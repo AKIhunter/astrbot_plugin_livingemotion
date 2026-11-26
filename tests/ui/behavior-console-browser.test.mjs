@@ -15,17 +15,29 @@ try {
     await page.clock.install();
     await page.goto(`${url}?scenario=native-dto`);
     await page.locator("#content[aria-busy=false]").waitFor();
-    // TA 页底部：六维说明默认收起，点开后每行都有可展开的人话问号。
+    // TA 页底部：「情绪与指标说明」默认收起，含五维指标、信号、九项情绪三张表，每行都有可展开的人话问号。
     const explainer = page.locator("details[data-emotion-explainer]");
     assert.equal(await explainer.count(), 1);
     assert.equal(await explainer.getAttribute("open"), null);
     await explainer.locator("summary").click();
     assert.equal(await explainer.getAttribute("open"), "");
-    assert.equal(await explainer.locator("tbody tr").count(), 19);
+    const tables = explainer.locator("table");
+    assert.equal(await tables.count(), 3);
+    // 三张表依次为五维指标 5 行、信号 19 行、九项情绪 9 行。
+    assert.deepEqual(await tables.evaluateAll(items => items.map(item => item.tBodies[0].rows.length)), [5, 19, 9]);
+    assert.equal(await explainer.locator("tbody tr").count(), 33);
+    // 九项情绪表与 TA 页情绪谱同名同序，每行恰好一个问号按钮。
+    const emotionRows = tables.nth(2).locator("tbody tr");
+    assert.equal(await emotionRows.evaluateAll(rows => rows.every(row => row.querySelectorAll(".help-button").length === 1)), true);
+    assert.deepEqual(await emotionRows.evaluateAll(rows => rows.map(row => row.cells[0].textContent)),
+      await page.locator(".ta-emotion-stem-label").allTextContents());
     const help = explainer.locator(".help-button").first();
     await help.click();
     assert.equal(await help.getAttribute("aria-expanded"), "true");
     assert.equal(await explainer.locator(".help-text").first().isVisible(), true);
+    const emotionHelp = emotionRows.first().locator(".help-button");
+    await emotionHelp.click();
+    assert.equal(await emotionHelp.getAttribute("aria-expanded"), "true");
     // 自动刷新或切页签都会重建 TA 页 DOM：展开状态必须保留，不能被自动收起。
     await page.locator("[data-section=persona]").click();
     await page.locator("[data-section=overview]").click();
@@ -33,6 +45,8 @@ try {
     assert.equal(await restored.getAttribute("open"), "");
     assert.equal(await restored.locator(".help-button").first().getAttribute("aria-expanded"), "true");
     assert.equal(await restored.locator(".help-text").first().isVisible(), true);
+    assert.equal(await restored.locator("table").nth(2).locator(".help-button").first().getAttribute("aria-expanded"), "true");
+    assert.equal(await restored.locator("table").nth(2).locator(".help-text").first().isVisible(), true);
     await page.evaluate(() => {
       const bridge = window.AstrBotPluginView;
       const get = bridge.apiGet, post = bridge.apiPost;

@@ -152,14 +152,14 @@ export const nativeDTO = {
         "type": "boolean",
         "advanced": false,
         "help": "启用生活状态与配置功能。",
-        "details": "关闭后停止接收新生活事件；开启后仍遵守运行模式和各模块开关。",
-        "example": "想先观察状态：开启插件，运行模式选“仅观察”。",
+        "details": "关闭后停止接收新生活事件；开启后仍遵守工作模式和各模块开关。",
+        "example": "想先观察状态：开启插件，工作模式选“仅观察”。",
         "parent": "",
         "level": 0
       },
       {
         "key": "mode",
-        "label": "运行模式",
+        "label": "工作模式",
         "section": "quick_start",
         "value": "observe_only",
         "type": "enum",
@@ -252,8 +252,8 @@ export const nativeDTO = {
         "value": false,
         "type": "boolean",
         "advanced": false,
-        "help": "参与中模式按聊天对象记录委屈、受伤和害羞，并用于回复。",
-        "details": "在「设置 → 情绪」开启并保存；仅观察模式不新增这三项采集，在「设置 → 快速开始」将运行模式改为参与中后生效。到 TA 页选择具体会话查看。关闭后停止更新和表达。同页开启模型细化后，LLM按最近对话、语气和已有情绪判断；本轮分析复用，冷却期间补一次对象分析，共用每日额度，回复前最多等待1秒；超时不取消，分析在后台完成并写回，下一次回复和TA页生效。模型不可用只保留历史衰减；关闭模型细化时兼容本地规则，不具备语义理解。害羞需友好关系，并尊重关系说明中的边界。",
+        "help": "工作模式为「参与表达与行动」时按聊天对象记录委屈、受伤和害羞，并用于回复。",
+        "details": "在「设置 → 情绪」开启并保存；仅观察模式不新增这三项采集，在「设置 → 快速开始」将「工作模式」改为「参与表达与行动」后生效。到 TA 页选择具体会话查看。关闭后停止更新和表达。同页开启模型细化后，LLM按最近对话、语气和已有情绪判断；本轮分析复用，冷却期间补一次对象分析，共用每日额度，回复前最多等待1秒；超时不取消，分析在后台完成并写回，下一次回复和TA页生效。模型不可用只保留历史衰减；关闭模型细化时兼容本地规则，不具备语义理解。害羞需友好关系，并尊重关系说明中的边界。",
         "example": "帮助被认可后又被否认可产生委屈；直接贬低可产生受伤；亲密关注可产生害羞。",
         "parent": "",
         "level": 0
@@ -3152,14 +3152,14 @@ export const nativeDTO = {
           "type": "boolean",
           "advanced": false,
           "help": "启用生活状态与配置功能。",
-          "details": "关闭后停止接收新生活事件；开启后仍遵守运行模式和各模块开关。",
-          "example": "想先观察状态：开启插件，运行模式选“仅观察”。",
+          "details": "关闭后停止接收新生活事件；开启后仍遵守工作模式和各模块开关。",
+          "example": "想先观察状态：开启插件，工作模式选“仅观察”。",
           "parent": "",
           "level": 0
         },
         {
           "key": "mode",
-          "label": "运行模式",
+          "label": "工作模式",
           "section": "quick_start",
           "value": "observe_only",
           "type": "enum",
@@ -3252,8 +3252,8 @@ export const nativeDTO = {
           "value": false,
           "type": "boolean",
           "advanced": false,
-          "help": "参与中模式按聊天对象记录委屈、受伤和害羞，并用于回复。",
-          "details": "在「设置 → 情绪」开启并保存；仅观察模式不新增这三项采集，在「设置 → 快速开始」将运行模式改为参与中后生效。到 TA 页选择具体会话查看。关闭后停止更新和表达。同页开启模型细化后，LLM按最近对话、语气和已有情绪判断；本轮分析复用，冷却期间补一次对象分析，共用每日额度，回复前最多等待1秒；超时不取消，分析在后台完成并写回，下一次回复和TA页生效。模型不可用只保留历史衰减；关闭模型细化时兼容本地规则，不具备语义理解。害羞需友好关系，并尊重关系说明中的边界。",
+          "help": "工作模式为「参与表达与行动」时按聊天对象记录委屈、受伤和害羞，并用于回复。",
+          "details": "在「设置 → 情绪」开启并保存；仅观察模式不新增这三项采集，在「设置 → 快速开始」将「工作模式」改为「参与表达与行动」后生效。到 TA 页选择具体会话查看。关闭后停止更新和表达。同页开启模型细化后，LLM按最近对话、语气和已有情绪判断；本轮分析复用，冷却期间补一次对象分析，共用每日额度，回复前最多等待1秒；超时不取消，分析在后台完成并写回，下一次回复和TA页生效。模型不可用只保留历史衰减；关闭模型细化时兼容本地规则，不具备语义理解。害羞需友好关系，并尊重关系说明中的边界。",
           "example": "帮助被认可后又被否认可产生委屈；直接贬低可产生受伤；亲密关注可产生害羞。",
           "parent": "",
           "level": 0
@@ -8264,14 +8264,14 @@ export const nativeDTO = {
   }
 };
 export const nativeDTOEvidence = {
-  "captured_at": "2026-11-26T06:48:49.276221+00:00",
+  "captured_at": "2026-11-26T11:09:00.619411+00:00",
   "field_count": 138,
   "scope": "real Console DTO / synthetic host / temporary database",
   "sources_sha256": {
     "config.py": "1bd499737f0e6b259ef8827bc13b2069fbc941c658cd6a38833160a8fe3f94ee",
     "contracts.py": "40307c7c6e4a242493328f2eca7fc23bb6699b9a6dca1e393e7e499de6af0cad",
-    "runtime/console.py": "b56387b239a4bdd03ded5592008e194d995713272217f70702cf1bd2f9dd1fe1",
-    "runtime/config_help.py": "b4534484a7fe8dfbe5c93e044c70dab21a6d8ad68d3acb20f60597524e5cb0f9",
+    "runtime/console.py": "e068bd8be097965317b8e64e632e7d395054ee01823c75413f22c1ac1dd5dcc0",
+    "runtime/config_help.py": "55a2f43422f3d6bf15ae84d855dafcdd05bd76530c934e083c1265856414b2fc",
     "storage/schema.py": "096a90b582af5d6694f957ff4df29a8d6230fa5dc880f8bff5fd33c2eba17115",
     "storage/sqlite.py": "98f05579910455ee5afba276d1c5920d20d83d3533bf868f6325eb19345978ab",
     "storage/state_scope.py": "2b8e9fc28c36ea0d880aa0a21b7f98c1308d7b143f4a0db6be74734dbccb12e5",

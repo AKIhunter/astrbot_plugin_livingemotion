@@ -1,7 +1,7 @@
 # API v1
 
-适用0.9.0；按api.py、page_api/routes.py、validation.py和Console核对。
-本页同时列出公开进程内门面和全部22项注册管理路由。
+适用0.10.0；按api.py、page_api/routes.py、validation.py和Console核对。
+本页同时列出公开进程内门面和全部23项注册管理路由。
 注册不等于应用已接通：emotion-image-save当前缺少应用入口，返回503。
 
 ## 进程内门面
@@ -87,7 +87,7 @@ GET只接受单值白名单参数；POST不接受query，要求application/json�
 409 version_conflict须重读，generation_in_progress等任务完成；
 503 unavailable须先读回状态，写操作不盲重试。
 
-## 全部21项管理路由
+## 全部23项管理路由
 
 S为ScopeSelection：persona_id/view_scope=global/private/group/context_id/platform。
 context_id是后端发布的账号级account_key，不能替换QQ号或scope_key。
@@ -111,6 +111,7 @@ global汇总真实来源，不创建全局发送路由。state/configuration可�
 | GET persona-description | persona_id | 原生人格说明，最多16000字符 |
 | GET style-summary | persona_id | 当前摘要、是否custom/available |
 | POST style-summary-save | persona_id/text；可选reason | 最多2000字符，空串恢复默认 |
+| POST style-summary-draft | persona_id | 主模型按原生人格设定写风格摘要草稿；只返回文本，不保存，可能产生模型费用 |
 | POST memory-sync | 可选context_id | 当前提供者实际同步能力与结果 |
 | POST behavior-simulate | 可选context_id/persona_id/emotion/request_id | 生成模拟日志，sends=0；模型可收费 |
 | GET emotion-images | 无 | 情绪图片配置、各mood可用项 |
@@ -128,6 +129,16 @@ promise.cancel需promise_id；仅取消当前目标、同代次的scheduled/awai
 事务中核对身份与状态，running拒绝取消；返回cancelled且model_calls=0/sends=0。
 取消只停止后续处理，不撤销上游请求、不补发未知图片。页面成功后自动读回。
 当前没有clear_context、全库删除或local_lite录入HTTP端点。
+
+style-summary-draft只接persona_id，返回persona_id/text/characters/available/model，
+不写入摘要，需再调style-summary-save才生效。主模型指通用生成模型provider_id；
+留空时取该人格最近一次真实会话当前的聊天模型，最后退回fallback_provider_id。
+只依据原生人格设定生成，最多2000字符，与人格设定同语言。
+输入受model_input_tokens、输出受model_output_tokens、超时受model_timeout_seconds约束，
+人格设定放不下时按输入上限截断；每次恰好调用一次模型，不占每日额度，操作者写入审计记录。
+同一时刻只允许一份草稿，上一份未完成返回409 generation_in_progress。
+人格不存在、没有设定或超过16000字符返回400 validation_error；
+没有可用模型、超时或生成失败返回503 unavailable，这几种情况都不写入任何内容。
 
 ## 配置保存与任务幂等
 

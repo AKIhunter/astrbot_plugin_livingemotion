@@ -11,7 +11,7 @@ const rows = `导出诊断日志（近3天）|Export diagnostics (last 3 days)|�
 未采集|Uncollected|未取得
 人格总体 · 不含对象情绪|Persona overall · excludes per-person emotions|人格全体 · 相手ごとの感情を除く
 会话对象|Conversation partner|会話の相手
-仅观察模式不新增这三项采集；在设置 → 快速开始将运行模式改为参与中后生效。|Observe-only mode does not collect these three emotions; set the run mode to Active in Settings → Quick start.|観察のみではこの3種の感情を新規記録しません。設定 → クイックスタートで動作モードを「参加中」にしてください。
+仅观察模式不新增这三项采集；在「设置 → 快速开始」将「工作模式」改为「参与表达与行动」后生效。|Observe-only mode does not collect these three emotions; set "Operating mode" to "Participate in expression and action" under Settings → Quick start.|観察のみではこの3種の感情を新規記録しません。「設定 → クイックスタート」で「動作モード」を「表現と行動に参加」にしてください。
 委屈、受伤与害羞|Wronged, hurt and shyness|理不尽さ・傷つき・照れ
 委屈、受伤与害羞按对象采集；选择具体会话后查看。|Wronged, hurt and shyness are collected per person; select a conversation to view.|理不尽さ・傷つき・照れは相手ごとに記録します。会話を選んで確認してください。
 委屈、受伤与害羞：当前会话对象 {0}|Wronged, hurt and shyness: current interlocutor {0}|理不尽さ・傷つき・照れ：現在の相手 {0}
@@ -86,10 +86,7 @@ TA 当前感受|TA's current feelings|TA の現在の感情
 可信度|Confidence|確信度
 观察依据|Observation basis|観察の根拠
 观察已过期，不作为当前依据|Observation expired; not current evidence|観察は期限切れで、現在の根拠には使用しません
-依赖健康|Dependency health|依存機能の状態
-宿主尚未提供依赖健康。|The host has not provided dependency health.|ホストから依存機能の状態が提供されていません。
 可用|Available|利用可能
-降级|Degraded|機能制限
 不可用|Unavailable|利用不可
 未提供|Not provided|提供なし
 精力 · 来自长夜|Energy · from Night|活力 · 夜の状態から
@@ -98,9 +95,7 @@ TA 当前感受|TA's current feelings|TA の現在の感情
 同一人格共享|Shared by persona|同じ人格で共有
 真实会话独立|Separate per real conversation|実際の会話ごとに独立
 由宿主解析|Resolved by host|ホストが解決
-可用性与来源|Availability and source|利用可否と出典
 状态|State|状態
-暂不可用|Temporarily unavailable|一時利用不可
 原因|Reason|理由
 当前为真实会话独立模式。全局数值来自最近代表会话 {0}，不是共享状态或多会话平均值。|Conversation-specific mode. Global values come from representative conversation {0}; they are not shared or averaged.|会話ごとの独立モードです。全体の値は直近の代表会話 {0} から取得し、共有値や平均値ではありません。
 当前人格|Current persona|現在の人格
@@ -303,7 +298,7 @@ TA 维度|TA dimension|TA の次元
 底气|Poise|自信
 保守|Conservative|控えめ
 激进|Aggressive|積極的
-情绪与五维指标说明|Emotion and five-dimension metric guide|感情と五次元指標の説明
+情绪与指标说明|Emotion and metric guide|感情と指標の説明
 数字表示 TA 当前情绪的强弱。点每行右侧的问号，可以看到这个数值为什么会升降。|The numbers show how strong TA's emotions are right now. Click the question mark on each row to see why the value rises or falls.|数値は TA の現在の感情の強さを表します。各行の右側の「?」を押すと、その値が上下する理由が表示されます。
 指标|Metric|指標
 什么情况下升高|When it rises|上がるとき
@@ -315,6 +310,41 @@ TA 维度|TA dimension|TA の次元
 当前档位「{0}」：单次变化最多 {1}，同一类刺激 5 分钟内累计最多 {2}；换档位等比放大，衰减速度不变。|Current preset "{0}": up to {1} per event and {2} per stimulus type within 5 minutes. Other presets scale proportionally; decay speed is unchanged.|現在のプリセット「{0}」：1 回の変化は最大 {1}、同じ種類の刺激は 5 分間に最大 {2}。プリセットを変えると比例して拡大し、減衰速度は変わりません。
 表中是「{0}」档的四维候选增量，实际结果还受对象、开心方向和窗口限幅约束；没有新的互动时按时间回落到平常水平。|The table shows candidate deltas for "{0}"; the recipient, joy direction and rolling budget constrain the result. Without new interactions, affect decays toward its baseline.|表は「{0}」の候補増分です。対象、喜びの方向、移動上限が結果を制限します。新たな交流がなければ基準へ戻ります。
 开心另设近 5 分钟滑动限幅：累计上升最多 5 点、下降最多 10 点，正负独立且不随档位放大；自然回落不占额度。普通聊天、合理纠错与主体不明不增减开心。|Joy has a rolling five-minute limit of 5 points up and 10 down, accounted independently across presets. Natural decay uses no budget; ordinary chat, reasonable corrections and unclear recipients do not change joy.|喜びは直近5分で上昇5点、下降10点まで、別々に計算しプリセットでは拡大しません。自然減衰は枠を消費せず、通常の会話、妥当な訂正、対象不明では喜びは変わりません。
+TA 页「情绪分布」里的九项情绪，各自的升降和回落如下。|The nine emotions in the TA page emotion distribution rise and fall as follows.|TA ページの「感情の分布」に表示される 9 種類の感情の上下と戻り方は次のとおりです。
+被夸、被关心，心情变好|Praised or cared for|褒められる・気にかけてもらう
+心情回落，或压力升高|The mood settles, or stress rises|気分が落ち着く、またはストレスが上がる
+跟随愉悦，约 30 分钟|Follows pleasure, about 30 min|快感に従う。約 30 分
+喜悦跟着愉悦走：心情好就有喜悦，压力会把它压低一些。没有新互动时，愉悦约 30 分钟回落一半，喜悦也跟着回落。|Joy follows pleasure: a good mood brings joy, and stress presses it down a little. Without new interactions, pleasure halves in about 30 minutes and joy falls with it.|喜びは快感に従います。気分が良いと喜びがあり、ストレスが少し押さえます。新しいやり取りがなければ、快感は約 30 分で半分に戻り、喜びもいっしょに下がります。
+被骂、起冲突、被冒犯|Insulted or in conflict|叱られる・衝突・侵害される
+气消了、冷静或压力下降|Calm down, or stress drops|冷静になる・ストレスが下がる
+跟随愉悦、唤醒和压力|Follows pleasure, arousal, stress|快感・覚醒・ストレスに従う
+被骂、起冲突这类事让心情变差，也更激动、压力更大；三者叠加才有愤怒，越激动、压力越大越高。底气足时更高，底气不足时更低。愉悦约 30 分钟、唤醒约 20 分钟、压力约 40 分钟各回落一半，任一项回落，愤怒都会跟着降。|Setbacks like insults or conflict sour the mood and make TA more worked up and stressed. Only all three together bring anger, and more of each means more anger. It is higher with poise and lower without it. Pleasure, arousal and stress halve in about 30, 20 and 40 minutes; as any of them falls, anger falls too.|叱られたり衝突したりすると気分が悪くなり、興奮とストレスも増します。三つそろうと怒りが生まれ、多いほど強くなります。自信があると高く、足りないと低くなります。快感は約 30 分、覚醒は約 20 分、ストレスは約 40 分で半分に戻り、どれか一つでも下がると怒りも下がります。
+被否定、对方失约|Dismissed or let down|否定される・約束を破られる
+心情恢复，或打起精神|Mood recovers, or TA perks up|気分が回復する、または気力が戻る
+悲伤先要心情变差，安静、不激动时更强；压力大或底气足时会轻一些。心情恢复或打起精神就减轻；没有新互动时，愉悦约 30 分钟回落一半，悲伤跟着回落。|Sadness needs a sour mood first and is stronger when TA is quiet. It is lighter under stress or with poise, and eases when the mood recovers or TA perks up. Without new interactions, pleasure halves in about 30 minutes and sadness falls with it.|悲しみもまず気分が悪くなることが必要で、静かで興奮していないときほど強くなります。ストレスや自信があるときはかえって弱く、気分が回復したり気力が戻ったりすると和らぎます。新しいやり取りがなければ、快感は約 30 分で半分に戻り、悲しみもいっしょに下がります。
+压力和警觉一起升高|Stress and alertness rise|ストレスと警戒の上昇
+压力下降、冷静下来|Stress drops, or TA calms down|ストレスが下がる・落ち着く
+跟随压力和唤醒|Follows stress and arousal|ストレスと覚醒に従う
+没有压力就没有恐惧；压力越大、越警觉，恐惧越高，底气足时会低一些。压力约 40 分钟、唤醒约 20 分钟各回落一半，恐惧跟着回落。|No stress, no fear. More stress and alertness bring more fear, and poise makes it lower. Stress and arousal halve in about 40 and 20 minutes, and fear falls with them.|ストレスがなければ恐れはありません。ストレスと警戒が強いほど高く、自信があると低くなります。ストレスは約 40 分、覚醒は約 20 分で半分に戻り、恐れもいっしょに下がります。
+突然收到意外消息|Unexpected message|突然意外なメッセージ
+警觉回到平常水平|Alertness back to normal|警戒が普段の水準に戻る
+跟随唤醒，约 20 分钟|Follows arousal, about 20 min|覚醒に従う。約 20 分
+惊讶只看唤醒超出平常水平的部分；唤醒是回落最快的指标，约 20 分钟就回落一半，所以惊讶来得快去得也快。心情特别好或特别差时，同样的意外带来的惊讶会小一些。|Surprise only counts arousal above its usual level. Arousal is the fastest-settling metric and halves in about 20 minutes, so surprise comes and goes quickly. When the mood is very good or very bad, the same unexpected event brings less surprise.|驚きは覚醒が普段の水準を超えた分だけを数えます。覚醒は最も速く戻る指標で、約 20 分で半分になるため、驚きはすぐに来てすぐに消えます。気分が非常に良い・非常に悪いときは、同じ意外でも驚きは小さくなります。
+想陪伴，或被感谢|Wants company, or is thanked|話したい・感謝される
+陪伴需求满足，或压力升高|Company need met, or stress rises|満たされる・ストレスが上がる
+跟随社交需求和愉悦|Follows social need and pleasure|交流欲求と快感に従う
+关爱跟着社交需求和愉悦走，压力高时会压低。社交需求约 60 分钟、愉悦约 30 分钟各回落一半；平常也有想交流的底子，所以平静时关爱不一定归零。|Affection follows social need and pleasure, and stress presses it down. Social need and pleasure halve in about 60 and 30 minutes. Some wish to connect remains at rest, so affection does not always drop to zero when calm.|愛情は交流欲求と快感に従い、ストレスが高いと押さえられます。交流欲求は約 60 分、快感は約 30 分で半分に戻ります。普段から話したい気持ちが少しあるため、静かなときも愛情がゼロになるとは限りません。
+被冤枉，或付出被否定|Blamed or dismissed|理不尽に責められる・否定される
+澄清或道歉，或自然减弱|Clarified or apologized to|誤解を解く・謝る、または薄れる
+30 分钟减半，最多 120 分钟|Halves in 30 min, max 120 min|30 分で半分、最大 120 分
+默认关闭，开启方法见下方说明。强度最高 70；对方澄清或真诚道歉时会减轻，甚至清除。|Off by default; see the note below for how to enable it. Strength is capped at 70. It eases when the other person clears things up or sincerely apologizes, and may even be cleared.|既定ではオフで、有効にする方法は下の説明を参照してください。強度は最大 70 です。相手が誤解を解く・心から謝ると弱まり、消えることもあります。
+被贬低，或被否定关系|Put down, or the bond is denied|貶められる・関係を否定される
+默认关闭，开启方法见下方说明。强度最高 70；分清恶意贬低、合理纠错和亲昵玩笑要靠「模型细化情绪」。|Off by default; see the note below for how to enable it. Strength is capped at 70. Telling malicious put-downs from fair correction or affectionate teasing relies on "Model-assisted emotions".|既定ではオフで、有効にする方法は下の説明を参照してください。強度は最大 70 です。悪意の貶め・妥当な訂正・親しみを込めたからかいの区別は「モデルによる感情の詳細化」に依存します。
+亲密关注，好感 25 以上|Intimate attention, affinity 25+|親密な関心、好感度 25 以上
+很快自然减弱|Fades fast|すぐに自然に弱まる
+8 分钟减半，最多 40 分钟|Halves in 8 min, max 40 min|8 分で半分、最大 40 分
+默认关闭，开启方法见下方说明。好感 25 到 45 之间强度最高 25，45 及以上最高 60。对方表明只想普通聊天时会收敛；普通的技术夸奖不算亲密关注。|Off by default; see the note below for how to enable it. Strength is capped at 25 between affinity 25 and 45, and at 60 from 45 up. It holds back when the other person asks to keep it to ordinary chat. Ordinary praise for technical skill is not intimate attention.|既定ではオフで、有効にする方法は下の説明を参照してください。好感度 25 以上 45 未満では強度が最大 25、45 以上では最大 60 です。相手が普通の会話だけを求めると控えめになります。技術面への普通の褒め言葉は親密な関心に含まれません。
+委屈、受伤与害羞默认关闭：在「设置 → 情绪」勾选并保存「委屈、受伤与害羞」，再到「设置 → 快速开始」把「工作模式」设为「参与表达与行动」，才会开始记录。只有开启「模型细化情绪」才懂语气和上下文，关闭时只认固定词句。|Wronged, hurt and shyness are off by default: tick and save "Wronged, hurt and shyness" under Settings → Emotion, then set "Operating mode" to "Participate in expression and action" under Settings → Quick start to start recording them. Only with "Model-assisted emotions" on do they understand tone and context; otherwise they match fixed phrases.|理不尽さ・傷つき・照れは既定でオフです。「設定 → 感情」で「理不尽さ・傷つき・照れ」を有効にして保存し、「設定 → クイックスタート」で「動作モード」を「表現と行動に参加」にすると、記録が始まります。「モデルによる感情の詳細化」をオンにすると初めて口調や文脈を理解し、オフの間は定型の言葉しか判定しません。
 手动入睡|Put to sleep|手動で入眠
 变更作息状态。不会在此页面直接发送晚安。|Change sleep state. This page does not directly send goodnight messages.|睡眠状態を変更します。このページから直接おやすみの挨拶を送信しません。
 手动叫醒|Wake up|手動で起こす
@@ -393,7 +423,17 @@ TA 维度|TA dimension|TA の次元
 请选择有效选项。|Select a valid option.|有効な選択肢を選んでください。
 请输入范围内的有效数值。|Enter a valid number within range.|範囲内の有効な数値を入力してください。
 请按 {0} 的步进输入。|Use increments of {0}.|{0} 刻みで入力してください。
-此字段类型暂不支持编辑。|This field type cannot be edited yet.|この項目の種類はまだ編集できません。`;
+此字段类型暂不支持编辑。|This field type cannot be edited yet.|この項目の種類はまだ編集できません。
+用主模型自动填写|Fill with the main model|メインモデルで自動入力
+覆盖未保存的修改？再点一次|Overwrite unsaved edits? Click again|未保存の変更を上書きしますか？もう一度押してください
+「用主模型自动填写」会调用一次主模型，可能产生模型费用；生成的是草稿，点「保存摘要」后才生效。|"Fill with the main model" calls the main model once and may incur model charges. The result is a draft; click "Save summary" to apply it.|「メインモデルで自動入力」はメインモデルを1回呼び、モデル料金が発生する場合があります。生成結果は下書きなので、「要約を保存」を押すと有効になります。
+正在用主模型生成…|Generating with the main model…|メインモデルで生成中…
+已生成草稿，未保存|Draft generated, not saved|下書きを生成しました（未保存）
+上一份草稿还在生成，请等它结束。|The previous draft is still generating; wait for it to finish.|前の下書きを生成中です。終わるまでお待ちください。
+该人格没有可用的设定，无法生成。|This persona has no usable definition to summarize.|この人格に利用できる設定がないため生成できません。
+模型不可用或生成失败，没有生成草稿。|The model is unavailable or generation failed; no draft was produced.|モデルが利用できないか生成に失敗したため、下書きはありません。
+等待模型超时，没有生成草稿，可以重试。|Timed out waiting for the model; no draft was produced. You can retry.|モデルの待機がタイムアウトし、下書きはありません。再試行できます。
+自动填写失败；请稍后重试。|Auto-fill failed; please retry.|自動入力に失敗しました。後でもう一度お試しください。`;
 const more = `关系阶段自定义名称|Custom relationship stage names|関係段階のカスタム名
 启用 livingEmotion|Enable livingEmotion|livingEmotion を有効化
 工作模式|Operating mode|動作モード
@@ -601,7 +641,27 @@ TA 情绪雷达，实线为当前，虚线为领域基准；数值见下方|TA e
 {0} 个群聊|{0} group chats|{0} 件のグループチャット
 请从候选中选择具体对象|Choose a specific person from the suggestions|候補から具体的な相手を選んでください
 委屈、受伤与害羞：对 {0}，各群与私聊通用|Wronged, hurt and shyness: toward {0}, shared across chats|理不尽さ・傷つき・照れ：{0} に対して、チャット間で共通
-重试读取日志|Retry log|ログを再取得`;
+重试读取日志|Retry log|ログを再取得
+新手引导|Onboarding guide|はじめてガイド
+已配置|Set up|設定済み
+默认|Default|既定
+去设置|Open settings|設定を開く
+去设置：{0}|Open settings: {0}|設定を開く：{0}
+提示词注入|Prompt injection|プロンプト挿入
+风格摘要|Style summary|スタイル要約
+模型选择|Model selection|モデル選択
+跟随主模型|Follows the main model|主モデルに従う
+所有后台任务|All background tasks|すべてのバックグラウンド処理
+主模型用不了时|When the main model is unavailable|主モデルが使えないとき
+每轮情绪分析|Emotion analysis for each turn|各ターンの感情分析
+主动找人聊天|Proactive chat|自発的な話しかけ
+允许在关系页修改好感|Allow editing affinity on the relationship page|関係ページで好感を編集できるようにする
+决定 TA 用哪个人格说话，在「人格与状态模式」分区切换。跟随会话人格（默认）时各聊天用各自的人格；选指定人格后所有聊天固定用同一个人格。|Decides which persona TA speaks with; switch it under “Persona and state mode”. Follow the conversation persona (default) and each chat uses its own persona; select a native persona and every chat uses the same one.|TA がどの人格で話すかを決めます。「人格と状態モード」で切り替えます。会話人格に従う（既定）場合は各チャットが自分の人格を使い、人格を指定するとすべてのチャットで同じ人格を使います。
+好感随聊天自动变化，默认只能看、不能改。在「关系」分区可以改关系名称和各档生图婉拒概率；打开「允许在关系页修改好感」后才能手动校正分数，关闭时关系页只读。|Affinity changes on its own as people chat; by default you can only view it. Under “Relationships” you can rename the stages and set each stage's chance to decline image requests; turn on “Allow editing affinity on the relationship page” to correct scores by hand, or leave it off to keep the page read-only.|好感はチャットに合わせて自動で変わります。既定では見るだけで変更できません。「関係」で関係名と各段階の画像依頼を断る確率を変えられます。「関係ページで好感を編集できるようにする」をオンにするとスコアを手で修正でき、オフのままなら関係ページは読み取り専用です。
+「允许 TA 睡眠」是睡眠和自动作息的总开关，在「长夜」分区，默认开启。关闭后 TA 始终清醒、精力保持 100%；开启时要在「快速开始」分区填好时区，自动作息才会运行。|“Allow TA to sleep” is the master switch for sleep and the automatic schedule. It sits under “Night” and is on by default. Off keeps TA awake with energy at 100%; on needs a time zone filled in under “Quick start” before the schedule runs.|「TA の睡眠を許可」は睡眠と自動作息の総スイッチで、「長い夜」にあり、既定でオンです。オフにすると TA は常に起きていて精力が 100% のままです。オンで動かすには「クイックスタート」でタイムゾーンを設定する必要があります。
+都在「提示词注入」分区。人物性格和三条普通提示词（情绪与毒舌、关系与行动边界、作息与收尾）默认关闭，打开才加进回复，关闭不追加；通用说明默认开启，关掉后不再注入情绪和关系说明。|All under “Prompt injection”. The character personality and the three plain prompts (tone, relationship boundaries, sleep and wrap-up) are off by default; on adds them to replies, off adds nothing. The shared notes are on by default; turning them off stops the emotion and relationship notes from being injected.|すべて「プロンプト挿入」にあります。人物性格と3つの通常プロンプト（感情と毒舌、関係と行動の境界、作息と締めくくり）は既定でオフです。オンにすると返信に追加され、オフなら追加されません。共有の説明は既定でオンで、オフにすると感情と関係の説明を入れなくなります。
+在「人格与状态模式」分区、原生人格下拉框下方。可以手写，也可以用「用主模型自动填写」；留空就用原生人格前缀，写了只给本插件用，不改原生人格。|Under “Persona and state mode”, below the native persona dropdown. Write it yourself or use “Auto-fill with the main model”. Empty uses the native persona prefix; a written summary is used by this plugin only and leaves the native persona untouched.|「人格と状態モード」のネイティブ人格のプルダウンの下にあります。手で書くことも「主モデルで自動入力」で埋めることもできます。空欄なら原生人格の先頭部分を使い、書いた内容はこのプラグインだけで使われ、原生人格は変更しません。
+全部留空就是跟随主模型，只在某项需要单独指定时才选。默认生成模型留空时用当前聊天模型；向量模型是另一类模型，只有本地向量记忆需要，留空即未配置。|Leave everything empty to follow the main model; pick a model only where a task needs its own. Leave the default generation model empty and the current chat model is used. The embedding model is a different kind, needed only for local vector memory; empty means not configured.|すべて空欄なら主モデルに従います。個別に指定したい項目だけ選んでください。既定の生成モデルが空欄なら現在のチャットモデルを使います。ベクトルモデルは別種で、ローカルベクトル記憶でのみ必要です。空欄は未設定です。`;
 const shell = `livingEmotion · TA 的生活控制台|livingEmotion · TA life console|livingEmotion · TA の生活コンソール
 跳到主要内容|Skip to main content|本文へスキップ
 中文|中文|中文
@@ -637,7 +697,6 @@ TA 的生活控制台|TA life console|TA の生活コンソール
 已记住偏好|Preference saved|設定を保存済み
 跟随系统|Follow system|システムに従う
 启用插件|Enable plugin|プラグインを有効化
-运行模式|Operating mode|動作モード
 备用生成模型|Fallback generation model|予備の生成モデル
 静默范围|Muted scopes|ミュート範囲
 自动作息|Automatic sleep schedule|自動睡眠スケジュール

@@ -3,6 +3,7 @@ import { object, list, text, fieldValue, stageNames, DEFAULT_STAGE_NAMES } from 
 import { fieldHelp, localizedFieldLabel } from "./config-resources.mjs?v=ta-omissions-20261119-r3";
 import { node, button } from "./dom.mjs?v=eff0d6f932b0";
 import { renderPromptInjection, syncPromptInjection } from "./prompt-injection.mjs?v=0.6.0";
+import { mountOnboarding, syncOnboarding } from "./onboarding.mjs?v=onboarding-20261126";
 const labels = resource({
   context_emotions_enabled: t("委屈、受伤与害羞"),
   context_emotions_dimension: t("对象情绪维度"),
@@ -130,6 +131,17 @@ function personaDescriptionBlock(select, loader) {
   return holder;
 }
 // LivingEmotion 自己的风格摘要：不改宿主人格；留空即恢复「原生人格前缀」。
+// 在途或已生成未保存的草稿：设置页重建（切页签、手动刷新）后接回同一个请求。
+let styleDraftTask = null;
+// 草稿失败只按错误码给提示，输入框内容保持不动。
+function styleDraftFailure(error) {
+  return {
+    generation_in_progress: t("上一份草稿还在生成，请等它结束。"),
+    validation_error: t("该人格没有可用的设定，无法生成。"),
+    unavailable: t("模型不可用或生成失败，没有生成草稿。"),
+    timeout: t("等待模型超时，没有生成草稿，可以重试。"),
+  }[error?.code] || t("自动填写失败；请稍后重试。");
+}
 function styleSummaryBlock(select, styleApi, sessionPersona = "") {
   // 下拉框为空表示「跟随当前会话人格」，这与后端实际使用的人格一致，仍可读写摘要。
   const currentPersona = () => text(select.value, "") || sessionPersona;
@@ -142,15 +154,18 @@ function styleSummaryBlock(select, styleApi, sessionPersona = "") {
   const meta = node("p", undefined, "style-summary-meta");
   const save = button(t("保存摘要"), () => submit());
   const reset = button(t("恢复默认"), () => submit(""));
+  const draft = button(t("用主模型自动填写"), () => generate());
   const actions = node("div", undefined, "style-summary-actions");
-  actions.append(save, reset);
+  actions.append(draft, save, reset);
   holder.append(node("p", t("LivingEmotion 风格摘要"), "style-summary-title"),
     node("p", t("仅本插件使用，不改原生人格；留空恢复默认（原生人格前缀）。"), "hint"),
-    area, meta, actions);
-  area.disabled = save.disabled = reset.disabled = true;
+    area, meta, actions,
+    node("p", t("「用主模型自动填写」会调用一次主模型，可能产生模型费用；生成的是草稿，点「保存摘要」后才生效。"), "hint"));
+  area.disabled = save.disabled = draft.disabled = reset.disabled = true;
   // 未改动、或改空之后不允许保存：textarea 里显示的可能是「原生人格前缀」的
   // 回退内容，一旦点保存就会把这段回退文本固化成自定义摘要（线上踩过一次）。
   area.dataset.dirty = "false";
+  let loading = null;
   function canSave() {
     return !area.disabled && area.dataset.dirty === "true" && area.value.trim().length > 0;
   }
@@ -159,25 +174,37 @@ function styleSummaryBlock(select, styleApi, sessionPersona = "") {
       (area.dataset.custom === "true" ? t("自定义摘要生效中") : t("未自定义，使用原生人格前缀")) + extra;
     save.disabled = !canSave();
   }
+  // 回到可编辑：恢复默认只在有自定义摘要时可点，保存只在有改动且非空时可点。
+  function idle() {
+    area.disabled = draft.disabled = false;
+    reset.disabled = area.dataset.custom !== "true";
+    save.disabled = !canSave();
+  }
   async function load() {
     const personaId = currentPersona();
     area.value = ""; area.dataset.custom = "false"; area.disabled = true;
     area.dataset.dirty = "false";
-    save.disabled = reset.disabled = true;
+    save.disabled = reset.disabled = draft.disabled = true;
+    // 换了人格就丢弃旧人格的草稿，结果不填进新人格的输入框。
+    if (styleDraftTask && styleDraftTask.personaId !== personaId) styleDraftTask = null;
     if (!personaId) {
       meta.textContent = t("先选择人格，再编辑风格摘要。");
       return;
     }
     meta.textContent = t("正在读取风格摘要…");
     try {
-      const data = await styleApi.load(personaId);
+      loading = styleApi.load(personaId);
+      const data = await loading;
       if (currentPersona() !== personaId) return;
       area.value = text(data.text, "");
       area.dataset.custom = String(data.custom === true);
       area.dataset.dirty = "false";
       area.disabled = false;
+      draft.disabled = false;
       reset.disabled = data.custom !== true;
       setMeta();
+      // 接回在途或未保存的草稿：设置页重建不打断生成。
+      if (styleDraftTask) await follow(styleDraftTask);
     } catch (_) {
       meta.textContent = t("风格摘要读取失败；不影响其他设置。");
     }
@@ -188,23 +215,67 @@ function styleSummaryBlock(select, styleApi, sessionPersona = "") {
     const value = forced === undefined ? area.value : forced;
     // forced 为 undefined 才是「保存摘要」按钮：未改动或内容为空都不提交。
     if (forced === undefined && !canSave()) return;
-    area.disabled = save.disabled = reset.disabled = true;
+    area.disabled = save.disabled = draft.disabled = reset.disabled = true;
     meta.textContent = t("正在保存…");
     try {
       const data = await styleApi.save(personaId, value);
       area.value = text(data.text, "");
       area.dataset.custom = String(data.custom === true);
+      // 草稿已保存或被「恢复默认」覆盖，不再接回。
+      styleDraftTask = null;
       setMeta(" · " + t("已保存"));
     } catch (_) {
       meta.textContent = t("风格摘要保存失败；请稍后重试。");
     } finally {
-      area.disabled = false;
       area.dataset.dirty = "false";
-      reset.disabled = area.dataset.custom !== "true";
-      save.disabled = !canSave();
+      idle();
     }
   }
-  area.addEventListener("input", () => { area.dataset.dirty = "true"; setMeta(); });
+  async function follow(task) {
+    const personaId = task.personaId;
+    if (currentPersona() !== personaId) return;
+    area.disabled = save.disabled = draft.disabled = reset.disabled = true;
+    draft.textContent = t("用主模型自动填写");
+    delete draft.dataset.confirm;
+    meta.textContent = t("正在用主模型生成…");
+    const outcome = await task.promise;
+    // 读取摘要的响应可能比模型晚到：等它落定再填，避免草稿被读回的旧摘要覆盖。
+    if (loading) await loading.catch(() => {});
+    if (currentPersona() !== personaId) return;
+    if (outcome.error) {
+      styleDraftTask = null;
+      idle();
+      setMeta(" · " + styleDraftFailure(outcome.error));
+      return;
+    }
+    // 只填进输入框当草稿：必须再点「保存摘要」才写入。
+    area.value = text(outcome.data.text, "").slice(0, STYLE_SUMMARY_MAX);
+    area.dataset.dirty = "true";
+    idle();
+    setMeta(" · " + t("已生成草稿，未保存"));
+  }
+  async function generate() {
+    const personaId = currentPersona();
+    if (!personaId || draft.disabled) return;
+    // 有未保存的修改先确认：再点一次才覆盖，不用原生 confirm()。
+    if (area.dataset.dirty === "true" && draft.dataset.confirm !== "true") {
+      draft.dataset.confirm = "true";
+      draft.textContent = t("覆盖未保存的修改？再点一次");
+      return;
+    }
+    const task = { personaId };
+    // 失败也走 resolve：接回同一个请求时不必再处理一次拒绝。
+    task.promise = Promise.resolve().then(() => styleApi.draft(personaId))
+      .then(data => ({ data }), error => ({ error }));
+    styleDraftTask = task;
+    await follow(task);
+  }
+  area.addEventListener("input", () => {
+    area.dataset.dirty = "true";
+    // 重新编辑后，之前的覆盖确认作废。
+    if (draft.dataset.confirm) { delete draft.dataset.confirm; draft.textContent = t("用主模型自动填写"); }
+    setMeta();
+  });
   select.addEventListener("change", load);
   void load();
   return holder;
@@ -664,6 +735,7 @@ export function renderSettings(root, state, options, updateControls, description
   }
   // 分区与按钮一起挂上：有分区才有按钮，不会留下点不动的死按钮。
   root.append(jumps, ...builtSections);
+  if (!experienceOnly) mountOnboarding(jumps, state);
   mountRelationshipEditor(root, state);
 }
 
@@ -776,4 +848,5 @@ export function syncSettingsValues(root, state) {
       });
     }
   }
+  syncOnboarding(root, state);
 }

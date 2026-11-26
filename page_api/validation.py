@@ -43,6 +43,7 @@ BODY_FIELDS = {
     "emotion-image-save": frozenset({"mood", "data_url", "index", "remove"}),
     "experience-generate": frozenset({"request_id", "persona_id", "kind"}),
     "style-summary-save": frozenset({"persona_id", "text", "reason"}),
+    "style-summary-draft": frozenset({"persona_id"}),
 }
 # 上传走 JSON 的 base64 而不是 multipart：宿主的页面桥只转发 JSON，
 # 图片本体在 storage 层再做类型与 512 KB 上限校验。
@@ -226,6 +227,8 @@ async def body_parameters(operation: str, request) -> dict:
             invalid()
         return {"persona_id": text(values.get("persona_id"), 512), "text": body,
                 "reason": text(values.get("reason") or "控制台编辑风格摘要", 1000).strip()}
+    if operation == "style-summary-draft":
+        return {"persona_id": text(values.get("persona_id"), 512)}
     if operation == "experience-generate":
         if values.get("kind") not in ("diary", "dream"):
             invalid()

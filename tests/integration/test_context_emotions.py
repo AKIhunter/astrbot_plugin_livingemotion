@@ -227,8 +227,8 @@ async def test_config_four_surfaces_and_invalid_save(tmp_path):
         field = next(f for f in dto["fields"] if f["key"] == "context_emotions_enabled")
         assert field["type"] == "boolean" and field["level"] == 0 and not field["parent"]
         assert field["section"] == "emotion" and "情绪" in field["details"]
-        assert "参与中" in field["details"] and "仅观察" in field["details"]
-        assert "参与中" in schema["context_emotions_enabled"]["description"]
+        assert "参与表达与行动" in field["details"] and "仅观察" in field["details"]
+        assert "参与表达与行动" in schema["context_emotions_enabled"]["description"]
         containing = [group["id"] for group in dto["groups"]
                       if "context_emotions_enabled" in group["field_keys"]]
         assert containing == ["emotion"]

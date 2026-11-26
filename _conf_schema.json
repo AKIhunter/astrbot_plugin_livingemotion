@@ -11,7 +11,7 @@
       "active",
       "observe_only"
     ],
-    "description": "运行模式。例：observe_only仅观察；active参与表达和已授权行为。"
+    "description": "工作模式。例：observe_only仅观察；active参与表达和已授权行为。"
   },
   "persona_mode": {
     "type": "string",
@@ -167,7 +167,7 @@
   "context_emotions_enabled": {
     "type": "bool",
     "default": false,
-    "description": "在 LivingEmotion 设置页 → 情绪勾选并保存，运行模式设为参与中；到 TA 页选择具体会话查看。关闭停止更新和表达，仅观察不新增采集。同页开启模型细化后，LLM按最近对话、语气和已有情绪判断，复用本轮分析；冷却期间补一次对象分析，共用每日额度，回复前最多等待1秒；超时不取消，分析在后台完成并写回，下一次回复和 TA 页生效。模型不可用只保留历史衰减。关闭模型细化时兼容本地规则，不具备语义理解。害羞需友好关系并尊重边界。"
+    "description": "在 LivingEmotion 设置页 → 情绪勾选并保存，工作模式设为「参与表达与行动」；到 TA 页选择具体会话查看。关闭停止更新和表达，仅观察不新增采集。同页开启模型细化后，LLM按最近对话、语气和已有情绪判断，复用本轮分析；冷却期间补一次对象分析，共用每日额度，回复前最多等待1秒；超时不取消，分析在后台完成并写回，下一次回复和 TA 页生效。模型不可用只保留历史衰减。关闭模型细化时兼容本地规则，不具备语义理解。害羞需友好关系并尊重边界。"
   },
   "context_emotions_dimension": {
     "type": "string",

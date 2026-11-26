@@ -5,7 +5,7 @@
 ![livingEmotion wordmark and state lines](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-4.29.1–4.29.4-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.9.0-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.10.0-3a8060)](CHANGELOG.md)
 
 [简体中文](README.md) · **English**
 
@@ -26,10 +26,11 @@ Developer: [AKIhunter](https://github.com/AKIhunter). Feedback QQ group: 9913506
 | Keep promises | Delayed promises become tasks and execute when due; the full task list updates automatically |
 | Handle image tasks | Claims and settles the original promise with LivingHello; bounded repairs on known failures, unknown outcomes wait for verification |
 | Keep experiences | Private journals and imagined dreams; optional local vectors or LivingMemory with independent read/write permission |
-| Shape expression | Native persona, character presets, independent prompt switches and dual-theme pages |
+| Shape expression | Native persona, style summary with main-model auto-fill, character presets, independent prompt switches and dual-theme pages |
 | Diagnose problems | One-click sanitized diagnostic ZIP of the last 72 hours at the top of the console; final-state log lines for object emotion analysis |
+| Set up step by step | "Onboarding guide" in Settings: a six-step checklist (persona, relationships, sleep schedule, prompt injection, style summary, models) that jumps to each setting |
 
-> **🚀 First time here?** After installing, open `livingemotion → Settings → Quick start`, choose the persona mode and save. Rule-based mood needs no model.
+> **🚀 First time here?** After installing, open `livingemotion → Settings → Quick start`, choose the persona mode and save. Rule-based mood needs no model. Not sure what to configure first? Open "Onboarding guide" at the top of Settings for a six-step checklist.
 
 ## Contents
 
@@ -62,7 +63,7 @@ Developer: [AKIhunter](https://github.com/AKIhunter). Feedback QQ group: 9913506
 
 ## ⚙️ Settings and Pages
 
-Open `livingemotion → Settings`. Follow the session persona or choose a native persona. Leave the shared model empty to follow the real session model; each purpose can override it. Feature switches are flat and independent and are saved together. The console refreshes automatically while preserving drafts; after a 409 conflict, reload and review your draft before saving again. The native AstrBot config page and the plugin page edit the same configuration.
+Open `livingemotion → Settings`. Follow the session persona or choose a native persona. Leave the shared model empty to follow the real session model; each purpose can override it. Feature switches are flat and independent and are saved together. The console refreshes automatically while preserving drafts; after a 409 conflict, reload and review your draft before saving again. The native AstrBot config page and the plugin page edit the same configuration. The style summary under the native persona can be written by hand or drafted with "Fill with the main model"; the draft only takes effect after "Save summary", and that model call may incur charges.
 
 Defaults: enabled, active mode. Object emotion collection, the emotion model, random proactive chat, automatic journals, dreams and long-term memory are off by default; promises and sleep permission are on. Existing explicit settings are kept. Sleep needs a valid timezone. Group proactive chat needs both global and group permission, and listed numbers must match existing real conversations.
 
@@ -107,7 +108,7 @@ Preview only evaluates conditions without calling a model or sending. Test calls
 Manual dreams still need dream generation enabled, an available persona and a model. Manual journals do not need the automatic journal switch.
 
 **Object emotions keep showing not collected?**
-Enable wronged, hurt and shyness under Settings → Emotions, use Active mode and select a conversation on TA. Each analysis writes one `[LE-对象情绪]` log line that shows the reason.
+Enable wronged, hurt and shyness under Settings → Emotions, set Operating mode to Participate in expression and action, and select a conversation on TA. Each analysis writes one `[LE-对象情绪]` log line that shows the reason.
 
 ## 🧩 Compatibility and Security
 
@@ -135,10 +136,12 @@ Platform declarations cover basic message intake. QQ OneBot has isolated-host ac
 
 ## 📜 Changelog
 
-Current version: `v0.9.0` (2026-11-26)
+Current version: `v0.10.0` (2026-11-26)
 
-- ✨ Settings → Quick start adds Object emotion dimension: conversation (default) keeps each group and private chat separate; person lets one QQ share wronged, hurt and shyness.
-- 🔧 Replies wait at most one second for object emotion analysis; a slower analysis is written back in the background.
-- 🧩 No configuration or database migration, and default behavior is unchanged. LivingHello needs no matching upgrade.
+- ✨ Settings adds an "Onboarding guide" at the top: a six-step checklist (persona, relationships, sleep schedule, prompt injection, style summary, model selection) that jumps to each setting and lists all nine model fields.
+- ✨ The style summary can be drafted with "Fill with the main model"; the draft takes effect only after "Save summary".
+- 🔧 The TA page "Emotion and metric guide" gains a table of how each of the nine emotions rises, eases and fades; the "Availability and source" and "Dependency health" blocks are removed.
+- 🐛 Fixed the style summary box being disabled after auto-refresh, which made drafts impossible to save.
+- 🧩 No configuration or database migration.
 
 Full history: [CHANGELOG.md](CHANGELOG.md) (Chinese).

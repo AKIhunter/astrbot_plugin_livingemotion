@@ -113,7 +113,7 @@ export function emotionSpectrum(data) {
   scopeNote.dataset.contextEmotionScope = "";
   root.append(scopeNote);
   if (contextual.enabled === true && data.mode === "observe_only") {
-    root.append(node("p", t("仅观察模式不新增这三项采集；在设置 → 快速开始将运行模式改为参与中后生效。"), "hint"));
+    root.append(node("p", t("仅观察模式不新增这三项采集；在「设置 → 快速开始」将「工作模式」改为「参与表达与行动」后生效。"), "hint"));
   }
   return root;
 }

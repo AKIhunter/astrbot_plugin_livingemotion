@@ -1,7 +1,7 @@
 import { t, locale } from "../i18n.mjs?v=eff0d6f932b0";
 import { node, button, svgNode, labelled } from "../dom.mjs?v=eff0d6f932b0";
 import { object, list, text, percent, date, scopeParams, relationshipStage } from "../model.mjs?v=eff0d6f932b0";
-import { pageError } from "../api.mjs?v=eff0d6f932b0";
+import { pageError } from "../api.mjs?v=onboarding-20261126";
 import { seedPeople, constrain3D, separate3D, createForce3D } from "./force3d.mjs?v=eff0d6f932b0";
 export const NODE_CAP = 200;
 export const PERSON_RADIUS = 4.5, CENTER_CLEARANCE = 68, PERSON_SPACING = 20;
@@ -110,6 +110,31 @@ const RULE_HELP = {
   interaction: "普通聊天不增减开心；主体不明确时也不会把对他人的评价算给 TA。",
   reply_succeeded: "TA 成功发出回复：陪伴需求略降，开心保持不变。",
 };
+// 九项情绪的顺序与 TA 页情绪谱一致：前六项由五维指标算出，后三项按聊天对象单独记录。
+// 数字以 domain 计算和 docs/ta-emotion-spectrum.md 为准。
+// 单元格只放短句（表格单元格不换行，短语越长表越宽），细节写进问号说明。
+const EMOTION_NOTES = [
+  ["joy", "喜悦", "被夸、被关心，心情变好", "心情回落，或压力升高", "跟随愉悦，约 30 分钟"],
+  ["anger", "愤怒", "被骂、起冲突、被冒犯", "气消了、冷静或压力下降", "跟随愉悦、唤醒和压力"],
+  ["sadness", "悲伤", "被否定、对方失约", "心情恢复，或打起精神", "跟随愉悦、唤醒和压力"],
+  ["fear", "恐惧", "压力和警觉一起升高", "压力下降、冷静下来", "跟随压力和唤醒"],
+  ["surprise", "惊讶", "突然收到意外消息", "警觉回到平常水平", "跟随唤醒，约 20 分钟"],
+  ["affection", "关爱", "想陪伴，或被感谢", "陪伴需求满足，或压力升高", "跟随社交需求和愉悦"],
+  ["wronged", "委屈", "被冤枉，或付出被否定", "澄清或道歉，或自然减弱", "30 分钟减半，最多 120 分钟"],
+  ["hurt", "受伤", "被贬低，或被否定关系", "澄清或道歉，或自然减弱", "30 分钟减半，最多 120 分钟"],
+  ["shyness", "害羞", "亲密关注，好感 25 以上", "很快自然减弱", "8 分钟减半，最多 40 分钟"],
+];
+const EMOTION_HELP = {
+  joy: "喜悦跟着愉悦走：心情好就有喜悦，压力会把它压低一些。没有新互动时，愉悦约 30 分钟回落一半，喜悦也跟着回落。",
+  anger: "被骂、起冲突这类事让心情变差，也更激动、压力更大；三者叠加才有愤怒，越激动、压力越大越高。底气足时更高，底气不足时更低。愉悦约 30 分钟、唤醒约 20 分钟、压力约 40 分钟各回落一半，任一项回落，愤怒都会跟着降。",
+  sadness: "悲伤先要心情变差，安静、不激动时更强；压力大或底气足时会轻一些。心情恢复或打起精神就减轻；没有新互动时，愉悦约 30 分钟回落一半，悲伤跟着回落。",
+  fear: "没有压力就没有恐惧；压力越大、越警觉，恐惧越高，底气足时会低一些。压力约 40 分钟、唤醒约 20 分钟各回落一半，恐惧跟着回落。",
+  surprise: "惊讶只看唤醒超出平常水平的部分；唤醒是回落最快的指标，约 20 分钟就回落一半，所以惊讶来得快去得也快。心情特别好或特别差时，同样的意外带来的惊讶会小一些。",
+  affection: "关爱跟着社交需求和愉悦走，压力高时会压低。社交需求约 60 分钟、愉悦约 30 分钟各回落一半；平常也有想交流的底子，所以平静时关爱不一定归零。",
+  wronged: "默认关闭，开启方法见下方说明。强度最高 70；对方澄清或真诚道歉时会减轻，甚至清除。",
+  hurt: "默认关闭，开启方法见下方说明。强度最高 70；分清恶意贬低、合理纠错和亲昵玩笑要靠「模型细化情绪」。",
+  shyness: "默认关闭，开启方法见下方说明。好感 25 到 45 之间强度最高 25，45 及以上最高 60。对方表明只想普通聊天时会收敛；普通的技术夸奖不算亲密关注。",
+};
 // 基准权重按当前强度档位折算成页面显示的生效值。
 const signed = (value, gain) => {
   const scaled = Math.round(value * gain * 100) / 100;
@@ -161,7 +186,7 @@ export function emotionExplainer(intensity = "normal") {
   wrapper.dataset.emotionExplainer = "";
   wrapper.open = explainerOpen;
   wrapper.addEventListener("toggle", () => { explainerOpen = wrapper.open; });
-  wrapper.append(node("summary", t("情绪与五维指标说明")));
+  wrapper.append(node("summary", t("情绪与指标说明")));
   const body = node("div", undefined, "details-content");
   body.append(node("p", t("数字表示 TA 当前情绪的强弱。点每行右侧的问号，可以看到这个数值为什么会升降。"), "hint"));
   body.append(explainerTable([t("指标"), t("什么情况下升高"), t("什么情况下回落"), t("回落速度"), t("说明")],
@@ -177,6 +202,12 @@ export function emotionExplainer(intensity = "normal") {
       label, help: RULE_HELP[key], key: `signal:${key}`,
     }))));
   body.append(node("p", t("表中是「{0}」档的四维候选增量，实际结果还受对象、开心方向和窗口限幅约束；没有新的互动时按时间回落到平常水平。", [name]), "hint"));
+  body.append(node("p", t("TA 页「情绪分布」里的九项情绪，各自的升降和回落如下。"), "hint"));
+  body.append(explainerTable([t("指标"), t("什么情况下升高"), t("什么情况下回落"), t("回落速度"), t("说明")],
+    EMOTION_NOTES.map(([key, name, up, down, speed]) => ({
+      cells: [t(name), t(up), t(down), t(speed)], label: t(name), help: t(EMOTION_HELP[key]), key: `emotion:${key}`,
+    }))));
+  body.append(node("p", t("委屈、受伤与害羞默认关闭：在「设置 → 情绪」勾选并保存「委屈、受伤与害羞」，再到「设置 → 快速开始」把「工作模式」设为「参与表达与行动」，才会开始记录。只有开启「模型细化情绪」才懂语气和上下文，关闭时只认固定词句。"), "hint"));
   wrapper.append(body);
   return wrapper;
 }

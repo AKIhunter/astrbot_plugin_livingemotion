@@ -9,6 +9,8 @@ let rejectedRelationship = false;
 const relationships = makeRelationships();
 const pins = new Map();
 const styleSummaries = new Map();
+// 风格摘要草稿的闸门：测试 holdDraft() 后，releaseDraft() 才返回结果。
+let draftGate = null, draftResolve = null;
 const clone = value => structuredClone(value);
 const taScenario = scenario === "ta-relationships";
 const taScopes = makeScopes();
@@ -292,6 +294,21 @@ const bridge = {
       return { status: "ok", data: { api_version: 1, persona_id: payload.persona_id, text,
         characters: text.length, custom: styleSummaries.has(payload.persona_id), available: true } };
     }
+    if (path === "console/style-summary-draft") {
+      if (Object.keys(payload).some(key => key !== "persona_id")) {
+        return fail("validation_error", "风格摘要草稿只接受 persona_id");
+      }
+      if (!payload.persona_id) return fail("validation_error", "缺少 persona_id");
+      // 只返回草稿文本，不动 styleSummaries：保存前重新读取仍是旧摘要。
+      const gate = draftGate;
+      if (gate) {
+        const failure = await gate;
+        if (failure) return fail(failure, "合成草稿生成失败");
+      }
+      const text = `合成风格摘要草稿：${payload.persona_id}。`;
+      return { status: "ok", data: { api_version: 1, persona_id: payload.persona_id, text,
+        characters: text.length, available: true, model: "fixture-chat" } };
+    }
     if (path === "console/preview") return { status: "ok", data: {
       api_version: 1, eligible: false, reasons: ["autonomy_disabled", "observe_only"],
       model_calls: 0, sends: 0, candidates: clone(data.behavior.candidates),
@@ -325,6 +342,9 @@ Object.defineProperty(window, "__fixture", { value: {
   setEnvironment(value) { data.environment = clone(value); },
   setPromises(value) { data.behavior.promises = clone(value); },
   denyAccess() { denyAccess = true; },
+  // 测试专用：挂起下一次草稿生成；releaseDraft(错误码) 放行，传错误码则模拟失败。
+  holdDraft() { draftGate = new Promise(resolve => { draftResolve = resolve; }); },
+  releaseDraft(failure) { const resolve = draftResolve; draftGate = draftResolve = null; resolve?.(failure); },
 } });
 if (scenario !== "missing-bridge") window.AstrBotPluginView = bridge;
 document.title = `[合成测试] ${document.title}`;

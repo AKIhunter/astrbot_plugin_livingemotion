@@ -54,6 +54,8 @@ export function createApi(resolveBridge, timeout = 15000) {
     styleSummary: personaId => call("apiGet", "console/style-summary",
       { persona_id: String(personaId) }),
     saveStyleSummary: body => call("apiPost", "console/style-summary-save", body),
+    // 草稿要等模型返回，比普通请求多等一会儿。
+    draftStyleSummary: body => call("apiPost", "console/style-summary-draft", body, 100000),
     relationships: params => call("apiGet", "console/relationships", params),
     relationship: body => call("apiPost", "console/relationship", body),
     energy: params => call("apiGet", "console/energy", params),

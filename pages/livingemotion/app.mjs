@@ -1,5 +1,5 @@
 import { t, locale, controlled, setLocale, staticUI } from "./i18n.mjs?v=eff0d6f932b0";
-import { createApi, pageError, PageError } from "./api.mjs?v=eff0d6f932b0";
+import { createApi, pageError, PageError } from "./api.mjs?v=onboarding-20261126";
 import {
   PAGE_SIZE, SECTIONS, DIMENSIONS, ACTIONS, object, list, text, unit, percent, yesno,
   reasons, hasRevision, date, expired, normalizeState, normalizeRecords, baselineDimensions, scopeParams, NIGHT_STATES,
@@ -7,11 +7,11 @@ import {
   experienceStatus, reasonExplanation, resultLabel, AFFECT_LABELS, modelDiagnosticText,
 } from "./model.mjs?v=eff0d6f932b0";
 import { radar3d } from "./charts/radar3d.mjs?v=eff0d6f932b0";
-import { mountRelationships, emotionExplainer } from "./charts/relationships.mjs?v=ta-rel-20261120-r1";
+import { mountRelationships, emotionExplainer } from "./charts/relationships.mjs?v=onboarding-20261126";
 import { contextEmotionPicker } from "./scope-picker.mjs?v=ta-person-20261126-r1";
 import { mountEnergy } from "./charts/energy.mjs?v=eff0d6f932b0";
-import { emotionSpectrum } from "./charts/emotion-spectrum.mjs?v=ta-person-20261126-r1";
-import { renderSettings as settingsView, jumpToSettingsGroup, syncSettingsValues } from "./settings.mjs?v=ta-person-20261126-r1";
+import { emotionSpectrum } from "./charts/emotion-spectrum.mjs?v=onboarding-20261126";
+import { renderSettings as settingsView, jumpToSettingsGroup, syncSettingsValues } from "./settings.mjs?v=onboarding-20261126";
 import { EXPERIENCE_TABS, experienceTabs, selectExperienceTab, turnPage, cancelPageTurn } from "./experience.mjs?v=eff0d6f932b0";
 import { reconcileDraft } from "./draft.mjs?v=eff0d6f932b0";
 import { bindDiagnosticExport } from "./diagnostics.mjs?v=20261125";
@@ -198,7 +198,8 @@ function updateControls() {
   }));
   $("discard").disabled = state.writing;
   const livingMemoryEnabled = Object.hasOwn(state.draft, "livingmemory_enabled") ? state.draft.livingmemory_enabled : state.data?.config.values.livingmemory_enabled;
-  $("settings").querySelectorAll("input,select,textarea").forEach(control => {
+  // 风格摘要的输入框自己管理禁用状态（读取、保存、生成草稿期间），不随自动刷新被统一禁用。
+  $("settings").querySelectorAll("input,select,textarea:not(.style-summary-text)").forEach(control => {
     control.disabled = !canWrite() || control.dataset.editable !== "true" ||
       (control.dataset.key === "embedding_provider_id" && livingMemoryEnabled === true);
   });
@@ -375,18 +376,6 @@ function observationBlock() {
   if (expired(value.expires_at)) section.append(badge(t("观察已过期，不作为当前依据"), "warn"));
   return section;
 }
-function healthBlock() {
-  const section = block(t("依赖健康"));
-  if (!state.data.health.length) section.append(node("p", t("宿主尚未提供依赖健康。"), "hint"));
-  for (const item of state.data.health) {
-    const statuses = { ok: [t("可用"), "good"], degraded: [t("降级"), "warn"], unavailable: [t("不可用"), "bad"] };
-    const status = Object.hasOwn(statuses, item.status) ? statuses[item.status] : [t("未提供"), ""];
-    const row = node("div", undefined, "health-row");
-    row.append(node("strong", text(item.name)), badge(...status), node("p", text(item.reason), "hint"));
-    section.append(row);
-  }
-  return section;
-}
 function renderOverview(container) {
   // TA 概览直接显示运行时降维分量；主题切换只由 CSS 控制，共用同一份数据。
   const spectrum = emotionSpectrum(state.data);
@@ -405,14 +394,10 @@ function renderOverview(container) {
   const feeling = node("div", undefined, "ta-overview-feeling");
   feeling.append(feelingCard());
   container.append(feeling);
-  container.append(details(t("可用性与来源"), pairs([[t("状态"), state.data.availability.available === true ? t("可用") :
-    state.data.availability.available === false ? t("暂不可用") : t("未提供")],
-    [t("原因"), reasons(state.data.availability.reasons)], [t("来源"), text(state.data.bot_state.source)],
-    [t("更新时间"), date(state.data.bot_state.updated_at)]])), details(t("依赖健康"), healthBlock()));
   if (state.selection.view_scope === "global" && ["scene", "context"].includes(emotionOwnership(state.data).kind)) {
     container.append(node("p", t("全局页面展示最近活跃会话的人格状态。"), "hint"));
   }
-  // 五维与信号说明收在 TA 页底部，默认收起，避免挤占主视图。
+  // 五维、九项情绪与信号的说明收在 TA 页底部，默认收起，避免挤占主视图。
   container.append(emotionExplainer(object(state.data.config?.values).emotion_intensity));
 }
 function personaPicker() {
@@ -1353,6 +1338,10 @@ const personaStyleApi = {
     });
     styleSummaryCache.set(String(personaId), data);
     return data;
+  },
+  // 草稿只返回文本、不写缓存：点了「保存摘要」才更新 load() 读到的摘要。
+  draft(personaId) {
+    return api.draftStyleSummary({ persona_id: String(personaId) });
   },
 };
 function renderSettings() {

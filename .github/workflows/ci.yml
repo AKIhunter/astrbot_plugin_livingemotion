@@ -241,6 +241,8 @@ jobs:
         run: |
           node tests/ui/ta-relationships-browser.test.mjs
           node tests/ui/omissions-browser.test.mjs
+          node tests/ui/onboarding-browser.test.mjs
+          node tests/ui/style-draft-browser.test.mjs
       - name: Remove checked-in evidence before this run
         run: node --input-type=module -e "import { rm } from 'node:fs/promises'; await rm('tests/ui/evidence', { recursive:true, force:true });"
       - name: Synthetic browser checks
