@@ -5,6 +5,7 @@ import { node, button } from "./dom.mjs?v=eff0d6f932b0";
 import { renderPromptInjection, syncPromptInjection } from "./prompt-injection.mjs?v=0.6.0";
 const labels = resource({
   context_emotions_enabled: t("委屈、受伤与害羞"),
+  context_emotions_dimension: t("对象情绪维度"),
   relationship_special_description: t("独特关系说明"),
   relationship_stage_names: t("关系阶段自定义名称"), enabled: t("启用 livingEmotion"), mode: t("工作模式"), persona_mode: t("人格解析方式"), persona_id: t("原生人格"),
   relationship_stage_descriptions: t("关系阶段描述"),
@@ -53,6 +54,7 @@ const optionLabels = resource({
   external: "LivingMemory", chat: t("私聊可叫醒"), never: t("聊天不可叫醒"), both: t("私聊或群聊原生 @"),
   global: t("同一人格共享"), shared: t("同一人格共享"), persona_shared: t("同一人格共享"), scene: t("按真实会话独立"),
   context: t("按真实会话独立"), per_scene: t("按真实会话独立"),
+  conversation: t("会话维度 · 各群和私聊独立"), user: t("用户维度 · 同一 QQ 互通"),
 });
 const groups = resource({ quick: t("快速开始"), persona: t("人格与状态模式"), emotion: t("情绪"), relationships: t("关系"),
   behavior: t("主动行为"), promise: t("承诺代办"), night: t("长夜"), experience: t("日记与梦境"), memory: t("记忆"),

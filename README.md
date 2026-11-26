@@ -3,7 +3,7 @@
 ![livingEmotion 原创字标与状态线](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-4.29.1–4.29.4-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.8.0-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.9.0-3a8060)](CHANGELOG.md)
 
 **简体中文** · [English](README.en.md)
 
@@ -73,6 +73,8 @@
 图片回执与原事项结算需要 LivingHello 2.9.0；提示词映射基础契约支持LH 2.8.0。
 模型生成可能计费；未知生成或发送不会盲重试。`sent`表示发送接口受理，不表示用户已读。
 普通使用无需Node或外部CDN；接口走公开契约。管理员叫醒命令为 `le_wake`，前缀遵循宿主设置。
+
+0.9.0 新增「对象情绪维度」（设置 → 快速开始）：会话维度保持原样，各群和私聊各自独立；用户维度下同一个 QQ 号共用一份委屈、受伤、害羞，在群里受的委屈会带到私聊，TA 页会话对象下拉按 QQ 合并为一项。回复等待缩短为 1 秒，超时后分析在后台写回，不再丢弃。无配置迁移、无表结构变更，默认仍为会话维度。
 
 0.8.0 在页面顶部增加近3天脱敏诊断包下载，涵盖事件、情绪、主动行为和承诺状态。独立记录最多32 MiB，单文件1 MiB，每分钟自动清理过期文件；无需配置或数据库迁移，导出不调用模型。配套 LH 2.10.0 提供各自诊断入口，两个插件均可独立导出。详见[诊断日志](docs/diagnostics.md)。
 关系列表每日零点更新，3D与编辑保持实时；SQLite自动升至v9，旧历史不回填。

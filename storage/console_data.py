@@ -11,7 +11,10 @@ import json
 import math
 from zoneinfo import ZoneInfo
 
-from ..contracts import ActorRole, ContentKind, Context, Event, Relationship, canonical_json, stable_key, to_dict
+from ..contracts import (
+    ActorRole, ContentKind, Context, Event, Relationship, account_person_key, canonical_json, stable_key,
+    to_dict,
+)
 from ..domain.relationship import initial_relationship, relationship_stage, relationship_stage_dto
 from ..domain.relationship_inference import RelationshipStatement, infer_relationships
 
@@ -72,8 +75,7 @@ class ConsoleDataConflict(ValueError):
 
 
 def relationship_account_key(context):
-    return stable_key(context.instance_id, context.persona_id,
-                      context.platform, context.account_id)
+    return account_person_key(context)
 
 
 def _override(db, context):
@@ -187,6 +189,7 @@ def context_dto(context):
             "persona_id": context.persona_id,
             "platform": context.platform, "view_scope": context.scene_kind.value,
             "scene_id": context.scene_id, "account_id": context.account_id,
+            "person_id": relationship_account_key(context),
             "label": f"{context.platform} / {context.scene_id} / {context.account_id}"}
 
 
@@ -211,6 +214,11 @@ def _selected(contexts, selection):
                 and (not platform or c.platform == platform)
                 and (view == "global" or c.scene_kind.value == view)
                 and (not identifier or c.account_key == identifier)]
+    if identifier and not selected:
+        # 用户维度一人一项：context_id 是人级键，汇总该 QQ 的私聊和各群，不受 view_scope 限制。
+        selected = [c for c in contexts if (not persona or c.persona_id == persona)
+                    and (not platform or c.platform == platform)
+                    and relationship_account_key(c) == identifier]
     if identifier and not selected:
         raise ValueError("unknown or mismatched context")
     return selected

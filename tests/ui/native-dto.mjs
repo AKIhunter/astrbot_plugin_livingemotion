@@ -1,7 +1,7 @@
 // Generated from real Console; synthetic host, no model or sends.
 export const nativeDTO = {
   "config": {
-    "revision": "ccbb93ac7db82f26c9eef28b1dd023e220eacbbeec0b6007393d3b516869cbf0",
+    "revision": "1f94c8a26b3bd9454f2832963ef2ed72f51ef83fbde67fca83bc5c22a119b83d",
     "source": "AstrBot native plugin configuration",
     "values": {
       "enabled": true,
@@ -12,6 +12,7 @@ export const nativeDTO = {
       "proactive_native_yield": true,
       "emotion_model_enabled": false,
       "context_emotions_enabled": false,
+      "context_emotions_dimension": "conversation",
       "dream_enabled": false,
       "dream_theme_pool": "[\"赛博朋克\", \"绿野仙踪\", \"生活日常\", \"星际漫游\", \"海底王国\", \"古堡奇遇\", \"森林童话\", \"校园时光\", \"蒸汽幻想\", \"云端旅行\", \"四季庭院\", \"时光回廊\"]",
       "dream_owner_notify": false,
@@ -102,6 +103,7 @@ export const nativeDTO = {
       "dream_provider_id": "",
       "catchup_provider_id": "",
       "closing_provider_id": "",
+      "emotion_provider_id": "",
       "home_city": "",
       "weather_factor_enabled": true,
       "weather_poll_seconds": 14400,
@@ -251,10 +253,33 @@ export const nativeDTO = {
         "type": "boolean",
         "advanced": false,
         "help": "参与中模式按聊天对象记录委屈、受伤和害羞，并用于回复。",
-        "details": "在「设置 → 情绪」开启并保存；仅观察模式不新增这三项采集，在「设置 → 快速开始」将运行模式改为参与中后生效。到 TA 页选择具体会话查看。关闭后停止更新和表达。同页开启模型细化后，LLM按最近对话、语气和已有情绪判断；本轮分析复用，冷却期间补一次对象分析，共用每日额度，回复前最多等待5秒。模型不可用或超时只保留历史衰减；关闭模型细化时兼容本地规则，不具备语义理解。害羞需友好关系，并尊重关系说明中的边界。",
+        "details": "在「设置 → 情绪」开启并保存；仅观察模式不新增这三项采集，在「设置 → 快速开始」将运行模式改为参与中后生效。到 TA 页选择具体会话查看。关闭后停止更新和表达。同页开启模型细化后，LLM按最近对话、语气和已有情绪判断；本轮分析复用，冷却期间补一次对象分析，共用每日额度，回复前最多等待1秒；超时不取消，分析在后台完成并写回，下一次回复和TA页生效。模型不可用只保留历史衰减；关闭模型细化时兼容本地规则，不具备语义理解。害羞需友好关系，并尊重关系说明中的边界。",
         "example": "帮助被认可后又被否认可产生委屈；直接贬低可产生受伤；亲密关注可产生害羞。",
         "parent": "",
         "level": 0
+      },
+      {
+        "key": "context_emotions_dimension",
+        "label": "对象情绪维度",
+        "section": "quick_start",
+        "value": "conversation",
+        "type": "enum",
+        "advanced": false,
+        "help": "委屈、受伤与害羞按会话还是按QQ号记录。",
+        "details": "在「设置 → 快速开始」选择并保存。会话维度：每个群和私聊各自独立，互不影响（默认，与旧版一致）。用户维度：同一QQ在私聊和各群共用一份，情绪跟着人走；私聊里产生的委屈、受伤或害羞也会在群里对该QQ表达，TA页下拉按QQ一人一项。关系好感、聊天正文和记忆仍按会话隔离，不受此项影响。切换维度不迁移旧记录：旧样本留在原会话按有效期自然过期，新维度从下一条消息开始记录。需先在「设置 → 情绪」开启「委屈、受伤与害羞」。",
+        "example": "希望TA对某个人的情绪跨群、跨私聊延续：选用户维度；希望群聊和私聊各算各的：保持会话维度。",
+        "parent": "",
+        "level": 0,
+        "options": [
+          {
+            "value": "conversation",
+            "label": "会话维度 · 各群和私聊独立"
+          },
+          {
+            "value": "user",
+            "label": "用户维度 · 同一 QQ 互通"
+          }
+        ]
       },
       {
         "key": "dream_enabled",
@@ -1750,6 +1775,30 @@ export const nativeDTO = {
         ]
       },
       {
+        "key": "emotion_provider_id",
+        "label": "情绪精炼模型",
+        "section": "emotion",
+        "value": "",
+        "type": "enum",
+        "advanced": false,
+        "help": "情绪精炼专用模型。",
+        "details": "在「设置 → 情绪」选择并保存；留空沿用默认模型或当前聊天模型。选小模型可缩短每轮情绪分析的耗时；该模型连续失败3次后10分钟内改走LE默认模型链，之后自动恢复。",
+        "example": "填 Qwen/Qwen3-8B 这类小模型，加快每轮情绪分析。",
+        "parent": "emotion_model_enabled",
+        "level": 1,
+        "provider_kind": "chat",
+        "options": [
+          {
+            "value": "",
+            "label": "跟随当前聊天模型"
+          },
+          {
+            "value": "fixture-chat",
+            "label": "合成聊天模型"
+          }
+        ]
+      },
+      {
         "key": "home_city",
         "label": "Bot住所城市",
         "section": "experience",
@@ -2345,6 +2394,7 @@ export const nativeDTO = {
         "field_keys": [
           "enabled",
           "mode",
+          "context_emotions_dimension",
           "timezone",
           "provider_id",
           "fallback_provider_id",
@@ -2377,6 +2427,7 @@ export const nativeDTO = {
           "model_input_tokens",
           "model_output_tokens",
           "model_timeout_seconds",
+          "emotion_provider_id",
           "weather_factor_enabled",
           "weather_poll_seconds",
           "weather_transition_seconds",
@@ -2683,6 +2734,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10022",
+        "person_id": "599993818a971672d92766010112f13a45ebe0324a5a8a0f8a9dabc9411f2532",
         "label": "qq / synthetic-chat / 10022"
       },
       {
@@ -2693,6 +2745,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10008",
+        "person_id": "b69fb57d322b06bac925a50b981d3efecc5a868dae60958329193aed4baafe82",
         "label": "qq / synthetic-chat / 10008"
       },
       {
@@ -2703,6 +2756,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10003",
+        "person_id": "9fd41a29af14350c6be368260de8e77cf57d3089bb7c63ee4a0d2dac9a463cfb",
         "label": "qq / synthetic-chat / 10003"
       },
       {
@@ -2713,6 +2767,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10005",
+        "person_id": "c00054d0505e5bcd7f5d1f655b60e5ab3e59dab0be8a0cd0f690cbafd6fd1dbc",
         "label": "qq / synthetic-chat / 10005"
       },
       {
@@ -2723,6 +2778,7 @@ export const nativeDTO = {
         "view_scope": "group",
         "scene_id": "synthetic-group",
         "account_id": "10001",
+        "person_id": "28e2b592ea4239630563d20fbca7273893a9587280d48d68bd0d494068257679",
         "label": "bilibili / synthetic-group / 10001"
       },
       {
@@ -2733,6 +2789,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10004",
+        "person_id": "0799dec7c092fc60a037a69973bf862a443aed80c6ce1f0b5f6837e45506ee70",
         "label": "qq / synthetic-chat / 10004"
       },
       {
@@ -2743,6 +2800,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10010",
+        "person_id": "adb022534ea72423c94d283a6d29240db1b4c6e0643dd02015d375b7f409d71f",
         "label": "qq / synthetic-chat / 10010"
       },
       {
@@ -2753,6 +2811,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10001",
+        "person_id": "c867fc2832983b115f4466680aa31ae1d6c9f4361f64f285c0ab0734fe072d9d",
         "label": "qq / synthetic-chat / 10001"
       },
       {
@@ -2763,6 +2822,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10012",
+        "person_id": "4813dfbe51ca3b2705f0d65b997dc2b4bc5082a069b9dfd4f433eeae2f4c0469",
         "label": "qq / synthetic-chat / 10012"
       },
       {
@@ -2773,6 +2833,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10016",
+        "person_id": "1afebc4e70572f630907d8324723db71ce06c82d70524f2297cce5250b197952",
         "label": "qq / synthetic-chat / 10016"
       },
       {
@@ -2783,6 +2844,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10015",
+        "person_id": "026d65db6260001564b8163edc0bedc05677d499333bd717d7ac6004f1521a3c",
         "label": "qq / synthetic-chat / 10015"
       },
       {
@@ -2793,6 +2855,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10011",
+        "person_id": "606fad4bc097427cc13515300c5bfe7e8f28273ee2e6b689723cfe96155f90ed",
         "label": "qq / synthetic-chat / 10011"
       },
       {
@@ -2803,6 +2866,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10007",
+        "person_id": "d5a0f7879fcd72d70c0e1468624c11f0c5b2d4b2de7f19816e7a09e5ce7636bf",
         "label": "qq / synthetic-chat / 10007"
       },
       {
@@ -2813,6 +2877,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10018",
+        "person_id": "45769e01aa2b5ed4b35af7fd17f1a2cae7377e8f3e593a43a9a60659a9b89a9d",
         "label": "qq / synthetic-chat / 10018"
       },
       {
@@ -2823,6 +2888,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10009",
+        "person_id": "903ea42ec60700f6a58d4c8ceb7b18036c47b7cb8082ab4ac6346c3ee0f84b57",
         "label": "qq / synthetic-chat / 10009"
       },
       {
@@ -2833,6 +2899,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10019",
+        "person_id": "d82928066adf44e994afc87f23c44aac26505a2127b70ddc0f9fef2b48c084f8",
         "label": "qq / synthetic-chat / 10019"
       },
       {
@@ -2843,6 +2910,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10013",
+        "person_id": "3315db5a2de4e83356d84a8441a56b9f37d61842ec2b478bfa664ef772bcdfaf",
         "label": "qq / synthetic-chat / 10013"
       },
       {
@@ -2853,6 +2921,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10002",
+        "person_id": "8b66532908389711e30d79b3917511c025d649e0226170c95b6ebc9329086a90",
         "label": "qq / synthetic-chat / 10002"
       },
       {
@@ -2863,6 +2932,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10006",
+        "person_id": "5483bfd2e703f07d69c023c70e9f3f084a9ea4332c18e4d985b74b576521ccb2",
         "label": "qq / synthetic-chat / 10006"
       },
       {
@@ -2873,6 +2943,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10014",
+        "person_id": "a231321ba9499da2d50011ab63fee305af89f7e69b41954567e7c9bc91d92fcb",
         "label": "qq / synthetic-chat / 10014"
       },
       {
@@ -2883,6 +2954,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10017",
+        "person_id": "b8fddea1e66bd4401e8ff37025e1ce607c2d7d6db8a8bbc68b6d0bcbc6158ff8",
         "label": "qq / synthetic-chat / 10017"
       },
       {
@@ -2893,6 +2965,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10021",
+        "person_id": "e4e8210c93560d74ba4764249ff98e919057ac0c7f6433abeeb2f5812fe0eaf7",
         "label": "qq / synthetic-chat / 10021"
       },
       {
@@ -2903,6 +2976,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10023",
+        "person_id": "9d8e435e4a5b0b14d1ea055e0664a4dc0e45c69910c249721ba76528dd8dbbab",
         "label": "qq / synthetic-chat / 10023"
       },
       {
@@ -2913,6 +2987,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10020",
+        "person_id": "bec7993aacc968bbe925eee176827eeedbed2876f091d566e8cc406d6af09185",
         "label": "qq / synthetic-chat / 10020"
       }
     ],
@@ -2926,7 +3001,7 @@ export const nativeDTO = {
     },
     "revision": "config-1",
     "config": {
-      "revision": "ccbb93ac7db82f26c9eef28b1dd023e220eacbbeec0b6007393d3b516869cbf0",
+      "revision": "1f94c8a26b3bd9454f2832963ef2ed72f51ef83fbde67fca83bc5c22a119b83d",
       "source": "AstrBot native plugin configuration",
       "values": {
         "enabled": true,
@@ -2937,6 +3012,7 @@ export const nativeDTO = {
         "proactive_native_yield": true,
         "emotion_model_enabled": false,
         "context_emotions_enabled": false,
+        "context_emotions_dimension": "conversation",
         "dream_enabled": false,
         "dream_theme_pool": "[\"赛博朋克\", \"绿野仙踪\", \"生活日常\", \"星际漫游\", \"海底王国\", \"古堡奇遇\", \"森林童话\", \"校园时光\", \"蒸汽幻想\", \"云端旅行\", \"四季庭院\", \"时光回廊\"]",
         "dream_owner_notify": false,
@@ -3027,6 +3103,7 @@ export const nativeDTO = {
         "dream_provider_id": "",
         "catchup_provider_id": "",
         "closing_provider_id": "",
+        "emotion_provider_id": "",
         "home_city": "",
         "weather_factor_enabled": true,
         "weather_poll_seconds": 14400,
@@ -3176,10 +3253,33 @@ export const nativeDTO = {
           "type": "boolean",
           "advanced": false,
           "help": "参与中模式按聊天对象记录委屈、受伤和害羞，并用于回复。",
-          "details": "在「设置 → 情绪」开启并保存；仅观察模式不新增这三项采集，在「设置 → 快速开始」将运行模式改为参与中后生效。到 TA 页选择具体会话查看。关闭后停止更新和表达。同页开启模型细化后，LLM按最近对话、语气和已有情绪判断；本轮分析复用，冷却期间补一次对象分析，共用每日额度，回复前最多等待5秒。模型不可用或超时只保留历史衰减；关闭模型细化时兼容本地规则，不具备语义理解。害羞需友好关系，并尊重关系说明中的边界。",
+          "details": "在「设置 → 情绪」开启并保存；仅观察模式不新增这三项采集，在「设置 → 快速开始」将运行模式改为参与中后生效。到 TA 页选择具体会话查看。关闭后停止更新和表达。同页开启模型细化后，LLM按最近对话、语气和已有情绪判断；本轮分析复用，冷却期间补一次对象分析，共用每日额度，回复前最多等待1秒；超时不取消，分析在后台完成并写回，下一次回复和TA页生效。模型不可用只保留历史衰减；关闭模型细化时兼容本地规则，不具备语义理解。害羞需友好关系，并尊重关系说明中的边界。",
           "example": "帮助被认可后又被否认可产生委屈；直接贬低可产生受伤；亲密关注可产生害羞。",
           "parent": "",
           "level": 0
+        },
+        {
+          "key": "context_emotions_dimension",
+          "label": "对象情绪维度",
+          "section": "quick_start",
+          "value": "conversation",
+          "type": "enum",
+          "advanced": false,
+          "help": "委屈、受伤与害羞按会话还是按QQ号记录。",
+          "details": "在「设置 → 快速开始」选择并保存。会话维度：每个群和私聊各自独立，互不影响（默认，与旧版一致）。用户维度：同一QQ在私聊和各群共用一份，情绪跟着人走；私聊里产生的委屈、受伤或害羞也会在群里对该QQ表达，TA页下拉按QQ一人一项。关系好感、聊天正文和记忆仍按会话隔离，不受此项影响。切换维度不迁移旧记录：旧样本留在原会话按有效期自然过期，新维度从下一条消息开始记录。需先在「设置 → 情绪」开启「委屈、受伤与害羞」。",
+          "example": "希望TA对某个人的情绪跨群、跨私聊延续：选用户维度；希望群聊和私聊各算各的：保持会话维度。",
+          "parent": "",
+          "level": 0,
+          "options": [
+            {
+              "value": "conversation",
+              "label": "会话维度 · 各群和私聊独立"
+            },
+            {
+              "value": "user",
+              "label": "用户维度 · 同一 QQ 互通"
+            }
+          ]
         },
         {
           "key": "dream_enabled",
@@ -4675,6 +4775,30 @@ export const nativeDTO = {
           ]
         },
         {
+          "key": "emotion_provider_id",
+          "label": "情绪精炼模型",
+          "section": "emotion",
+          "value": "",
+          "type": "enum",
+          "advanced": false,
+          "help": "情绪精炼专用模型。",
+          "details": "在「设置 → 情绪」选择并保存；留空沿用默认模型或当前聊天模型。选小模型可缩短每轮情绪分析的耗时；该模型连续失败3次后10分钟内改走LE默认模型链，之后自动恢复。",
+          "example": "填 Qwen/Qwen3-8B 这类小模型，加快每轮情绪分析。",
+          "parent": "emotion_model_enabled",
+          "level": 1,
+          "provider_kind": "chat",
+          "options": [
+            {
+              "value": "",
+              "label": "跟随当前聊天模型"
+            },
+            {
+              "value": "fixture-chat",
+              "label": "合成聊天模型"
+            }
+          ]
+        },
+        {
           "key": "home_city",
           "label": "Bot住所城市",
           "section": "experience",
@@ -5270,6 +5394,7 @@ export const nativeDTO = {
           "field_keys": [
             "enabled",
             "mode",
+            "context_emotions_dimension",
             "timezone",
             "provider_id",
             "fallback_provider_id",
@@ -5302,6 +5427,7 @@ export const nativeDTO = {
             "model_input_tokens",
             "model_output_tokens",
             "model_timeout_seconds",
+            "emotion_provider_id",
             "weather_factor_enabled",
             "weather_poll_seconds",
             "weather_transition_seconds",
@@ -5759,7 +5885,8 @@ export const nativeDTO = {
       "context_id": "",
       "target": "",
       "enabled": false,
-      "emotions": {}
+      "emotions": {},
+      "dimension": "conversation"
     },
     "user_emotion": null,
     "persona": {
@@ -6023,6 +6150,7 @@ export const nativeDTO = {
         "field_keys": [
           "enabled",
           "mode",
+          "context_emotions_dimension",
           "timezone",
           "provider_id",
           "fallback_provider_id",
@@ -6055,6 +6183,7 @@ export const nativeDTO = {
           "model_input_tokens",
           "model_output_tokens",
           "model_timeout_seconds",
+          "emotion_provider_id",
           "weather_factor_enabled",
           "weather_poll_seconds",
           "weather_transition_seconds",
@@ -6249,6 +6378,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10022",
+        "person_id": "599993818a971672d92766010112f13a45ebe0324a5a8a0f8a9dabc9411f2532",
         "label": "qq / synthetic-chat / 10022",
         "nickname": ""
       },
@@ -6260,6 +6390,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10008",
+        "person_id": "b69fb57d322b06bac925a50b981d3efecc5a868dae60958329193aed4baafe82",
         "label": "qq / synthetic-chat / 10008",
         "nickname": ""
       },
@@ -6271,6 +6402,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10003",
+        "person_id": "9fd41a29af14350c6be368260de8e77cf57d3089bb7c63ee4a0d2dac9a463cfb",
         "label": "qq / synthetic-chat / 10003",
         "nickname": ""
       },
@@ -6282,6 +6414,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10005",
+        "person_id": "c00054d0505e5bcd7f5d1f655b60e5ab3e59dab0be8a0cd0f690cbafd6fd1dbc",
         "label": "qq / synthetic-chat / 10005",
         "nickname": ""
       },
@@ -6293,6 +6426,7 @@ export const nativeDTO = {
         "view_scope": "group",
         "scene_id": "synthetic-group",
         "account_id": "10001",
+        "person_id": "28e2b592ea4239630563d20fbca7273893a9587280d48d68bd0d494068257679",
         "label": "bilibili / synthetic-group / 10001",
         "nickname": ""
       },
@@ -6304,6 +6438,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10004",
+        "person_id": "0799dec7c092fc60a037a69973bf862a443aed80c6ce1f0b5f6837e45506ee70",
         "label": "qq / synthetic-chat / 10004",
         "nickname": ""
       },
@@ -6315,6 +6450,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10010",
+        "person_id": "adb022534ea72423c94d283a6d29240db1b4c6e0643dd02015d375b7f409d71f",
         "label": "qq / synthetic-chat / 10010",
         "nickname": ""
       },
@@ -6326,6 +6462,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10001",
+        "person_id": "c867fc2832983b115f4466680aa31ae1d6c9f4361f64f285c0ab0734fe072d9d",
         "label": "qq / synthetic-chat / 10001",
         "nickname": "小雨（合成QQ名字）"
       },
@@ -6337,6 +6474,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10012",
+        "person_id": "4813dfbe51ca3b2705f0d65b997dc2b4bc5082a069b9dfd4f433eeae2f4c0469",
         "label": "qq / synthetic-chat / 10012",
         "nickname": ""
       },
@@ -6348,6 +6486,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10016",
+        "person_id": "1afebc4e70572f630907d8324723db71ce06c82d70524f2297cce5250b197952",
         "label": "qq / synthetic-chat / 10016",
         "nickname": ""
       },
@@ -6359,6 +6498,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10015",
+        "person_id": "026d65db6260001564b8163edc0bedc05677d499333bd717d7ac6004f1521a3c",
         "label": "qq / synthetic-chat / 10015",
         "nickname": ""
       },
@@ -6370,6 +6510,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10011",
+        "person_id": "606fad4bc097427cc13515300c5bfe7e8f28273ee2e6b689723cfe96155f90ed",
         "label": "qq / synthetic-chat / 10011",
         "nickname": ""
       },
@@ -6381,6 +6522,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10007",
+        "person_id": "d5a0f7879fcd72d70c0e1468624c11f0c5b2d4b2de7f19816e7a09e5ce7636bf",
         "label": "qq / synthetic-chat / 10007",
         "nickname": ""
       },
@@ -6392,6 +6534,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10018",
+        "person_id": "45769e01aa2b5ed4b35af7fd17f1a2cae7377e8f3e593a43a9a60659a9b89a9d",
         "label": "qq / synthetic-chat / 10018",
         "nickname": ""
       },
@@ -6403,6 +6546,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10009",
+        "person_id": "903ea42ec60700f6a58d4c8ceb7b18036c47b7cb8082ab4ac6346c3ee0f84b57",
         "label": "qq / synthetic-chat / 10009",
         "nickname": ""
       },
@@ -6414,6 +6558,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10019",
+        "person_id": "d82928066adf44e994afc87f23c44aac26505a2127b70ddc0f9fef2b48c084f8",
         "label": "qq / synthetic-chat / 10019",
         "nickname": ""
       },
@@ -6425,6 +6570,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10013",
+        "person_id": "3315db5a2de4e83356d84a8441a56b9f37d61842ec2b478bfa664ef772bcdfaf",
         "label": "qq / synthetic-chat / 10013",
         "nickname": ""
       },
@@ -6436,6 +6582,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10002",
+        "person_id": "8b66532908389711e30d79b3917511c025d649e0226170c95b6ebc9329086a90",
         "label": "qq / synthetic-chat / 10002",
         "nickname": ""
       },
@@ -6447,6 +6594,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10006",
+        "person_id": "5483bfd2e703f07d69c023c70e9f3f084a9ea4332c18e4d985b74b576521ccb2",
         "label": "qq / synthetic-chat / 10006",
         "nickname": ""
       },
@@ -6458,6 +6606,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10014",
+        "person_id": "a231321ba9499da2d50011ab63fee305af89f7e69b41954567e7c9bc91d92fcb",
         "label": "qq / synthetic-chat / 10014",
         "nickname": ""
       },
@@ -6469,6 +6618,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10017",
+        "person_id": "b8fddea1e66bd4401e8ff37025e1ce607c2d7d6db8a8bbc68b6d0bcbc6158ff8",
         "label": "qq / synthetic-chat / 10017",
         "nickname": ""
       },
@@ -6480,6 +6630,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10021",
+        "person_id": "e4e8210c93560d74ba4764249ff98e919057ac0c7f6433abeeb2f5812fe0eaf7",
         "label": "qq / synthetic-chat / 10021",
         "nickname": ""
       },
@@ -6491,6 +6642,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10023",
+        "person_id": "9d8e435e4a5b0b14d1ea055e0664a4dc0e45c69910c249721ba76528dd8dbbab",
         "label": "qq / synthetic-chat / 10023",
         "nickname": ""
       },
@@ -6502,6 +6654,7 @@ export const nativeDTO = {
         "view_scope": "private",
         "scene_id": "synthetic-chat",
         "account_id": "10020",
+        "person_id": "bec7993aacc968bbe925eee176827eeedbed2876f091d566e8cc406d6af09185",
         "label": "qq / synthetic-chat / 10020",
         "nickname": ""
       }
@@ -8111,18 +8264,18 @@ export const nativeDTO = {
   }
 };
 export const nativeDTOEvidence = {
-  "captured_at": "2026-11-25T10:05:53.637323+00:00",
-  "field_count": 136,
+  "captured_at": "2026-11-26T06:48:49.276221+00:00",
+  "field_count": 138,
   "scope": "real Console DTO / synthetic host / temporary database",
   "sources_sha256": {
-    "config.py": "5ec972373700ecd8274e19f1f812f151f31727ef07bf2d8aa67b372ebf9b8177",
-    "contracts.py": "9dbac4479c40cd83a476f7499cf35fce5ab994df87111cfe3eac111f5a87c0eb",
-    "runtime/console.py": "b4832e21c40bcea981968e179278c459e7002da304ca7b3e63d440f642dfaf53",
-    "runtime/config_help.py": "ccfdd0bcac20533334b0d20f9e050afb1a5fa719a5400186feb712bcc7594dd0",
+    "config.py": "1bd499737f0e6b259ef8827bc13b2069fbc941c658cd6a38833160a8fe3f94ee",
+    "contracts.py": "40307c7c6e4a242493328f2eca7fc23bb6699b9a6dca1e393e7e499de6af0cad",
+    "runtime/console.py": "b56387b239a4bdd03ded5592008e194d995713272217f70702cf1bd2f9dd1fe1",
+    "runtime/config_help.py": "b4534484a7fe8dfbe5c93e044c70dab21a6d8ad68d3acb20f60597524e5cb0f9",
     "storage/schema.py": "096a90b582af5d6694f957ff4df29a8d6230fa5dc880f8bff5fd33c2eba17115",
-    "storage/sqlite.py": "ce59830a0423a627d237b53f2b51750e2d3e6cc2c655b66c9a9787fc7f5500c3",
+    "storage/sqlite.py": "98f05579910455ee5afba276d1c5920d20d83d3533bf868f6325eb19345978ab",
     "storage/state_scope.py": "2b8e9fc28c36ea0d880aa0a21b7f98c1308d7b143f4a0db6be74734dbccb12e5",
-    "storage/console_data.py": "c893e499a8564fde4f100ddf4a95b7eb6640cc961f02fd8e9e68e9a9badf7f61",
+    "storage/console_data.py": "b6402d329edcabf809d1a074c33da8392b4e980732395449bbd09f7706e5ad4f",
     "domain/relationship_inference.py": "73f329394e7094180b7824a0d329826bc7cda3a524c4f5f64a839284b5ec01e9",
     "domain/proactivity.py": "e300cdb9e4130f1312060a9a6865ecaa8bfd9ec6fc7fc51c1c7701e36dcde326",
     "storage/proactivity.py": "003859c71234f93c8a004363de459ccc0471e0b81e10023c4e6530d91ec13e54"

@@ -14,7 +14,32 @@ export function scopeSuggestions(contexts, personaId, query = "") {
     .slice(0, SCOPE_SUGGESTION_LIMIT);
 }
 
-export function contextEmotionPicker({ contexts, selection, disabled, onSelect }) {
+// 用户维度：同一 QQ 的私聊与各群合成一项；其余字段取自该 QQ 最近更新的会话（宿主顺序）。
+export function personSuggestions(contexts, personaId, query = "") {
+  const term = query.trim().toLocaleLowerCase(), people = new Map();
+  for (const item of list(contexts)) {
+    if (item?.persona_id !== personaId || !item.person_id || !["private", "group"].includes(item.view_scope)) continue;
+    const person = people.get(item.person_id);
+    if (person) person.scenes.push(item.view_scope);
+    else people.set(item.person_id, { ...item, id: item.person_id, scenes: [item.view_scope] });
+  }
+  const rank = item => Number(item.account_id !== query.trim());
+  return [...people.values()]
+    .filter(item => !term || [item.account_id, item.nickname, item.label]
+      .some(value => text(value, "").toLocaleLowerCase().includes(term)))
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => rank(a.item) - rank(b.item) || a.index - b.index)
+    .slice(0, SCOPE_SUGGESTION_LIMIT).map(entry => entry.item);
+}
+
+export function personSceneLabel(item) {
+  const groups = item.scenes.length - item.scenes.filter(kind => kind === "private").length;
+  return [item.scenes.includes("private") ? t("私聊") : "", groups ? t("{0} 个群聊", [groups]) : ""]
+    .filter(Boolean).join(" + ") || t("群聊");
+}
+
+export function contextEmotionPicker({ contexts, selection, disabled, onSelect, dimension = "conversation" }) {
+  const byPerson = dimension === "user";
   const form = node("form", undefined, "context-emotion-picker");
   form.style.cssText = "display:flex;align-items:center;gap:12px;flex-wrap:wrap";
   const search = node("input");
@@ -27,19 +52,23 @@ export function contextEmotionPicker({ contexts, selection, disabled, onSelect }
   const label = node("label", t("会话对象")); label.htmlFor = picker.id;
   const hint = node("span", "", "micro"); hint.setAttribute("aria-live", "polite");
   let suggestions = [];
+  const selected = () => byPerson
+    ? personSuggestions(contexts, selection.persona_id).find(item => item.id === selection.context_id)
+    : list(contexts).find(item => item.id === selection.context_id && item.persona_id === selection.persona_id);
   const render = () => {
-    suggestions = scopeSuggestions(contexts, selection.persona_id, search.value);
+    suggestions = byPerson ? personSuggestions(contexts, selection.persona_id, search.value)
+      : scopeSuggestions(contexts, selection.persona_id, search.value);
     // 已选对象即使不在最近十条中，也占用一个候选名额；刷新不丢选中项。
-    const selected = list(contexts).find(item => item.id === selection.context_id &&
-      item.persona_id === selection.persona_id);
-    if (!search.value.trim() && selected && !suggestions.some(item => item.id === selected.id)) {
-      suggestions = [selected, ...suggestions].slice(0, SCOPE_SUGGESTION_LIMIT);
+    const current = selected();
+    if (!search.value.trim() && current && !suggestions.some(item => item.id === current.id)) {
+      suggestions = [current, ...suggestions].slice(0, SCOPE_SUGGESTION_LIMIT);
     }
     picker.replaceChildren();
     const all = node("option", t("人格总体 · 不含对象情绪")); all.value = ""; picker.append(all);
     for (const item of suggestions) {
-      const kind = item.view_scope === "private" ? t("私聊") : t("群聊");
-      const option = node("option", `${text(item.nickname, item.account_id)} · ${item.account_id} · ${kind} / ${item.scene_id}`);
+      const scene = byPerson ? personSceneLabel(item)
+        : `${item.view_scope === "private" ? t("私聊") : t("群聊")} / ${item.scene_id}`;
+      const option = node("option", `${text(item.nickname, item.account_id)} · ${item.account_id} · ${scene}`);
       option.value = item.id; picker.append(option);
     }
     picker.value = suggestions.some(item => item.id === selection.context_id) ? selection.context_id : "";
@@ -57,7 +86,7 @@ export function contextEmotionPicker({ contexts, selection, disabled, onSelect }
     const target = exact.find(item => item.view_scope === "private") ||
       (exact.length === 1 ? exact[0] : suggestions.length === 1 ? suggestions[0] : null);
     if (target) choose(target);
-    else hint.textContent = t("请从候选中选择具体会话");
+    else hint.textContent = t(byPerson ? "请从候选中选择具体对象" : "请从候选中选择具体会话");
   });
   search.disabled = picker.disabled = disabled;
   form.append(label, search, picker, hint);

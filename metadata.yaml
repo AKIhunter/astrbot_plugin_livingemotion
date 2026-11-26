@@ -11,7 +11,7 @@ help: >-
   情绪强度先选平常，规则情绪不用模型；主动聊天、日记和梦境按需开启。
   安装、保存生效见 docs/user-guide.md，常见问题见 docs/troubleshooting.md；le_wake 仅管理员手动叫醒。
   开发者：GitHub AKIhunter；配置、流程图和迁移入口见 README。
-version: 0.8.0
+version: 0.9.0
 author: AKIhunter
 # Public repository; commits and CI are recorded in GitHub.
 repo: https://github.com/AKIhunter/astrbot_plugin_livingemotion

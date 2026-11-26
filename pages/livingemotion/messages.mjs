@@ -595,6 +595,12 @@ TA 情绪雷达，实线为当前，虚线为领域基准；数值见下方|TA e
 变化|Change|変化
 当前筛选暂无精力事件。旧历史未采集，不代表精力为零。|No matching energy events. Uncollected history does not mean zero energy.|一致する活力イベントがありません。履歴未収集は活力ゼロを意味しません。
 精力日志读取失败，不表示没有历史。|Energy loading failed; this does not mean no history exists.|活力ログの取得失敗は、履歴がないことを意味しません。
+对象情绪维度|Object emotion dimension|対象感情の単位
+会话维度 · 各群和私聊独立|Conversation · separate for each chat|会話単位 · 各グループと私チャットは独立
+用户维度 · 同一 QQ 互通|Person · shared across a QQ's chats|ユーザー単位 · 同じQQで共通
+{0} 个群聊|{0} group chats|{0} 件のグループチャット
+请从候选中选择具体对象|Choose a specific person from the suggestions|候補から具体的な相手を選んでください
+委屈、受伤与害羞：对 {0}，各群与私聊通用|Wronged, hurt and shyness: toward {0}, shared across chats|理不尽さ・傷つき・照れ：{0} に対して、チャット間で共通
 重试读取日志|Retry log|ログを再取得`;
 const shell = `livingEmotion · TA 的生活控制台|livingEmotion · TA life console|livingEmotion · TA の生活コンソール
 跳到主要内容|Skip to main content|本文へスキップ

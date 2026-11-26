@@ -26,9 +26,10 @@ from ..storage.console_data import (
     project_relationship_clues, query_scopes, selected_contexts, write_relationship_override,
 )
 from ..services.experience import dream_ready, dream_view
-from .projector import account_affect, account_context_emotions, snapshot
+from .projector import account_affect, snapshot, stored_context_emotions
 from ..domain.context_emotion import collected_values, expression_items
 from ..domain.proactivity import MOTIVES
+from ..storage.context_emotions import person_dimension
 from ..storage.proactivity import read_schedule
 
 
@@ -169,6 +170,7 @@ FIELD_LABELS = {
     "emotion_model_enabled": "模型辅助情绪分析", "emotion_provider_id": "情绪精炼模型",
     "dream_enabled": "生成梦境",
     "context_emotions_enabled": "委屈、受伤与害羞",
+    "context_emotions_dimension": "对象情绪维度",
     "dream_theme_pool": "梦境主题池", "dream_owner_notify": "梦中惊醒给主人发消息",
     "dream_owner_qq": "主人QQ",
     "coupling_promise_actions": "承诺到点如何交付",
@@ -268,7 +270,8 @@ def field_section(name):
     from ..prompt_injection import KEYS
     if name in KEYS:
         return "prompt_injection"
-    if name in ("enabled", "mode", "timezone", "provider_id", "fallback_provider_id"):
+    if name in ("enabled", "mode", "timezone", "provider_id", "fallback_provider_id",
+                "context_emotions_dimension"):
         return "quick_start"
     for prefixes, group in (
             (("persona",), "persona"), (("memory", "livingmemory", "embedding", "window", "body",
@@ -524,13 +527,16 @@ class Console:
                  "persona_mode": ["follow", "explicit", "none"], "wake_mode": ["chat", "never", "both"],
                  "behavior_style": ["gentle", "balanced", "lively"],
                  "emotion_intensity": ["gentle", "normal", "intense"],
-                 "coupling_promise_actions": ["auto", "on", "off"]}
+                 "coupling_promise_actions": ["auto", "on", "off"],
+                 "context_emotions_dimension": ["conversation", "user"]}
         enum_labels = {"active": "正常运行", "observe_only": "仅观察", "none": "不使用",
                        "local_lite": "旧版本地记录", "external": "外部记忆",
                        "follow": "跟随会话人格", "explicit": "指定人格",
                        "chat": "仅私聊", "never": "不允许聊天唤醒", "both": "私聊或群原生@Bot",
                        "gentle": "轻柔", "balanced": "自然", "lively": "活泼",
-                       "auto": "自动（跟随检测）", "on": "始终执行动作", "off": "始终只发文字"}
+                       "auto": "自动（跟随检测）", "on": "始终执行动作", "off": "始终只发文字",
+                       "conversation": "会话维度 · 各群和私聊独立",
+                       "user": "用户维度 · 同一 QQ 互通"}
         values = to_dict(self.config)
         values = {key: value for key, value in values.items() if key not in LEGACY_FIELDS}
         options = options or {}
@@ -638,7 +644,8 @@ class Console:
 
     @staticmethod
     def _settings_groups():
-        quick = {"enabled", "mode", "timezone", "provider_id", "fallback_provider_id", "home_city"}
+        quick = {"enabled", "mode", "timezone", "provider_id", "fallback_provider_id", "home_city",
+                 "context_emotions_dimension"}
         return [{"id": group, "label": label,
                  "field_keys": [f.name for f in fields(Config)
                                 if f.name not in LEGACY_FIELDS and
@@ -697,10 +704,15 @@ class Console:
         if persona_id or view_scope or platform:
             selection, contexts = await self._selection(persona_id, view_scope, context_id, platform)
             persisted = contexts[0] if contexts else None
-            context = self._contexts.get(persisted.account_key, persisted) if persisted else None
+            # 一个对象可能跨多个会话（用户维度按人级键选择时返回该 QQ 的全部会话）：
+            # 优先用本进程里有实时来源的会话作为页面落点。
+            anchor = next((c for c in contexts if c.account_key in self._contexts), persisted)
+            context = self._contexts.get(anchor.account_key, anchor) if anchor else None
         else:
             context = self._context(context_id, optional=True)
-        global_view = bool(selection and selection["view_scope"] == "global")
+        # 全局视图 = 不带具体对象；带人级键（用户维度一人一项）时按该对象展示。
+        global_view = bool(selection and selection["view_scope"] == "global"
+                            and not selection["context_id"])
         memory = self.memory.capabilities()
         settings_options = await self.console_settings_options()
         effective = self.effective_mode(context)
@@ -856,9 +868,12 @@ class Console:
                           if personal else None)
         contextual = {}
         contextual_rows = []
+        by_person = person_dimension(self.config)
+        shared_person = not global_view and bool(context.account_id) and by_person
         if (self.config.enabled and self.config.context_emotions_enabled
-                and not global_view and personal_record is not None and relation is not None
-                and personal_record.generation == generation
+                and not global_view and context.account_id and relation is not None
+                and (shared_person or (personal_record is not None
+                                       and personal_record.generation == generation))
                 and await self.validate_context(context, generation)):
             from ..domain.relationship import relationship_behavior
             from ..storage.console_data import read_relationship_override
@@ -866,9 +881,9 @@ class Console:
             boundary = "\n".join(((override or {}).get("note", ""),
                 relationship_behavior(relation.score, self.config,
                     note=(override or {}).get("note", ""))["description"]))
-            raw_context = account_context_emotions(
-                personal_record, context, now=self.store.clock(),
-                fingerprint=self.context_emotion_fingerprint(context),
+            raw_context = stored_context_emotions(
+                await self.store.context_emotion_record(context, personal_record), context,
+                now=self.store.clock(), fingerprint=self.context_emotion_fingerprint(context),
                 epoch=self._context_emotion_epoch)
             contextual = collected_values(raw_context, context, now=self.store.clock(),
                                            relationship=relation, relationship_note=boundary)
@@ -881,6 +896,8 @@ class Console:
                 "target": context.account_id if not global_view else "",
                 "enabled": self.config.enabled and self.config.context_emotions_enabled,
                 "emotions": contextual,
+                # 维度只随配置走（下拉按它决定一人一项还是一会话一项），不随当前视图变化。
+                "dimension": "user" if by_person else "conversation",
             },
             "user_emotion": ({
                 "subject": context.account_id, "context_id": context.account_key,

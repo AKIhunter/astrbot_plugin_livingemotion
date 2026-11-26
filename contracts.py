@@ -168,6 +168,11 @@ def state_owner_key(context, shared: bool) -> str:
     )
 
 
+def account_person_key(context) -> str:
+    """人级键：实例+人格+平台+账号，不含会话；与关系页的 account key 同值。"""
+    return stable_key(context.instance_id, context.persona_id, context.platform, context.account_id)
+
+
 @dataclass(frozen=True)
 class Context:
     bot_id: str

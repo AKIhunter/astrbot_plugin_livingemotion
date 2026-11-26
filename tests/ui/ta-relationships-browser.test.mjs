@@ -70,6 +70,34 @@ try {
     check(`${width}_read_only`, await page.evaluate(() => window.__fixture.calls.every(c => c.method === "GET")));
     await page.close();
   }
+  // 用户维度：会话对象按 QQ 聚合，选中项是该 QQ 的人级键。
+  const person = await browser.newPage({ viewport: { width: 1280, height: 1000 }, reducedMotion: "reduce" });
+  person.on("pageerror", error => report.errors.push(error.message));
+  await person.route("**/*", route => new URL(route.request().url()).origin === new URL(url).origin
+    ? route.continue() : route.abort());
+  await person.clock.install();
+  await person.goto(`${url}?scenario=ta-person`);
+  await person.locator("#content[aria-busy=false]").waitFor();
+  const picker = person.locator("#context-emotion-picker");
+  const option = value => person.locator(`#context-emotion-picker option[value='${value}']`).textContent();
+  check("person_one_option_per_qq", await person.locator("#context-emotion-picker option").count() === 4);
+  check("person_labels_list_scenes", await option("person-80001") === "合成对象甲 · 80001 · 私聊 + 2 个群聊" &&
+    await option("person-80002") === "合成对象乙 · 80002 · 1 个群聊" &&
+    await option("person-80003") === "合成对象丙 · 80003 · 私聊");
+  await picker.selectOption("person-80001");
+  await person.waitForFunction(() => document.querySelector('[data-context-emotion-scope]')?.textContent.includes("各群与私聊通用"));
+  const call = await person.evaluate(() => window.__fixture.calls.filter(c => c.path === "console/state").at(-1));
+  check("person_selection_request", call.payload.context_id === "person-80001" &&
+    call.payload.view_scope === "private" && call.payload.platform === "qq");
+  check("person_emotion_collected", await person.locator('[data-emotion="wronged"]').first().getAttribute("data-value") !== "uncollected");
+  await person.clock.fastForward(60001);
+  await person.waitForFunction(() => document.querySelector("#content")?.getAttribute("aria-busy") === "false");
+  check("person_auto_refresh_keeps_selection", await picker.inputValue() === "person-80001");
+  await person.reload();
+  await person.locator("#content[aria-busy=false]").waitFor();
+  check("person_reload_keeps_selection", await picker.inputValue() === "person-80001");
+  check("person_read_only", await person.evaluate(() => window.__fixture.calls.every(c => c.method === "GET")));
+  await person.close();
   assert.deepEqual(report.errors, []);
 } finally {
   if (process.env.REPORT_PATH) await writeFile(process.env.REPORT_PATH, JSON.stringify(report, null, 2));

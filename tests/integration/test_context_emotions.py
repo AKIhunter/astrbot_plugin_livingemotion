@@ -8,7 +8,9 @@ from pathlib import Path
 import pytest
 
 from astrbot_plugin_livingemotion.config import Config
-from astrbot_plugin_livingemotion.contracts import ContentKind, Context, EvidenceRef, StateWrite
+from astrbot_plugin_livingemotion.contracts import (
+    ContentKind, Context, EvidenceRef, StateWrite, account_person_key,
+)
 from astrbot_plugin_livingemotion.domain.context_emotion import empty_state, expression_items
 from astrbot_plugin_livingemotion.ports.memory import Material, RecallResult, ValidationResult
 from astrbot_plugin_livingemotion.runtime.application import SUFFIX, ApplicationError
@@ -16,6 +18,7 @@ from astrbot_plugin_livingemotion.runtime.projector import (
     account_context_emotions, attach_context_emotions,
 )
 from astrbot_plugin_livingemotion.storage.console_data import write_relationship_override
+from astrbot_plugin_livingemotion.storage.context_emotions import PERSON_KIND
 from test_application import application, generation_app, Message
 
 NOW = 1793919600.0
@@ -439,7 +442,7 @@ async def test_console_collected_zero_subthreshold_decay_and_global_isolation(tm
         global_state = await app.console_state(persona_id=context.persona_id, view_scope="global")
         assert global_state["context_emotions"] == {
             "version": 1, "scope_kind": "account", "context_id": "", "target": "",
-            "enabled": True, "emotions": {}}
+            "enabled": True, "dimension": "conversation", "emotions": {}}
         clock[0] += 7201
         expired = await app.console_state(context.account_key)
         assert expired["context_emotions"]["emotions"] == {
@@ -449,5 +452,187 @@ async def test_console_collected_zero_subthreshold_decay_and_global_isolation(tm
         disabled = await app.console_state(context.account_key)
         assert not disabled["context_emotions"]["enabled"]
         assert disabled["context_emotions"]["emotions"] == {}
+    finally:
+        await app.terminate()
+
+
+async def shared(app, context):
+    """用户维度下该对象此刻可见的对象情绪（经 API 读取，已过表达门槛）。"""
+    return (await app.api.get_current_emotion(context))["data"]["context_emotions"]
+
+
+async def injected(app, message):
+    """本次回复注入块里的对象情绪。"""
+    from astrbot_plugin_livingemotion.runtime.application import SUFFIX
+    request = SimpleNamespace(extra_user_content_parts=[])
+    await app.on_llm_request(message, request)
+    block = next(p.text for p in request.extra_user_content_parts if p.text.startswith(SUFFIX))
+    return json.loads(block.split("\n")[-1])["bot"].get("context_emotions") or []
+
+
+class At:
+    def __init__(self, qq):
+        self.qq = qq
+
+
+async def group_ingest(app, identifier, body, group, account):
+    """群聊里 @Bot 的消息：群消息只有明确指向 Bot 才算对 TA 的刺激。"""
+    message = Message(identifier, body, group=group, account=account)
+    message.message_obj.message = (At(message.get_self_id()),)
+    await app.on_message(message)
+    assert message.extra["livingemotion:ingest"] == "accepted"
+    return message, Context.from_dict(message.extra["livingemotion:context"])
+
+
+@pytest.mark.asyncio
+async def test_user_dimension_shares_one_person_record_across_scenes(tmp_path):
+    app, host, native, clock = await local_app(tmp_path, context_emotions_dimension="user")
+    try:
+        _, private, _ = await ingest(app, "private", "你好", account="a")
+        clock[0] += 1
+        _, group = await group_ingest(app, "unfair", "虽然你没做错，但我就是要怪你", "g1", "a")
+        person = await app.store.context_emotion_record(group)
+        assert person.kind == "context_emotion" and person.record_key == "a" and person.version == 1
+        scene_record = await app.store.get_state(group, "relationship", "a")
+        assert "context_emotions" not in scene_record.value.get("_account_affect", {})  # Not in the scene.
+        intensity = person.value["context_emotions"]["items"][0]["intensity"]
+        clock[0] += 1
+        _, second_group = await group_ingest(app, "second-group", "你好", "g2", "a")
+        _, stranger = await group_ingest(app, "stranger", "你好", "g1", "b")
+        message, back, _ = await ingest(app, "back-to-private", "你好", account="a")
+        # Same QQ reads one record from private chat and every group; other QQs are unaffected.
+        for context in (private, second_group, back):
+            assert await shared(app, context) == {"wronged": pytest.approx(intensity, abs=.01)}
+        assert await shared(app, stranger) == {}
+        # A QQ without a person record yet is a valid read at version 0, not an error.
+        fresh = await app.api.get_current_emotion(stranger)
+        assert fresh["status"] == "ok" and fresh["data"]["context_emotions_state_version"] == 0
+        assert await app.store.context_emotion_record(private) == person
+        assert [row["kind"] for row in await injected(app, message)] == ["wronged"]
+        result = await app.api.get_current_emotion(second_group)
+        assert result["data"]["context_emotions_state_version"] == 1
+        state = await app.console_state(persona_id=back.persona_id, view_scope="global",
+                                         context_id=account_person_key(back))
+        dto = state["context_emotions"]
+        assert dto["dimension"] == "user" and dto["scope_kind"] == "account"
+        assert dto["target"] == "a" and dto["context_id"] == state["context_id"]
+        assert dto["emotions"]["wronged"] == pytest.approx(intensity, abs=.01)
+        # The person key selects every conversation of that QQ, across scene kinds.
+        assert {(c["account_id"], c["view_scope"]) for c in state["contexts"]} == {
+            ("a", "private"), ("a", "group")}
+        overall = await app.console_state(persona_id=back.persona_id, view_scope="global")
+        assert overall["context_emotions"]["dimension"] == "user"
+        assert overall["context_emotions"]["emotions"] == {}
+        # Clearing the scene that produced the stimulus removes it everywhere for that QQ.
+        await app.store.clear_scope(group, await app.store.get_generation(group))
+        assert await app.store.context_emotion_record(back) is None
+        assert await shared(app, back) == {}
+        assert host.sends == 0
+    finally:
+        await app.terminate()
+
+
+@pytest.mark.asyncio
+async def test_user_dimension_restart_dimension_switch_and_persona_change(tmp_path):
+    app, host, native, clock = await local_app(tmp_path, context_emotions_dimension="user")
+    try:
+        _, private, _ = await ingest(app, "hello", "你好", account="a")
+        await group_ingest(app, "unfair", "虽然你没做错，但我就是要怪你", "g1", "a")
+        original = (await app.store.context_emotion_record(private)).value[
+            "context_emotions"]["items"][0]["intensity"]
+        await app.terminate()
+        app, host, native, clock = await local_app(tmp_path, context_emotions_dimension="user")
+        clock[0] += 1800
+        _, context, _ = await ingest(app, "after-restart", "你好", account="a")
+        assert await shared(app, context) == {"wronged": pytest.approx(original / 2, abs=.0001)}
+        # Back to conversation dimension: scene records are read; the person record stays, unread.
+        native["context_emotions_dimension"] = "conversation"
+        await app.refresh_config()
+        assert await shared(app, context) == {}
+        scene_record = await app.store.context_emotion_record(context)
+        assert scene_record is not None and scene_record.kind == "relationship"
+        native["context_emotions_dimension"] = "user"
+        await app.refresh_config()
+        clock[0] += 1
+        # A repair in private chat settles the feeling carried over from the group.
+        _, context, _ = await ingest(app, "repair", "对不起，是我误会你了", account="a")
+        assert await shared(app, context) == {}
+        await group_ingest(app, "unfair-again", "虽然你没做错，但我就是要怪你", "g1", "a")
+        host.prompt = "Changed native personality"
+        clock[0] += 1
+        _, context, _ = await ingest(app, "changed-persona", "你好", account="a")
+        assert await shared(app, context) == {}  # Same process: a new persona starts over.
+        assert host.sends == 0
+    finally:
+        await app.terminate()
+
+
+@pytest.mark.asyncio
+async def test_user_dimension_reprojects_when_person_record_changes_first(tmp_path, monkeypatch):
+    app, host, native, clock = await local_app(tmp_path, context_emotions_dimension="user")
+    try:
+        _, private, _ = await ingest(app, "hello", "你好", account="a")
+        _, group = await group_ingest(app, "unfair", "虽然你没做错，但我就是要怪你", "g1", "a")
+        before = await app.store.context_emotion_record(group)
+        assert before is not None and before.version == 1
+        original = app.store.commit_event
+        bumped = []
+
+        async def racing_commit(event, generation, writes=(), contributions=(), **options):
+            if not bumped:
+                # The same QQ is updated from another scene between projection and commit.
+                def bump(db):  # Store work runs on the connection's worker thread.
+                    return app.store._write_person(db, group, StateWrite(
+                        PERSON_KIND, before.value, before.version, "a"), clock[0])
+                await app.store._run(bump)
+                bumped.append(True)
+            return await original(event, generation, writes, contributions, **options)
+
+        monkeypatch.setattr(app.store, "commit_event", racing_commit)
+        clock[0] += 1
+        message, context, _ = await ingest(app, "again", "你就是个废物", account="a")
+        assert bumped == [True]
+        assert message.extra["livingemotion:ingest"] == "accepted"
+        after = await app.store.context_emotion_record(context)
+        items = after.value["context_emotions"]["items"]
+        # 1 first stimulus, 2 the racing write, 3 this event after re-projection.
+        assert after.version == 3 and {r["kind"] for r in items} == {"wronged", "hurt"}
+        assert await app.store.context_emotion_record(group) == after
+        assert host.sends == 0
+    finally:
+        await app.terminate()
+
+
+@pytest.mark.asyncio
+async def test_dimension_config_surfaces_and_invalid_save(tmp_path):
+    app, _, native, _ = await local_app(tmp_path)
+    try:
+        schema = json.loads((Path(__file__).parents[2]
+                             / "_conf_schema.json").read_text(encoding="utf-8-sig"))
+        field = schema["context_emotions_dimension"]
+        assert field["type"] == "string" and field["options"] == ["conversation", "user"]
+        assert field["default"] == Config().context_emotions_dimension == "conversation"
+        dto = app.config_dto()
+        control = next(f for f in dto["fields"] if f["key"] == "context_emotions_dimension")
+        assert control["type"] == "enum" and control["level"] == 0 and not control["parent"]
+        assert control["section"] == "quick_start"
+        assert [option["value"] for option in control["options"]] == ["conversation", "user"]
+        assert control["options"][1]["label"] == "用户维度 · 同一 QQ 互通"
+        assert "用户维度" in control["details"] and "设置" in control["details"]
+        assert [group["id"] for group in dto["groups"]
+                if "context_emotions_dimension" in group["field_keys"]] == ["quick_start"]
+        assert dto["values"]["context_emotions_dimension"] == "conversation"
+        revision = app.revision
+        with pytest.raises(ApplicationError):
+            await app.update_config({"context_emotions_dimension": "account"},
+                expected_revision=revision, actor_id="test", reason="invalid dimension")
+        assert app.revision == revision and app.config.context_emotions_dimension == "conversation"
+        assert not hasattr(native, "saved") or "context_emotions_dimension" not in native.saved
+        await app.update_config({"context_emotions_dimension": "user"},
+            expected_revision=app.revision, actor_id="test", reason="share by QQ")
+        assert app.config.context_emotions_dimension == "user"
+        assert native.saved["context_emotions_dimension"] == "user"
+        with pytest.raises(ValueError):
+            Config(context_emotions_dimension="account")
     finally:
         await app.terminate()

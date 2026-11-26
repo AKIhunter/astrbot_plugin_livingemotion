@@ -32,6 +32,7 @@ from ..domain.relationship import (
     relationship_behavior,
 )
 from ..storage import SQLiteStore
+from ..storage.context_emotions import PERSON_KIND, person_dimension, person_value
 from ..storage.sqlite import _ProjectionPayload
 from .state_scope import source_affect
 
@@ -190,6 +191,33 @@ def account_context_emotions(record: StateRecord | None, context: Context, *, no
     return read_state(value.get("context_emotions"), context, now=now)
 
 
+def person_context_emotions(record, context, *, now, fingerprint="", epoch=""):
+    """用户维度读人级记录：归属只看实例+人格+平台+QQ，不绑定会话与受众。"""
+    if (record is None or record.kind != PERSON_KIND or not context.account_id
+            or record.record_key != context.account_id):
+        return empty_state()
+    value = record.value
+    if not isinstance(value, dict) or value.get("target") != context.account_id:
+        return empty_state()
+    if value.get("epoch") == epoch:
+        # 同一进程内原生人格内容变化，旧情绪不沿用。
+        if fingerprint and value.get("persona") != fingerprint:
+            return empty_state()
+    elif not (epoch and fingerprint and value.get("persona") == fingerprint):
+        # 跨进程只在人格内容未变时恢复，与会话维度的重启恢复规则一致。
+        return empty_state()
+    return read_state(value.get("context_emotions"), context, now=now)
+
+
+def stored_context_emotions(record, context, *, now, fingerprint="", epoch=""):
+    """按记录类型解码对象情绪：人级记录或会话关系记录。"""
+    if record is not None and record.kind == PERSON_KIND:
+        return person_context_emotions(record, context, now=now,
+                                        fingerprint=fingerprint, epoch=epoch)
+    return account_context_emotions(record, context, now=now,
+                                    fingerprint=fingerprint, epoch=epoch)
+
+
 def attach_context_emotions(payload, state, *, fingerprint="", epoch=""):
     from ..contracts import canonical_json
     payload = deepcopy(payload)
@@ -269,8 +297,9 @@ class Projector:
         night_runtime = runtime("night")
         account = account_affect(records.get("relationship"), context)
         fingerprint = self.context_fingerprint(context)
-        context_before = account_context_emotions(
-            records.get("relationship"), context, now=now,
+        shared_person = person_dimension(config)
+        context_before = stored_context_emotions(
+            records.get("context_emotion" if shared_person else "relationship"), context, now=now,
             fingerprint=fingerprint, epoch=self.context_epoch)
         context_enabled = config.enabled and config.mode == "active" and config.context_emotions_enabled
         relationship_note = "\n".join((
@@ -363,11 +392,22 @@ class Projector:
                 }
                 if context_enabled or context_before != empty_state():
                     payload["_runtime"] = relation["runtime"]
-                    payload = attach_context_emotions(
-                        payload, contextual["state"], fingerprint=fingerprint,
-                        epoch=self.context_epoch)
-                    if "context_emotions" not in payload["_account_affect"]:
-                        contextual["trace"].update(after=[], reason_codes=["context_capacity_limited"])
+                    if shared_person:
+                        # 用户维度：对象情绪写人级记录，会话关系记录不再附带。
+                        if contextual["applied"]:
+                            person = records.get("context_emotion")
+                            writes.append(StateWrite(
+                                PERSON_KIND, _ProjectionPayload(person_value(
+                                    context, contextual["state"], fingerprint,
+                                    self.context_epoch)),
+                                person.version if person else 0, context.account_id))
+                    else:
+                        payload = attach_context_emotions(
+                            payload, contextual["state"], fingerprint=fingerprint,
+                            epoch=self.context_epoch)
+                        if "context_emotions" not in payload["_account_affect"]:
+                            contextual["trace"].update(
+                                after=[], reason_codes=["context_capacity_limited"])
             if context_enabled:
                 relation["trace"]["context_emotions"] = contextual["trace"]
             write("relationship", relation["relationship"], relation["runtime"],

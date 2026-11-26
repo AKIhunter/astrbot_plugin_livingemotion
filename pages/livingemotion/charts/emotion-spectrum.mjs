@@ -105,7 +105,9 @@ export function emotionSpectrum(data) {
   grid.append(summary, distribution);
   root.append(grid);
   const scopeNote = node("p", contextual.enabled === true
-    ? scoped ? t("委屈、受伤与害羞：当前会话对象 {0}", [contextual.target])
+    ? scoped ? (contextual.dimension === "user"
+        ? t("委屈、受伤与害羞：对 {0}，各群与私聊通用", [contextual.target])
+        : t("委屈、受伤与害羞：当前会话对象 {0}", [contextual.target]))
       : t("委屈、受伤与害羞按对象采集；选择具体会话后查看。")
     : t("在设置 → 情绪开启「委屈、受伤与害羞」并保存后采集。"), "hint");
   scopeNote.dataset.contextEmotionScope = "";

@@ -54,7 +54,7 @@ from .materials import Materials
 from .models import Generation
 from .memory import AutoMemoryIngestor, build_memory_backend
 from .night import NightRuntime
-from .projector import Projector, account_context_emotions, current_affect, snapshot
+from .projector import Projector, current_affect, snapshot, stored_context_emotions
 from .weather_factor import WeatherFactor
 from .refinement import Refinement
 from .relationship_projection import read_relationship_projection
@@ -1372,9 +1372,9 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             expression["relationship"] = relationship_behavior(
                 relationship.score, self.config, note=(override or {}).get("note", ""))
             if self.config.context_emotions_enabled:
-                relation_record = await self.store.get_state(context, "relationship", context.account_id)
-                contextual = expression_items(account_context_emotions(
-                    relation_record, context, now=self.store.clock(),
+                contextual = expression_items(stored_context_emotions(
+                    await self.store.context_emotion_record(context), context,
+                    now=self.store.clock(),
                     fingerprint=self.context_emotion_fingerprint(context),
                     epoch=self._context_emotion_epoch),
                     context, now=self.store.clock(), relationship=relationship,

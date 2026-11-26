@@ -8,10 +8,10 @@ import {
 } from "./model.mjs?v=eff0d6f932b0";
 import { radar3d } from "./charts/radar3d.mjs?v=eff0d6f932b0";
 import { mountRelationships, emotionExplainer } from "./charts/relationships.mjs?v=ta-rel-20261120-r1";
-import { contextEmotionPicker } from "./scope-picker.mjs?v=ta-rel-20261120-r1";
+import { contextEmotionPicker } from "./scope-picker.mjs?v=ta-person-20261126-r1";
 import { mountEnergy } from "./charts/energy.mjs?v=eff0d6f932b0";
-import { emotionSpectrum } from "./charts/emotion-spectrum.mjs?v=ta-omissions-20261119-r3";
-import { renderSettings as settingsView, jumpToSettingsGroup, syncSettingsValues } from "./settings.mjs?v=model-labels-20261120-r1";
+import { emotionSpectrum } from "./charts/emotion-spectrum.mjs?v=ta-person-20261126-r1";
+import { renderSettings as settingsView, jumpToSettingsGroup, syncSettingsValues } from "./settings.mjs?v=ta-person-20261126-r1";
 import { EXPERIENCE_TABS, experienceTabs, selectExperienceTab, turnPage, cancelPageTurn } from "./experience.mjs?v=eff0d6f932b0";
 import { reconcileDraft } from "./draft.mjs?v=eff0d6f932b0";
 import { bindDiagnosticExport } from "./diagnostics.mjs?v=20261125";
@@ -393,6 +393,7 @@ function renderOverview(container) {
   if (state.data.context_emotions?.enabled === true) {
     spectrum.append(contextEmotionPicker({
       contexts: state.scopes?.contexts, selection: state.selection,
+      dimension: state.data.context_emotions?.dimension,
       disabled: state.loading || state.writing || Object.keys(state.draft).length > 0,
       onSelect: selection => {
         state.selection = selection; state.preview = null; remember();
@@ -1788,8 +1789,12 @@ async function refreshState(automatic) {
           state.contextId = ""; state.preview = null;
         }
       }
+      // 用户维度下选中项是该 QQ 的人级键，不是某个会话；首个快照到达前维度未知，先保留。
+      const dimension = state.data?.context_emotions?.dimension;
       if (state.selection.context_id && !list(state.scopes.contexts).some(item =>
-          item.id === state.selection.context_id && item.persona_id === state.selection.persona_id)) {
+          item.persona_id === state.selection.persona_id &&
+          (item.id === state.selection.context_id ||
+            (dimension !== "conversation" && item.person_id === state.selection.context_id)))) {
         state.selection = { persona_id: state.selection.persona_id, view_scope: "global" };
         state.contextId = ""; state.preview = null;
       }

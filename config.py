@@ -55,6 +55,8 @@ class Config:
     emotion_model_enabled: bool = False
     # Optional account-scoped feelings; existing installations retain their behavior.
     context_emotions_enabled: bool = False
+    # 对象情绪按会话还是按 QQ 号记录：conversation 各群与私聊独立（存量行为），user 同一 QQ 互通。
+    context_emotions_dimension: str = "conversation"
     dream_enabled: bool = False
     dream_theme_pool: str = json.dumps(DEFAULT_THEMES, ensure_ascii=False)
     dream_owner_notify: bool = False
@@ -309,6 +311,8 @@ class Config:
         if (type(self.promise_recall_limit) is not int
                 or not 1 <= self.promise_recall_limit <= 8):
             raise ValueError("promise_recall_limit: expected 1-8")
+        if self.context_emotions_dimension not in ("conversation", "user"):
+            raise ValueError("invalid context emotions dimension")
         if self.persona_mode not in ("follow", "explicit", "none"):
             raise ValueError("invalid persona mode")
         if self.persona_mode == "explicit" and not self.persona_id:

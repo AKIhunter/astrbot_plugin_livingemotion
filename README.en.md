@@ -2,7 +2,7 @@
 
 ![livingEmotion wordmark and state lines](.github/img/Banner.png)
 
-[![Version](https://img.shields.io/badge/version-0.8.0-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.9.0-3a8060)](CHANGELOG.md)
 
 [简体中文](README.md) · **English**
 
@@ -21,9 +21,10 @@ The proactive account/group-number lists apply to QQ. Telegram and Discord deliv
 on real platforms. WebChat is currently rejected. See [platform compatibility](docs/compatibility.md).
 
 TA displays nine emotion components. Optional wronged, hurt and shyness collection is off by default;
-enable it in Settings → Emotions and select a conversation on TA. Collection requires Active mode.
+enable it in Settings → Emotions and select a person on TA. Collection requires Active mode.
+Settings → Quick start → Object emotion dimension chooses conversation (default: each group and private chat stays separate) or person (one QQ shares the feeling across chats).
 Enable model refinement for contextual interpretation. A joint analysis is reused; during its
-cooldown a separate object analysis can use the shared daily budget. Replies wait at most five seconds.
+cooldown a separate object analysis can use the shared daily budget. Replies wait at most one second; a slower analysis finishes in the background and applies to the next reply.
 Control influences negative emotion intensity and speaking style. TA selection and relationship
 filters are independent; the relationship list updates at local midnight while the graph stays live.
 Behavior simulation offers 12 choices, keeps its records separate and does not send messages.
@@ -49,6 +50,8 @@ Successful wording substitutions are scoped by the actual image provider, model 
 
 Model generation can incur provider charges. Normal use needs neither Node nor an external CDN.
 Developer: [AKIhunter](https://github.com/AKIhunter). Feedback QQ group: 991350637.
+
+0.9.0 adds Object emotion dimension (Settings → Quick start): conversation keeps each group and private chat separate, while person lets one QQ share wronged, hurt and shyness across chats. The TA conversation picker merges one QQ into a single entry. Replies wait one second; a slower analysis is written back in the background instead of discarded. No configuration or database migration; the default stays conversation.
 
 0.8.0 adds a diagnostic ZIP download at the top of the console for the last 72 hours, covering events, emotion, proactive behavior and promise status. Independent records are capped at 32 MiB with 1 MiB files and automatic expiry cleanup every minute. No configuration or database migration is required, and export makes no model calls. LivingHello 2.10.0 provides its own export; each plugin works independently. See the [diagnostic guide](docs/diagnostics.md).
 SQLite upgrades automatically to v9 without filling missing historical control values.

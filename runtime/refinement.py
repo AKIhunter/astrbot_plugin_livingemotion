@@ -1,6 +1,7 @@
 """Optional asynchronous refinement of one committed rule event, never replay."""
 
 import asyncio
+import json
 import time
 from collections import OrderedDict
 from dataclasses import replace
@@ -13,13 +14,35 @@ from ..contracts import BotAffect, StateWrite, prompt_json, to_dict, stable_key
 from ..domain.emotion import apply_control, apply_emotion, decay_affect, emotion_policy, shift_baseline
 from ..domain.appraisal import parse_suggestion
 from ..domain.context_emotion import (
-    apply_context_emotions, empty_state, memory_support, parse_context_appraisals, read_state,
+    LABELS, apply_context_emotions, empty_state, memory_support, parse_context_appraisals, read_state,
 )
 from ..domain.relationship import apply_relationship, RelationshipPolicy
 from ..ports.memory import MemoryRequest
 from ..prompt_precision import AFFECT_FIELDS, RELATIONSHIP_FIELDS, prompt_numbers
-from .projector import account_affect_token, attach_context_emotions, encode_account_runtime, encode_account_state
+from ..storage.context_emotions import PERSON_KIND, person_dimension, person_value
+from .projector import (
+    account_affect_token, attach_context_emotions, encode_account_runtime, encode_account_state,
+    person_context_emotions,
+)
 from .state_scope import source_affect
+
+
+def _judgement(raw):
+    """模型对对象情绪的原始判定摘要，只用于日志核对，不参与校验。"""
+    try:
+        suggestion = json.loads(raw) if isinstance(raw, str) else raw
+    except (TypeError, ValueError):
+        return "非JSON:" + " ".join(str(raw).split())[:80]
+    if not isinstance(suggestion, dict):
+        return "格式无效"
+    rows = suggestion.get("context_appraisals")
+    if rows is None:
+        return "缺字段"
+    if not isinstance(rows, list):
+        return "格式无效"
+    return ";".join(
+        f"{row.get('kind')}:{row.get('action', 'increase')} 强度{row.get('strength')} "
+        f"把握{row.get('confidence')}" for row in rows if isinstance(row, dict)) or "空"
 
 
 QUIET_START_HOUR = 3
@@ -155,7 +178,7 @@ class Refinement:
         if event.idempotency_key in tasks:
             return
         # Keep only this bounded task's real source alive; release on completion/cancel.
-        tasks[event.idempotency_key] = {"expired": False, "task": self.spawn_action(
+        tasks[event.idempotency_key] = {"waited": False, "task": self.spawn_action(
             self.refine_emotion(event, result.generation, version, seed, native_event=native_event))}
         for key in tuple(tasks):
             if len(tasks) <= 128:
@@ -164,16 +187,17 @@ class Refinement:
                 tasks.pop(key)
 
     async def await_context_refinement(self, event_key):
-        """Join this event once before injection; timeout never starts another request."""
+        """Join this event once before injection; a timeout lets the analysis finish and write back."""
         row = getattr(self, "_refinement_tasks", {}).get(event_key)
-        if row is None or row["expired"]:
+        if row is None or row["waited"]:
             return
+        row["waited"] = True
         try:
             await asyncio.wait_for(asyncio.shield(row["task"]), CONTEXT_WAIT_SECONDS)
-        except (asyncio.TimeoutError, asyncio.CancelledError) as exc:
-            row["expired"] = True
-            row["task"].cancel()
-            if isinstance(exc, asyncio.CancelledError) and asyncio.current_task().cancelling():
+        except asyncio.TimeoutError:
+            pass  # 回复不再等；分析继续，结果写回供下一次回复与 TA 页使用。
+        except asyncio.CancelledError:
+            if asyncio.current_task().cancelling():
                 raise
 
     async def refine_emotion(self, event, generation, version, seed, *, native_event=None):
@@ -182,8 +206,7 @@ class Refinement:
         try:
             await self._refine_emotion(event, generation, version, seed, source_lease=source_lease)
         except asyncio.CancelledError:
-            expired = getattr(self, "_refinement_tasks", {}).get(event.idempotency_key, {}).get("expired")
-            self._analysis(event, "cancelled", "reply_wait_timeout" if expired else "task_cancelled")
+            self._analysis(event, "cancelled", "task_cancelled")
             raise
         except Exception as exc:
             code = str(exc)
@@ -205,7 +228,7 @@ class Refinement:
 
     async def _refine_emotion(self, event, generation, version, seed, *, source_lease=None,
                              context_only=False):
-        context = event.context
+        context, started = event.context, time.monotonic()
         owner = seed.get("state_owner")
         inputs = {key: seed[key] for key in (
             "state", "observation", "relationship", "night", "runtime", "now")}
@@ -217,9 +240,7 @@ class Refinement:
         materials = ()
 
         async def current():
-            expired = getattr(self, "_refinement_tasks", {}).get(event.idempotency_key, {}).get("expired")
-            reason = ("reply_wait_timeout" if expired else
-                      "context_changed" if getattr(self, "revision", None) != revision else
+            reason = ("context_changed" if getattr(self, "revision", None) != revision else
                       "model_disabled" if not self.config.emotion_model_enabled else
                       "model_disabled" if context_only and not self.config.context_emotions_enabled else
                       "quiet_hours" if self.in_quiet_hours() else
@@ -373,7 +394,7 @@ class Refinement:
         # Recompute once from the original pre-event snapshot, then replace only
         # that event's Bot projection/trace by CAS. No second event or ledger row.
         try:
-            context_appraisals, context_reasons = (), ()
+            judgement, context_appraisals, context_reasons = _judgement(suggestion), (), ()
             if contextual_enabled:
                 suggestion, context_appraisals, context_reasons = parse_context_appraisals(
                     suggestion, event, inputs["relationship"], context_before,
@@ -385,31 +406,49 @@ class Refinement:
         except (ValueError, TypeError, KeyError):
             self._analysis(event, "failed", "model_output_invalid")
             return
+        fingerprint, epoch = seed.get("context_fingerprint", ""), seed.get("context_epoch", "")
+        shared_person = person_dimension(self.config)
+
+        def rebase(raw):
+            # 模型判定固定；写人级记录前基于最新记录重放，避免同一人在别的会话的更新被覆盖。
+            value = apply_context_emotions(
+                raw, event, inputs["relationship"], now=inputs["now"],
+                enabled=contextual_enabled and not context_reasons, appraisals=context_appraisals,
+                support_refs=evidence_refs, relationship_note=seed.get("relationship_note", ""),
+                semantic=True)
+            value["trace"]["reason_codes"].extend(context_reasons)
+            return value
+
         if context_only:
             if context_reasons:
                 self._analysis(event, "failed", "model_output_invalid")
                 return
-            contextual = apply_context_emotions(
-                context_before, event, inputs["relationship"], now=inputs["now"],
-                enabled=contextual_enabled, appraisals=context_appraisals, semantic=True,
-                support_refs=evidence_refs, relationship_note=seed.get("relationship_note", ""))
-            contextual["trace"]["reason_codes"].extend(context_reasons)
-            if not await memory_current() or not await current():
-                return
-            record = await self.store.get_state(context, "relationship", context.account_id)
-            payload = attach_context_emotions(
-                record.value, read_state(contextual["state"], context, now=self.store.clock()),
-                fingerprint=seed.get("context_fingerprint", ""), epoch=seed.get("context_epoch", ""))
-            if "context_emotions" not in payload["_account_affect"]:
-                self._analysis(event, "discarded", "context_capacity_limited")
-                return
-            result = await self.store.refine_context_emotions(
-                event, generation, StateWrite("relationship", payload, relation_version,
-                                              context.account_id, owner),
-                {**contextual["trace"], "event_key": event.idempotency_key},
-            )
-            self._analysis(event, "completed" if result.accepted else "discarded",
-                           "completed" if result.accepted else "state_changed", applied=result.accepted)
+            if shared_person:
+                # 用户维度：只写人级记录，不改动会话关系记录。
+                result, contextual = await self._save_person(event, generation, rebase, inputs["now"])
+                applied = bool(result and result.accepted)
+            else:
+                contextual = rebase(context_before)
+                if not await memory_current() or not await current():
+                    return
+                record = await self.store.get_state(context, "relationship", context.account_id)
+                payload = attach_context_emotions(
+                    record.value, read_state(contextual["state"], context, now=self.store.clock()),
+                    fingerprint=fingerprint, epoch=epoch)
+                if "context_emotions" not in payload["_account_affect"]:
+                    self._analysis(event, "discarded", "context_capacity_limited")
+                    return
+                result = await self.store.refine_context_emotions(
+                    event, generation, StateWrite("relationship", payload, relation_version,
+                                                  context.account_id, owner),
+                    {**contextual["trace"], "event_key": event.idempotency_key},
+                )
+                applied = result.accepted
+            # 模型判定为“无变化”时人级记录无需写入，仍按分析完成上报。
+            self._analysis(event, "completed" if result is None or applied else "discarded",
+                           "completed" if result is None or applied else "state_changed",
+                           applied=applied)
+            self._log_context(event, judgement, contextual, applied, started)
             return
         classified = replace(event, signals=tuple(dict.fromkeys((*event.signals, *signals))))
         # 情绪强度与常驻投影保持一致：同一档位同时决定增量与闸门。
@@ -427,6 +466,7 @@ class Refinement:
         affect = apply_control(affect, suggestion.get("control"), now=self.store.clock(),
                                confidence=suggestion.get("confidence", 1.0))
         relation_write, relation_trace, contributions = None, None, ()
+        person_pending = context_ready = False
         if relation_version is not None and context.account_id:
             relation = apply_relationship(
                 inputs["relationship"], classified, now=inputs["now"],
@@ -451,22 +491,21 @@ class Refinement:
             relation_trace = {"kind": "relationship", **relation["trace"],
                               "reason_codes": relation["reason_codes"]}
             if contextual_enabled or context_before != empty_state():
-                contextual = apply_context_emotions(
-                    context_before, event, inputs["relationship"], now=inputs["now"],
-                    enabled=contextual_enabled and not context_reasons, appraisals=context_appraisals,
-                    support_refs=evidence_refs, relationship_note=seed.get("relationship_note", ""),
-                    semantic=True)
-                contextual["trace"]["reason_codes"].extend(context_reasons)
-                payload = attach_context_emotions(
-                    relation_write.value,
-                    read_state(contextual["state"], context, now=self.store.clock()),
-                    fingerprint=seed.get("context_fingerprint", ""),
-                    epoch=seed.get("context_epoch", ""))
-                relation_write = replace(relation_write, value=payload)
-                if "context_emotions" not in payload["_account_affect"]:
-                    contextual["trace"].update(after=[], reason_codes=["context_capacity_limited"])
-                if contextual_enabled:
-                    relation_trace["context_emotions"] = contextual["trace"]
+                contextual = rebase(context_before)
+                context_ready = True
+                if shared_person:
+                    # 用户维度：联合分析落库后再写人级记录，不附带到会话关系记录。
+                    person_pending = True
+                else:
+                    payload = attach_context_emotions(
+                        relation_write.value,
+                        read_state(contextual["state"], context, now=self.store.clock()),
+                        fingerprint=fingerprint, epoch=epoch)
+                    relation_write = replace(relation_write, value=payload)
+                    if "context_emotions" not in payload["_account_affect"]:
+                        contextual["trace"].update(after=[], reason_codes=["context_capacity_limited"])
+                    if contextual_enabled:
+                        relation_trace["context_emotions"] = contextual["trace"]
             contributions = relation["contributions"]
         if not await memory_current() or not await current():
             return
@@ -480,3 +519,46 @@ class Refinement:
         )
         self._analysis(event, "completed" if result.accepted else "discarded",
                        "completed" if result.accepted else "state_changed", applied=result.accepted)
+        if result.accepted and context_ready:
+            # 两种维度都记一行终态日志；用户维度在联合分析落库后再写人级记录，不附带到会话关系记录。
+            if person_pending:
+                saved, contextual = await self._save_person(
+                    event, generation, rebase, inputs["now"])
+                self._log_context(event, judgement, contextual, bool(saved and saved.accepted), started)
+            else:
+                self._log_context(event, judgement, contextual, True, started)
+
+    async def _save_person(self, event, generation, rebase, now):
+        """用户维度写人级记录：每次基于最新记录重放，同一人在别的会话抢先写入时最多重试两次。"""
+        context = event.context
+        fingerprint, epoch = self.context_emotion_fingerprint(context), self._context_emotion_epoch
+        for _ in range(3):
+            record = await self.store.context_emotion_record(context)
+            contextual = rebase(person_context_emotions(
+                record, context, now=now, fingerprint=fingerprint, epoch=epoch))
+            if not contextual["applied"]:
+                return None, contextual
+            result = await self.store.refine_context_emotions(
+                event, generation,
+                StateWrite(PERSON_KIND, person_value(
+                    context, read_state(contextual["state"], context, now=self.store.clock()),
+                    fingerprint, epoch), record.version if record else 0, context.account_id),
+                {**contextual["trace"], "event_key": event.idempotency_key})
+            if result.reason_code != "version_conflict":
+                return result, contextual
+        return result, contextual
+
+    @staticmethod
+    def _log_context(event, judgement, contextual, applied, started):
+        """对象情绪分析终态：对象、会话、内容、模型判定、是否写入与耗时。"""
+        context = event.context
+        scene = ("私聊" if context.scene_kind.value == "private"
+                 else f"群{context.scene_id}")
+        after = " ".join(f"{LABELS[row['kind']]}{row['intensity']:.2f}"
+                         for row in contextual["trace"].get("after", [])) or "无"
+        logger.info(
+            "[LE-对象情绪] %s@%s 内容=「%s」 判定=[%s] 结果=%s(%s) 原因=%s 耗时=%.2fs",
+            context.account_id, scene, " ".join(event.body.split())[:30], judgement,
+            "已写入" if applied else "未写入", after,
+            ",".join(contextual["trace"].get("reason_codes", [])) or "-",
+            time.monotonic() - started)

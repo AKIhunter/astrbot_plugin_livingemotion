@@ -8,9 +8,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from astrbot_plugin_livingemotion.contracts import ActorRole, Context
+from astrbot_plugin_livingemotion.contracts import ActorRole, Context, StateWrite
+from astrbot_plugin_livingemotion.domain.context_emotion import LABELS
 from astrbot_plugin_livingemotion.storage.console_data import write_relationship_override
-from test_context_emotions import local_app, ingest, feelings
+from astrbot_plugin_livingemotion.storage.context_emotions import PERSON_KIND
+from test_context_emotions import group_ingest, injected, local_app, ingest, feelings
 from test_application import Message
 
 
@@ -251,27 +253,155 @@ async def test_context_only_late_results_are_discarded(tmp_path, change):
 
 
 @pytest.mark.asyncio
-async def test_wait_timeout_cancels_late_commit_without_second_call(tmp_path, monkeypatch):
+async def test_wait_timeout_keeps_background_analysis_and_writes_back_once(tmp_path, monkeypatch):
     import astrbot_plugin_livingemotion.runtime.refinement as refinement
     monkeypatch.setattr(refinement, "CONTEXT_WAIT_SECONDS", .03)
-    app, _, _, _, context, provider = await semantic_app(tmp_path)
+    app, host, _, _, context, provider = await semantic_app(tmp_path)
     release = asyncio.Event()
     try:
         provider.release = release
         provider.respond = lambda p: [appraisal("hurt", p["message"])]
         message, _, record, expression = await turn(app, "timeout", "你就是个废物")
+        # 回复不等分析：这次回复不带对象情绪，记录也未改动。
         assert not feelings(app, record, context)
         assert not expression["bot"].get("context_emotions")
+        assert await app.store.get_state(context, "relationship", context.account_id) == record
         release.set()
         await asyncio.gather(*tuple(app._actions), return_exceptions=True)
         await app.runtime.join()
-        assert await app.store.get_state(context, "relationship", context.account_id) == record
-        await app.on_llm_request(message, SimpleNamespace(extra_user_content_parts=[]))
+        after = await app.store.get_state(context, "relationship", context.account_id)
+        assert feelings(app, after, context)[0]["kind"] == "hurt"
+        assert app.emotion_model_analysis([context])["reason_code"] == "completed"
+        # 下一次回复直接读到已写回的结果，不再发起第二次模型调用。
+        request = SimpleNamespace(extra_user_content_parts=[])
+        await app.on_llm_request(message, request)
+        from astrbot_plugin_livingemotion.runtime.application import SUFFIX
+        block = next(p.text for p in request.extra_user_content_parts if p.text.startswith(SUFFIX))
+        assert json.loads(block.split("\n")[-1])["bot"]["context_emotions"][0]["kind"] == "hurt"
         assert len(provider.snapshots) == 1
-        assert app.emotion_model_analysis([context])["reason_code"] == "reply_wait_timeout"
+        assert host.sends == 0
     finally:
         release.set()
         await app.terminate()
+
+
+async def person_items(app, context):
+    """用户维度下该 QQ 人级记录里的对象情绪条目。"""
+    record = await app.store.context_emotion_record(context)
+    assert record is not None and record.kind == PERSON_KIND
+    return record.value["context_emotions"]["items"]
+
+
+@pytest.mark.asyncio
+async def test_user_dimension_model_writes_person_record_shared_across_scenes(tmp_path):
+    app, host, _, clock, context, provider = await semantic_app(
+        tmp_path, context_emotions_dimension="user")
+    try:
+        provider.respond = lambda p: []
+        await turn(app, "joint-empty", "先聊一句")
+        clock[0] += 601
+        body = "你的存在对我没有任何价值"
+        provider.respond = lambda p: [appraisal("hurt", body)]
+        _, _, record, expression = await turn(app, "joint", body)
+        assert "不要四维delta" not in provider.snapshots[-1]["system"]  # Joint analysis.
+        assert expression["bot"]["context_emotions"][0]["kind"] == "hurt"
+        # The scene relationship record keeps no object emotion; the person record owns it.
+        assert "context_emotions" not in record.value["_account_affect"]
+        items = await person_items(app, context)
+        assert [row["kind"] for row in items] == ["hurt"] and items[0]["intensity"] == pytest.approx(.45)
+        provider.respond = lambda p: []
+        group_message, group = await group_ingest(app, "group-hello", "你好", "g1", "human")
+        await app.await_context_refinement(group_message.extra["livingemotion:event_key"])
+        assert await person_items(app, group) == items  # Same QQ in a group reads the private stimulus.
+        # The dedicated object analysis (joint analysis still cooling down in this scene) updates
+        # the same record; this scene's four axes, relationship record and ledger are untouched.
+        clock[0] += 1
+        followup = "我不想再见到你"
+        provider.respond = lambda p: [appraisal("hurt", followup, strength=.6)]
+        ledger = await app.store.relationship_ledger(context)
+        n = len(provider.snapshots)
+        message, _, _ = await ingest(app, "context-only", followup)
+        bot = await app.store.get_state(context, "bot")   # After the local-rule projection.
+        before = await app.store.get_state(context, "relationship", context.account_id)
+        await app.await_context_refinement(message.extra["livingemotion:event_key"])
+        assert len(provider.snapshots) == n + 1
+        assert "不要四维delta" in provider.snapshots[-1]["system"]
+        assert await app.store.get_state(context, "bot") == bot
+        assert await app.store.get_state(context, "relationship", context.account_id) == before
+        assert await app.store.relationship_ledger(context) == ledger
+        increased = await person_items(app, group)
+        assert increased[0]["kind"] == "hurt" and increased[0]["intensity"] > items[0]["intensity"]
+        # A group reply for the same QQ carries the private-chat stimulus.
+        assert [row["kind"] for row in await injected(app, group_message)] == ["hurt"]
+        assert app.emotion_model_analysis([context])["reason_code"] == "completed"
+        assert host.sends == 0
+    finally:
+        await app.terminate()
+
+
+@pytest.mark.asyncio
+async def test_user_dimension_person_write_retries_on_version_conflict(tmp_path, monkeypatch):
+    app, host, _, clock, context, provider = await semantic_app(
+        tmp_path, context_emotions_dimension="user")
+    try:
+        provider.respond = lambda p: []
+        await turn(app, "warm", "先聊一句")
+        original, raced = app.store.refine_context_emotions, []
+
+        async def racing(event, generation, write, trace):
+            if not raced:
+                # The same QQ's record changes after the model verdict but before the write.
+                current = await app.store.context_emotion_record(context)
+                def bump(db):  # Store work runs on the connection's worker thread.
+                    return app.store._write_person(db, context, StateWrite(
+                        PERSON_KIND, current.value, current.version, context.account_id), clock[0])
+                await app.store._run(bump)
+                raced.append(True)
+            return await original(event, generation, write, trace)
+
+        monkeypatch.setattr(app.store, "refine_context_emotions", racing)
+        clock[0] += 601
+        body = "你的存在对我没有任何价值"
+        provider.respond = lambda p: [appraisal("hurt", body)]
+        await turn(app, "joint", body)
+        assert raced == [True]
+        record = await app.store.context_emotion_record(context)
+        # 1 warm-up, 2 the racing write, 3 this verdict replayed on the latest record.
+        assert record.version == 3 and [row["kind"] for row in record.value[
+            "context_emotions"]["items"]] == ["hurt"]
+        assert app.emotion_model_analysis([context])["reason_code"] == "completed"
+        assert len(provider.snapshots) == 2  # A conflict replays the verdict, never the paid call.
+        assert host.sends == 0
+    finally:
+        await app.terminate()
+
+
+@pytest.mark.asyncio
+async def test_context_analysis_log_line_and_judgement(tmp_path, monkeypatch):
+    import astrbot_plugin_livingemotion.runtime.refinement as refinement
+    app, _, _, clock, context, provider = await semantic_app(tmp_path)
+    try:
+        lines = []
+        monkeypatch.setattr(refinement.logger, "info",
+                            lambda pattern, *args: lines.append(pattern % args))
+        body = "你的存在对我没有任何价值"
+        provider.respond = lambda p: [appraisal("hurt", body)]
+        await turn(app, "logged", body)
+        lines = [line for line in lines if line.startswith("[LE-对象情绪]")]
+        assert len(lines) == 1
+        line = lines[0]
+        assert line.startswith(f"[LE-对象情绪] human@私聊 内容=「{body}」 "
+                               f"判定=[hurt:increase 强度0.5 把握0.9] "
+                               f"结果=已写入({LABELS['hurt']}0.45) 原因=context_hurt ")
+        assert line.endswith("s") and "耗时=" in line
+    finally:
+        await app.terminate()
+    judge = refinement._judgement
+    assert judge("not json") == "非JSON:not json"
+    assert judge({"appraisals": []}) == "缺字段" and judge({"context_appraisals": "x"}) == "格式无效"
+    assert judge({"context_appraisals": []}) == "空"
+    assert judge({"context_appraisals": [{"kind": "shyness", "action": "none",
+                                          "strength": .3, "confidence": .8}]}) == "shyness:none 强度0.3 把握0.8"
 
 
 @pytest.mark.asyncio

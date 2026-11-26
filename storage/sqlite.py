@@ -29,12 +29,14 @@ from ..contracts import (
     RelationshipContribution,
     StateRecord,
     StateWrite,
+    account_person_key,
     canonical_json,
     finite,
     stable_key,
     to_dict,
 )
 from .schema import migrate
+from .context_emotions import PERSON_KIND, ContextEmotionStore
 from .state_scope import StateScopeStore
 from .night import NightStore
 from .experiences import ExperienceStore
@@ -114,7 +116,7 @@ class _ProjectionLock(asyncio.Lock):
             self._acquiring -= 1
 
 
-class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
+class SQLiteStore(ContextEmotionStore, StateScopeStore, NightStore, ExperienceStore):
     def __init__(self, path: str | Path, *, config: Config | None = None,
                  clock: Callable[[], float] = time.time):
         self.path = Path(path)
@@ -278,6 +280,17 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
             )
 
     def _write_states(self, db, context, generation, writes, now, encoded=None):
+        # 人级对象情绪与其他状态同一事务写入；同一人在别的会话抢先写入时，
+        # 人级记录的版本 CAS 让整笔回滚为 version_conflict，由调用方重投影。
+        person = tuple(w for w in writes if w.kind == PERSON_KIND)
+        if person:
+            writes = tuple(w for w in writes if w.kind != PERSON_KIND)
+        versions = self._write_scope_states(db, context, generation, writes, now, encoded)
+        for write in person:
+            versions.update(self._write_person(db, context, write, now, encoded))
+        return versions
+
+    def _write_scope_states(self, db, context, generation, writes, now, encoded=None):
         owner = self.state_owner(context)
         if owner is not None or any(write.owner for write in writes):
             # Source-account corrections do not change shared Bot state. Legacy
@@ -386,7 +399,8 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
     ) -> tuple[int, dict[str, StateRecord | None]]:
         """Read the generation and exact scene/account records in one SQL snapshot."""
         owner = self.state_owner(context)
-        return await self._run(lambda db: self._projection_snapshot(db, context, owner))
+        return await self._run(lambda db: self._with_person_record(
+            db, context, self._projection_snapshot(db, context, owner)))
 
     async def project_snapshot(self, context: Context, calculate: Callable[..., T],
                                *, relationship_override=False) -> T:
@@ -397,7 +411,8 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
         """
         owner = self.state_owner(context)
         def project(db):
-            generation, records = self._projection_snapshot(db, context, owner)
+            generation, records = self._with_person_record(
+                db, context, self._projection_snapshot(db, context, owner))
             if relationship_override:
                 from .console_data import _override
                 records["_relationship_override"] = _override(db, context)
@@ -658,7 +673,8 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
                                       write: StateWrite, trace: dict) -> CommitResult:
         """CAS only account metadata and its trace; never replay affect or ledger."""
         context, now = event.context, self._now()
-        if (write.kind != "relationship" or write.record_key != context.account_id
+        if (write.kind not in ("relationship", PERSON_KIND)
+                or write.record_key != context.account_id
                 or trace.get("event_key") != event.idempotency_key):
             raise ValueError("invalid context refinement")
 
@@ -869,6 +885,10 @@ class SQLiteStore(StateScopeStore, NightStore, ExperienceStore):
                 # Clear source names physically; late accepted-message callbacks cannot restore them.
                 db.execute("DELETE FROM runtime_meta WHERE key LIKE 'console.qq.nickname.v1:%' "
                            "AND json_extract(value,'$.scope_key')=?", (context.scope_key,))
+                if context.account_id:
+                    # 已清除会话的刺激不能借人级记录留在同一对象的其他会话里。
+                    db.execute("DELETE FROM owner_states WHERE owner_key=? AND kind=?",
+                               (account_person_key(context), PERSON_KIND))
                 # 删除来源时同步清空派生心理短句；保留周期墓碑避免重复付费生成。
                 db.execute(
                     "UPDATE runtime_meta SET value=json_set(value,'$.text','',"

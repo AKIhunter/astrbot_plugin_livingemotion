@@ -265,7 +265,7 @@ class LivingEmotionAPI:
             generation = await self._store.get_generation(scope)
             if app is not None and not await app.validate_context(scope, generation):
                 return self._result("unavailable", "context_changed")
-            from .runtime.projector import account_context_emotions, current_affect, snapshot
+            from .runtime.projector import current_affect, snapshot, stored_context_emotions
             from .domain.context_emotion import expression_items
             from .domain.relationship import relationship_behavior
             from .storage.console_data import apply_relationship_override, read_relationship_override
@@ -275,7 +275,7 @@ class LivingEmotionAPI:
             state = current_affect(record, now=self._store.clock())
             state = source_affect(state, scope)
             emotions = await app.weather_emotions(state) if app else six_emotions(state)
-            relation_record, extra = None, {}
+            relation_record, emotion_record, extra = None, None, {}
             if self._config.context_emotions_enabled and scope.account_id:
                 relation_record = await self._store.get_state(scope, "relationship", scope.account_id)
                 if relation_record is not None and relation_record.generation == generation:
@@ -284,15 +284,18 @@ class LivingEmotionAPI:
                     override = await read_relationship_override(self._store, scope)
                     description = relationship_behavior(relation.score, self._config,
                         note=(override or {}).get("note", ""))["description"]
-                    rows = expression_items(account_context_emotions(
-                        relation_record, scope, now=self._store.clock(),
+                    emotion_record = await self._store.context_emotion_record(scope, relation_record)
+                    rows = expression_items(stored_context_emotions(
+                        emotion_record, scope, now=self._store.clock(),
                         fingerprint=app.context_emotion_fingerprint(scope) if app else "",
                         epoch=app._context_emotion_epoch if app else ""),
                         scope, now=self._store.clock(), relationship=relation,
                         relationship_note="\n".join(((override or {}).get("note", ""), description)))
+                    # 用户维度下该对象可能还没有人级记录：没有记录按版本 0 返回。
                     extra = {"context_emotions": {r["kind"]: r["intensity"] for r in rows},
                              "context_emotions_version": 1,
-                             "context_emotions_state_version": relation_record.version}
+                             "context_emotions_state_version": (
+                                 emotion_record.version if emotion_record else 0)}
             if app is not None and not await app.validate_context(scope, generation):
                 return self._result("unavailable", "context_changed")
             latest = await self._store.get_state(scope, "bot")
@@ -305,6 +308,10 @@ class LivingEmotionAPI:
                 if ((latest_relation.version if latest_relation else 0)
                         != (relation_record.version if relation_record else 0)):
                     return self._result("unavailable", "state_changed")
+                if emotion_record is not None:
+                    latest_emotion = await self._store.context_emotion_record(scope, latest_relation)
+                    if (latest_emotion.version if latest_emotion else 0) != emotion_record.version:
+                        return self._result("unavailable", "state_changed")
             dominant = max(emotions, key=emotions.get)
             dominant = dominant if emotions[dominant] >= .25 else "calm"
             mode = app.effective_mode(scope) if app else self._config.mode

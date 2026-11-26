@@ -1,6 +1,6 @@
 # API v1
 
-适用0.8.0；按api.py、page_api/routes.py、validation.py和Console核对。
+适用0.9.0；按api.py、page_api/routes.py、validation.py和Console核对。
 本页同时列出公开进程内门面和全部22项注册管理路由。
 注册不等于应用已接通：emotion-image-save当前缺少应用入口，返回503。
 
@@ -40,8 +40,12 @@ authorization和代际须最终复核；历史、梦与摘要不伪造成新互�
 对象采集启用且存在有效同代关系状态时，`get_current_emotion.data` 可附加
 `context_emotions`、`context_emotions_version=1` 和 `context_emotions_state_version`。
 原 `emotions` 六项及 affect 等字段保持兼容；附加值仅含达到表达阈值的当前对象分量。
+`context_emotions_state_version` 是所用状态记录的版本：会话维度为关系记录版本，
+用户维度为该 QQ 人级记录版本（尚无记录时为 0）。
 `console/state.data.context_emotions` 则返回 version、scope_kind、context_id、target、
-enabled 与 emotions，提供实测零值及低于阈值的衰减值；全局、关闭、来源不匹配或未采集时为空。
+enabled、dimension 与 emotions，提供实测零值及低于阈值的衰减值；全局、关闭、来源不匹配或未采集时为空。
+dimension 取 `conversation`（会话维度）或 `user`（用户维度，同一 QQ 的私聊与各群共用一份），只随配置变化；
+用户维度下 `context_id` 可传 TA 页下拉给出的人级键，返回该 QQ 的全部会话。
 TA 概览迁为九项情绪谱，Console 不再返回已移除的 `emotion_curve` 历史曲线字段。
 0.7.0六项仍保留原字段，愤怒、悲伤、恐惧使用已衰减的掌控感调节；
 中性0.5与旧公式相同。普通回复状态的bot附加control/control_style，见[掌控感](control-integration.md)。

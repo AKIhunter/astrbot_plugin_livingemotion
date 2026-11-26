@@ -21,6 +21,21 @@ if (taScenario) {
   data.contexts = taScopes.contexts.map(({ id, label }) => ({ id, label }));
   data.config.values.context_emotions_enabled = true;
 }
+const personScenario = scenario === "ta-person";
+if (personScenario) {
+  // 用户维度：同一 QQ（80001）同时有私聊和两个群；另外两个 QQ 各只有一种会话。
+  const person = (id, view_scope, scene_id, account_id, nickname) => ({
+    id, scope_key: `ta-person-scope-${id}`, persona_id: "fixture-persona", platform: "qq", view_scope, scene_id,
+    account_id, nickname, label: `QQ / ${account_id}`, person_id: `person-${account_id}`,
+  });
+  taScopes.contexts.push(
+    person("ta-person-priv", "private", "", "80001", "合成对象甲"),
+    person("ta-person-g1", "group", "g1", "80001", "合成对象甲"),
+    person("ta-person-g2", "group", "g2", "80001", "合成对象甲"),
+    person("ta-person-b", "group", "g1", "80002", "合成对象乙"),
+    person("ta-person-c", "private", "", "80003", "合成对象丙"));
+  data.config.values.context_emotions_enabled = true;
+}
 const fail = (code, message) => Promise.reject(Object.assign(new Error(message), { code }));
 const configKey = `livingemotion.synthetic.config.${scenario}`;
 const dailyScenario = scenario.startsWith("daily");
@@ -105,9 +120,20 @@ const bridge = {
         data.context_id = params.view_scope === "global" ? "" : params.context_id || (params.view_scope === "group" ? "fixture-b" : "fixture-a");
         data.representative_context_id = params.view_scope === "global" ? "fixture-a" : data.context_id;
       } else if (params.context_id) { data.context_id = params.context_id; data.selection.context_id = params.context_id; }
-      if (taScenario) data.context_emotions = { version: 1, enabled: true, scope_kind: "account",
-        context_id: data.context_id, target: taScopes.contexts.find(c => c.id === data.context_id)?.account_id || "",
-        emotions: data.context_id ? { wronged: 0, hurt: 0, shyness: 0 } : {} };
+      const anchor = personScenario && taScopes.contexts.find(c => c.person_id === params.context_id);
+      if (anchor) {
+        // 人级键落到该 QQ 最近更新的会话，并返回该 QQ 的全部会话（同后端 _selected 的回退匹配）。
+        data.context_id = data.representative_context_id = anchor.id;
+        data.selection.context_id = params.context_id;
+        data.contexts = taScopes.contexts.filter(c => c.person_id === anchor.person_id)
+          .map(({ id, label }) => ({ id, label }));
+      }
+      if (taScenario || personScenario) {
+        data.context_emotions = { version: 1, enabled: true, scope_kind: "account",
+          context_id: data.context_id, target: taScopes.contexts.find(c => c.id === data.context_id)?.account_id || "",
+          emotions: data.context_id ? { wronged: personScenario ? .4 : 0, hurt: 0, shyness: 0 } : {} };
+        if (personScenario) data.context_emotions.dimension = "user";
+      }
       return { status: "ok", data: clone(data) };
     }
     if (path === "console/configuration") {
@@ -117,7 +143,7 @@ const bridge = {
       if (scenario === "save-fast-read-error") return fail("timeout", "合成预读超时");
       return { status: "ok", data: { api_version: 1, config: clone(data.config) } };
     }
-    if (path === "console/scopes") return { status: "ok", data: taScenario ? clone(taScopes) : scenario === "native-dto" || scenario.startsWith("save-") ? clone(nativeDTO.scopes) :
+    if (path === "console/scopes") return { status: "ok", data: taScenario || personScenario ? clone(taScopes) : scenario === "native-dto" || scenario.startsWith("save-") ? clone(nativeDTO.scopes) :
       scenario === "no-context" ? { api_version: 1, personas: [], platforms: [], contexts: [] } : makeScopes() };
     if (path === "console/settings-options") return { status: "ok", data: {
       api_version: 1, personas: makeScopes().personas.map(item => ({ value: item.id, label: item.name })),
