@@ -5,7 +5,7 @@
 ![livingEmotion wordmark and state lines](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-4.29.1–4.29.4-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.10.0-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.10.1-3a8060)](CHANGELOG.md)
 
 [简体中文](README.md) · **English**
 
@@ -136,12 +136,11 @@ Platform declarations cover basic message intake. QQ OneBot has isolated-host ac
 
 ## 📜 Changelog
 
-Current version: `v0.10.0` (2026-11-26)
+Current version: `v0.10.1` (2026-11-26)
 
-- ✨ Settings adds an "Onboarding guide" at the top: a six-step checklist (persona, relationships, sleep schedule, prompt injection, style summary, model selection) that jumps to each setting and lists all nine model fields.
-- ✨ The style summary can be drafted with "Fill with the main model"; the draft takes effect only after "Save summary".
-- 🔧 The TA page "Emotion and metric guide" gains a table of how each of the nine emotions rises, eases and fades; the "Availability and source" and "Dependency health" blocks are removed.
-- 🐛 Fixed the style summary box being disabled after auto-refresh, which made drafts impossible to save.
+- 🐛 Fixed "Fill with the main model" reporting every failure the same way: no model text, a timeout and an unavailable model now get separate messages. When the model returns no text, the page suggests raising the output token limit or trying another model.
 - 🧩 No configuration or database migration.
+
+Previous version 0.10.0 added the "Onboarding guide" on the Settings page and "Fill with the main model" for the style summary.
 
 Full history: [CHANGELOG.md](CHANGELOG.md) (Chinese).

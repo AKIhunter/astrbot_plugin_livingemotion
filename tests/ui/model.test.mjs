@@ -131,6 +131,8 @@ test("宿主响应包装、401、403和409保留语义", () => {
   assert.equal(pageError(new Error("[livingemotion:forbidden] 资产令牌不是管理身份")).code, "forbidden");
   assert.equal(pageError(new Error("[livingemotion:version_conflict] 请重新读取")).code, "version_conflict");
   assert.equal(pageError(new Error("[livingemotion:edit_disabled] 编辑已关闭")).code, "edit_disabled");
+  assert.equal(pageError(new Error("[livingemotion:timeout] The model did not answer before the timeout")).code, "timeout");
+  assert.equal(pageError(new Error("[livingemotion:empty_response] The model returned no usable text")).code, "empty_response");
   assert.equal(pageError(new Error("Request failed with status code 401")).code, "unauthorized");
   assert.equal(pageError(new Error("Token has expired")).code, "bridge_error");
   assert.throws(() => unwrap({ status: 409 }), error => error.code === "version_conflict");

@@ -1,6 +1,6 @@
 # API v1
 
-适用0.10.0；按api.py、page_api/routes.py、validation.py和Console核对。
+适用0.10.1；按api.py、page_api/routes.py、validation.py和Console核对。
 本页同时列出公开进程内门面和全部23项注册管理路由。
 注册不等于应用已接通：emotion-image-save当前缺少应用入口，返回503。
 
@@ -85,7 +85,8 @@ GET只接受单值白名单参数；POST不接受query，要求application/json�
 失败为status=error/code/message/data=null；响应no-store。
 400 validation_error须修输入；401/403须核对身份/许可；
 409 version_conflict须重读，generation_in_progress等任务完成；
-503 unavailable须先读回状态，写操作不盲重试。
+503 unavailable须先读回状态，写操作不盲重试；
+504 timeout与502 empty_response仅style-summary-draft返回，表示等待超时或模型没有返回正文。
 
 ## 全部23项管理路由
 
@@ -138,7 +139,8 @@ style-summary-draft只接persona_id，返回persona_id/text/characters/available
 人格设定放不下时按输入上限截断；每次恰好调用一次模型，不占每日额度，操作者写入审计记录。
 同一时刻只允许一份草稿，上一份未完成返回409 generation_in_progress。
 人格不存在、没有设定或超过16000字符返回400 validation_error；
-没有可用模型、超时或生成失败返回503 unavailable，这几种情况都不写入任何内容。
+等待超过model_timeout_seconds返回504 timeout，模型调用结束却没有正文返回502 empty_response，
+没有可用模型或生成失败返回503 unavailable；这几种情况都不写入任何内容。
 
 ## 配置保存与任务幂等
 

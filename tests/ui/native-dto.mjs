@@ -8264,13 +8264,13 @@ export const nativeDTO = {
   }
 };
 export const nativeDTOEvidence = {
-  "captured_at": "2026-11-26T11:09:00.619411+00:00",
+  "captured_at": "2026-11-26T13:40:33.583892+00:00",
   "field_count": 138,
   "scope": "real Console DTO / synthetic host / temporary database",
   "sources_sha256": {
     "config.py": "1bd499737f0e6b259ef8827bc13b2069fbc941c658cd6a38833160a8fe3f94ee",
     "contracts.py": "40307c7c6e4a242493328f2eca7fc23bb6699b9a6dca1e393e7e499de6af0cad",
-    "runtime/console.py": "e068bd8be097965317b8e64e632e7d395054ee01823c75413f22c1ac1dd5dcc0",
+    "runtime/console.py": "db3643da755d39cc2b046bbde657eb1e732054930b3bfd8d71401f93745ac868",
     "runtime/config_help.py": "55a2f43422f3d6bf15ae84d855dafcdd05bd76530c934e083c1265856414b2fc",
     "storage/schema.py": "096a90b582af5d6694f957ff4df29a8d6230fa5dc880f8bff5fd33c2eba17115",
     "storage/sqlite.py": "98f05579910455ee5afba276d1c5920d20d83d3533bf868f6325eb19345978ab",

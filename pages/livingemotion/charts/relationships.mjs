@@ -1,7 +1,7 @@
 import { t, locale } from "../i18n.mjs?v=eff0d6f932b0";
 import { node, button, svgNode, labelled } from "../dom.mjs?v=eff0d6f932b0";
 import { object, list, text, percent, date, scopeParams, relationshipStage } from "../model.mjs?v=eff0d6f932b0";
-import { pageError } from "../api.mjs?v=onboarding-20261126";
+import { pageError } from "../api.mjs?v=draft-errors-20261126";
 import { seedPeople, constrain3D, separate3D, createForce3D } from "./force3d.mjs?v=eff0d6f932b0";
 export const NODE_CAP = 200;
 export const PERSON_RADIUS = 4.5, CENTER_CLEARANCE = 68, PERSON_SPACING = 20;

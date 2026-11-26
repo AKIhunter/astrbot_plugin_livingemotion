@@ -140,6 +140,26 @@ try {
     assert.equal((await callsTo(page, SAVE)).length, 0);
   });
 
+  await caseRun("模型没有返回正文与等待超时分开提示，输入框保留原内容", async page => {
+    await page.evaluate(() => window.__fixture.holdDraft());
+    await named(page, FILL).click();
+    await requested(page);
+    await page.evaluate(() => window.__fixture.releaseDraft("empty_response"));
+    await metaHas(page, "模型没有返回正文，没有生成草稿。可以调大「模型输出上限」，或换个模型再试。");
+    assert.ok(!(await meta(page).textContent()).includes("超时"));
+    assert.equal(await area(page).inputValue(), summaryText(PERSONA));
+    assert.equal(await named(page, FILL).isEnabled(), true);
+    await page.evaluate(() => window.__fixture.holdDraft());
+    await named(page, FILL).click();
+    await requested(page, 2);
+    await page.evaluate(() => window.__fixture.releaseDraft("timeout"));
+    await metaHas(page, "等待模型超时，没有生成草稿，可以重试。");
+    assert.ok(!(await meta(page).textContent()).includes("没有返回正文"));
+    assert.equal(await area(page).inputValue(), summaryText(PERSONA));
+    assert.equal(await dirty(page), "false");
+    assert.equal((await callsTo(page, SAVE)).length, 0);
+  });
+
   await caseRun("有未保存修改时需再点一次确认才覆盖", async page => {
     await area(page).fill("手写的摘要");
     await named(page, FILL).click();

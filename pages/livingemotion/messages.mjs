@@ -433,6 +433,7 @@ TA 页「情绪分布」里的九项情绪，各自的升降和回落如下。|T
 该人格没有可用的设定，无法生成。|This persona has no usable definition to summarize.|この人格に利用できる設定がないため生成できません。
 模型不可用或生成失败，没有生成草稿。|The model is unavailable or generation failed; no draft was produced.|モデルが利用できないか生成に失敗したため、下書きはありません。
 等待模型超时，没有生成草稿，可以重试。|Timed out waiting for the model; no draft was produced. You can retry.|モデルの待機がタイムアウトし、下書きはありません。再試行できます。
+模型没有返回正文，没有生成草稿。可以调大「模型输出上限」，或换个模型再试。|The model returned no text; no draft was produced. Raise the output token limit, or try another model.|モデルが本文を返さなかったため、下書きはありません。出力トークン上限を上げるか、別のモデルをお試しください。
 自动填写失败；请稍后重试。|Auto-fill failed; please retry.|自動入力に失敗しました。後でもう一度お試しください。`;
 const more = `关系阶段自定义名称|Custom relationship stage names|関係段階のカスタム名
 启用 livingEmotion|Enable livingEmotion|livingEmotion を有効化

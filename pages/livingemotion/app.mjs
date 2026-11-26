@@ -1,5 +1,5 @@
 import { t, locale, controlled, setLocale, staticUI } from "./i18n.mjs?v=eff0d6f932b0";
-import { createApi, pageError, PageError } from "./api.mjs?v=onboarding-20261126";
+import { createApi, pageError, PageError } from "./api.mjs?v=draft-errors-20261126";
 import {
   PAGE_SIZE, SECTIONS, DIMENSIONS, ACTIONS, object, list, text, unit, percent, yesno,
   reasons, hasRevision, date, expired, normalizeState, normalizeRecords, baselineDimensions, scopeParams, NIGHT_STATES,
@@ -7,11 +7,11 @@ import {
   experienceStatus, reasonExplanation, resultLabel, AFFECT_LABELS, modelDiagnosticText,
 } from "./model.mjs?v=eff0d6f932b0";
 import { radar3d } from "./charts/radar3d.mjs?v=eff0d6f932b0";
-import { mountRelationships, emotionExplainer } from "./charts/relationships.mjs?v=onboarding-20261126";
+import { mountRelationships, emotionExplainer } from "./charts/relationships.mjs?v=draft-errors-20261126";
 import { contextEmotionPicker } from "./scope-picker.mjs?v=ta-person-20261126-r1";
 import { mountEnergy } from "./charts/energy.mjs?v=eff0d6f932b0";
 import { emotionSpectrum } from "./charts/emotion-spectrum.mjs?v=onboarding-20261126";
-import { renderSettings as settingsView, jumpToSettingsGroup, syncSettingsValues } from "./settings.mjs?v=onboarding-20261126";
+import { renderSettings as settingsView, jumpToSettingsGroup, syncSettingsValues } from "./settings.mjs?v=draft-errors-20261126";
 import { EXPERIENCE_TABS, experienceTabs, selectExperienceTab, turnPage, cancelPageTurn } from "./experience.mjs?v=eff0d6f932b0";
 import { reconcileDraft } from "./draft.mjs?v=eff0d6f932b0";
 import { bindDiagnosticExport } from "./diagnostics.mjs?v=20261125";

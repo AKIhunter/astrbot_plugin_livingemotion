@@ -1,6 +1,6 @@
 import { t } from "./i18n.mjs?v=eff0d6f932b0";
 import { list, text } from "./model.mjs?v=eff0d6f932b0";
-import { jumpToSettingsGroup } from "./settings.mjs?v=onboarding-20261126";
+import { jumpToSettingsGroup } from "./settings.mjs?v=draft-errors-20261126";
 import { node, button } from "./dom.mjs?v=eff0d6f932b0";
 
 const filled = value => text(value, "").trim() !== "";

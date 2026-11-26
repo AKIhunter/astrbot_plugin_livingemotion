@@ -303,7 +303,8 @@ const bridge = {
       const gate = draftGate;
       if (gate) {
         const failure = await gate;
-        if (failure) return fail(failure, "合成草稿生成失败");
+        // 与宿主桥一致：HTTP 失败只剩一段 message 文本，错误码靠 [livingemotion:码] 识别。
+        if (failure) throw new Error(`[livingemotion:${failure}] 合成草稿生成失败`);
       }
       const text = `合成风格摘要草稿：${payload.persona_id}。`;
       return { status: "ok", data: { api_version: 1, persona_id: payload.persona_id, text,

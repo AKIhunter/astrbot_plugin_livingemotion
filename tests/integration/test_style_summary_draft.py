@@ -1,11 +1,12 @@
 """Console style-summary draft: one stubbed model call, nothing saved; no network or paid model."""
 import asyncio
 import json
+import re
 from types import SimpleNamespace
 
 import pytest
 
-from astrbot_plugin_livingemotion.page_api.errors import ConsoleError
+from astrbot_plugin_livingemotion.page_api.errors import ConsoleError, public_error
 from astrbot_plugin_livingemotion.page_api.routes import PageAPI, ROUTES
 from astrbot_plugin_livingemotion.page_api.validation import body_parameters
 from astrbot_plugin_livingemotion.runtime import models
@@ -176,22 +177,31 @@ async def test_unusable_persona_is_rejected_before_any_model_call(tmp_path, monk
         await app.terminate()
 
 
-@pytest.mark.parametrize("fault,message", [
-    ("timeout", "模型响应超时，没有生成草稿"), ("unknown", "模型响应超时，没有生成草稿"),
-    ("crash", "模型生成失败，没有生成草稿"), ("blank", "模型没有返回可用的摘要"),
-    ("nul", "模型没有返回可用的摘要"),
+@pytest.mark.parametrize("fault,code,status,message", [
+    ("timeout", "timeout", 504, "模型响应超时（上限 30 秒），没有生成草稿"),
+    # 结果未知（上游没给出可用正文）不是超时：分开报，并带上原因码。
+    ("unknown", "empty_response", 502, "模型没有返回正文（model_output_invalid，用时 <n> 秒），没有生成草稿"),
+    ("provider", "empty_response", 502, "模型没有返回正文（provider_result_unknown，用时 <n> 秒），没有生成草稿"),
+    ("crash", "unavailable", 503, "模型生成失败，没有生成草稿"),
+    ("blank", "empty_response", 502, "模型没有返回正文（output_unusable，用时 <n> 秒），没有生成草稿"),
+    ("nul", "empty_response", 502, "模型没有返回正文（output_unusable，用时 <n> 秒），没有生成草稿"),
 ])
-async def test_model_failure_is_a_clean_error_and_writes_nothing(tmp_path, monkeypatch, fault, message):
+async def test_model_failure_is_a_clean_error_and_writes_nothing(tmp_path, monkeypatch, fault, code, status, message):
     app, bindings, _ = await make_app(tmp_path, monkeypatch, {"provider_id": "main"})
     binding = bindings["main-model"]
     binding.error = {"timeout": TimeoutError("synthetic provider detail"),
                      "unknown": ModelResultUnknown("model_output_invalid"),
+                     "provider": ModelResultUnknown("provider_result_unknown"),
                      "crash": RuntimeError("synthetic crash")}.get(fault)
     binding.text = {"blank": " \n", "nul": "甲\x00乙"}.get(fault, binding.text)
     try:
         with pytest.raises(ApplicationError) as failed:
             await draft(app)
-        assert failed.value.code == "unavailable" and failed.value.message == message
+        assert failed.value.code == code and failed.value.status_code == status
+        assert re.sub(r"用时 [0-9.]+ 秒", "用时 <n> 秒", failed.value.message) == message
+        # 新错误码必须同时登记在公开错误面：状态码对不上会被压回 unavailable，页面又只剩笼统提示。
+        public = public_error(failed.value)
+        assert (public.code, public.status_code) == (code, status)
         # 上游异常原文不进错误链；日志之外对页面只给稳定错误码。
         assert failed.value.__cause__ is None
         assert len(binding.calls) == 1
@@ -211,7 +221,8 @@ async def test_hanging_model_times_out_and_releases_the_slot(tmp_path, monkeypat
     try:
         with pytest.raises(ApplicationError) as timed:
             await draft(app)
-        assert timed.value.code == "unavailable" and timed.value.message == "模型响应超时，没有生成草稿"
+        assert timed.value.code == "timeout" and timed.value.status_code == 504
+        assert timed.value.message == "模型响应超时（上限 1 秒），没有生成草稿"
         assert len(binding.calls) == 1 and await style_rows(app) == 0
         binding.release = None
         assert (await draft(app))["text"] == binding.text

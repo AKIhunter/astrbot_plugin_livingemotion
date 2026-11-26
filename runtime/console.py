@@ -38,7 +38,8 @@ class ApplicationError(Exception):
         self.code, self.message = code, message
         self.status_code = {"validation_error": 400, "unauthorized": 401, "forbidden": 403,
                             "edit_disabled": 403, "version_conflict": 409,
-                            "generation_in_progress": 409, "unavailable": 503}[code]
+                            "generation_in_progress": 409, "unavailable": 503,
+                            "timeout": 504, "empty_response": 502}[code]
         super().__init__(message)
 
 
@@ -1753,6 +1754,8 @@ class Console:
     async def console_style_summary_draft(self, persona_id, *, actor_id):
         """用主模型按原生人格写一份风格摘要草稿；只返回文本，不写入 runtime_meta。"""
         import asyncio
+        import time
+        from .background import ModelResultUnknown
         from .models import ModelUnavailable
         from ..storage.persona_style import MAX_CHARS
 
@@ -1795,16 +1798,26 @@ class Console:
             if not data or not 0 < binding.count(system, data) <= limit:
                 raise ApplicationError("unavailable", "模型输入上限太小，装不下人格设定与提示词")
             timeout = self.config.model_timeout_seconds
+            started = time.monotonic()
+
+            def no_body(reason):
+                # 原因码与用时进日志：用时远小于超时上限，就说明不是超时。
+                return f"模型没有返回正文（{reason}，用时 {time.monotonic() - started:.1f} 秒），没有生成草稿"
+
             try:
                 raw = await asyncio.wait_for(binding.generate(
                     system, data, self.config.model_output_tokens, timeout), timeout)
+            except ModelResultUnknown as exc:
+                # ModelResultUnknown 继承 TimeoutError，但含义是「上游没给出可用结果」而不是超时，
+                # 必须排在 TimeoutError 前面，否则又会被报成超时。
+                raise ApplicationError("empty_response", no_body(str(exc) or "model_result_unknown")) from None
+            except TimeoutError as exc:
+                raise ApplicationError("timeout", f"模型响应超时（上限 {timeout} 秒），没有生成草稿") from None
             except Exception as exc:
-                raise ApplicationError(
-                    "unavailable", "模型响应超时，没有生成草稿" if isinstance(exc, TimeoutError)
-                    else "模型生成失败，没有生成草稿") from None
+                raise ApplicationError("unavailable", "模型生成失败，没有生成草稿") from None
             text = raw.strip()[:MAX_CHARS] if isinstance(raw, str) else ""
             if not text or "\x00" in text:
-                raise ApplicationError("unavailable", "模型没有返回可用的摘要")
+                raise ApplicationError("empty_response", no_body("output_unusable"))
             self._open()
             get_model = getattr(getattr(binding, "provider", None), "get_model", None)
             model = get_model() if callable(get_model) else None

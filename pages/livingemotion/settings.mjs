@@ -3,7 +3,7 @@ import { object, list, text, fieldValue, stageNames, DEFAULT_STAGE_NAMES } from 
 import { fieldHelp, localizedFieldLabel } from "./config-resources.mjs?v=ta-omissions-20261119-r3";
 import { node, button } from "./dom.mjs?v=eff0d6f932b0";
 import { renderPromptInjection, syncPromptInjection } from "./prompt-injection.mjs?v=0.6.0";
-import { mountOnboarding, syncOnboarding } from "./onboarding.mjs?v=onboarding-20261126";
+import { mountOnboarding, syncOnboarding } from "./onboarding.mjs?v=draft-errors-20261126";
 const labels = resource({
   context_emotions_enabled: t("委屈、受伤与害羞"),
   context_emotions_dimension: t("对象情绪维度"),
@@ -139,6 +139,8 @@ function styleDraftFailure(error) {
     generation_in_progress: t("上一份草稿还在生成，请等它结束。"),
     validation_error: t("该人格没有可用的设定，无法生成。"),
     unavailable: t("模型不可用或生成失败，没有生成草稿。"),
+    // 模型调用成功结束却没有正文（例如输出额度被用完）：和超时、模型不可用分开提示。
+    empty_response: t("模型没有返回正文，没有生成草稿。可以调大「模型输出上限」，或换个模型再试。"),
     timeout: t("等待模型超时，没有生成草稿，可以重试。"),
   }[error?.code] || t("自动填写失败；请稍后重试。");
 }

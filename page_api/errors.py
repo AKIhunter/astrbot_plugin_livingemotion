@@ -8,6 +8,9 @@ ERRORS = {
     "version_conflict": (409, "Revision changed; reload and review before submitting again."),
     "generation_in_progress": (409, "A manual generation is running; wait for it to finish before saving."),
     "unavailable": (503, "Service or action unavailable; no success is confirmed. Do not retry writes."),
+    # Only style-summary-draft raises these; the page maps each code to specific advice.
+    "timeout": (504, "The model did not answer before the timeout; no result is confirmed."),
+    "empty_response": (502, "The model returned no usable text; no result is confirmed."),
 }
 
 
