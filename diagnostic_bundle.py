@@ -623,7 +623,7 @@ class DiagnosticRecorder:
                     "近3天诊断包：服务端导出时刻向前72小时。\n"
                     "仅包含仍可用的证据；升级前清理、留存不足、损坏或超量记录不能补回。\n"
                     "请查看manifest.json中的采集状态、实际范围、跳过和截断。\n"
-                    "已脱敏凭据和账号，剔除聊天全文、日记梦境和提示词；分享前检查错误片段。\n"
+                    "已脱敏凭据和账号，剔除聊天全文、日记梦境正文和提示词；分享前检查错误片段。\n"
                     "提交问题时请补充发生时间与异常现象。\n")
                 archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
             with self._bundle_lock:

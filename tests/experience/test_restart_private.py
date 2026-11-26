@@ -2,6 +2,7 @@
 import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -9,6 +10,7 @@ import pytest
 from astrbot_plugin_livingemotion.contracts import Context, NightState, StateWrite, to_dict
 from astrbot_plugin_livingemotion.runtime.application import Application
 from astrbot_plugin_livingemotion.runtime import lifecycle, feeling
+from astrbot_plugin_livingemotion.services.experience import clear_dream_skip, log_dream_skip
 from astrbot_plugin_livingemotion.tests.integration.test_application import Host, Message, NativeConfig, TestBridge
 from astrbot_plugin_livingemotion.tests.experience.test_manual_daily import Binding
 
@@ -145,18 +147,51 @@ async def test_tick_reports_missing_persona_without_live_source(tmp_path, monkey
         await app.terminate()
 
 
-async def test_automatic_dream_still_requires_one_hour_sleep(tmp_path, monkeypatch):
+async def test_automatic_dream_still_requires_one_hour_sleep(
+        tmp_path, monkeypatch, le_export, le_log):
     app, model, host, _, context, clock = await restarted(tmp_path, monkeypatch, dream=True)
+    key = f"auto:{context.scope_key}"
+    clear_dream_skip(key)
+    app.diagnostics.clock = lambda: clock[0]
     try:
         old = await app.store.get_state(context, "night")
         night = NightState(phase="asleep", updated_at=clock[0],
                           sleep_started_at=clock[0] - 1800, wake_at=clock[0] + 7200)
         assert (await app.store.write_states(context, 0, [
             StateWrite("night", to_dict(night), old.version)])).accepted
-        result = await app.queue_experience(context, "dream")
-        assert result["reason_code"] == "dream_requires_live_rem"
+        for _ in range(2):
+            result = await app.queue_experience(context, "dream")
+            assert result["reason_code"] == "dream_requires_live_rem"
+
+        async def preserved(*args):
+            return True
+
+        monkeypatch.setattr(app.store, "auto_daily_blocked", preserved)
+        assert (await app.queue_experience(context, "dream"))["reason_code"] == "daily_content_preserved"
+        for reason in ("private_word", "锚点正文 125783946 https://example.test/private"):
+            log_dream_skip(reason, key=key, store=app.store, scope_key=context.scope_key)
+
+        clock[0] += 1
+        contents = le_export(app)
+        rows = [json.loads(line) for line in contents["runtime.jsonl"].splitlines()]
+        skips = [row for row in rows if row["operation"] == "dream_skip"]
+        assert [row["reason_code"] for row in skips] == [
+            "sleep_too_short", "daily_content_preserved", "unknown", "unknown",
+        ]
+        assert {row["scope_key"] for row in skips} == {app.diagnostics.redactor.alias(context.scope_key)}
+        for private in ("private_word", "锚点正文", "125783946", "https://example.test/private"):
+            assert private not in "\n".join(contents.values()) and private not in le_log.text
+        assert context.scope_key not in "\n".join(contents.values())
+
+        def fail_record(*args):
+            raise OSError("synthetic recording error")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(app.diagnostics, "record", fail_record)
+            assert (await app.queue_experience(context, "dream"))["reason_code"] == "daily_content_preserved"
         assert model.calls == host.sends == 0
     finally:
+        clear_dream_skip(key)
         await app.terminate()
 
 

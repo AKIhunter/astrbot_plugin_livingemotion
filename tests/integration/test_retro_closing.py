@@ -1,10 +1,13 @@
 """Closing uses the real composition root with synthetic models and chains."""
 
+import json
 from types import SimpleNamespace
 
 import pytest
 
 from astrbot_plugin_livingemotion.contracts import Context
+from astrbot_plugin_livingemotion.runtime.background import ModelResultUnknown
+from astrbot_plugin_livingemotion.runtime.models import ModelUnavailable
 from test_retro_reply import FinalMessage, at_time
 
 
@@ -21,8 +24,14 @@ async def prepared(tmp_path, *, random=False):
     return app, host, native, clock, message, context
 
 
+def closing_failures(app, le_export):
+    contents = le_export(app)
+    rows = [json.loads(line) for line in contents["runtime.jsonl"].splitlines()]
+    return [row for row in rows if row["operation"] == "closing_merge_failed"], contents
+
+
 @pytest.mark.asyncio
-async def test_local_closing_merges_once_without_model_and_uses_shared_send_budget(tmp_path):
+async def test_local_closing_merges_once_without_model_and_uses_shared_send_budget(tmp_path, le_export):
     app, host, _, _, message, context = await prepared(tmp_path)
     try:
         async def forbidden(*args, **kwargs):
@@ -52,6 +61,7 @@ async def test_local_closing_merges_once_without_model_and_uses_shared_send_budg
             context, 0, exclude_source_id="", wake_key="wake", revision=app.revision,
         )
         assert await app.catchup_archive.rows(context, batch) == []
+        assert closing_failures(app, le_export)[0] == []
     finally:
         await app.terminate()
 
@@ -101,9 +111,10 @@ async def test_new_message_during_random_closing_keeps_old_result_without_closin
 
 
 @pytest.mark.asyncio
-async def test_closing_without_shared_send_quota_does_not_append_or_generate(tmp_path):
+async def test_closing_without_shared_send_quota_does_not_append_or_generate(tmp_path, le_export):
     app, host, _, _, message, context = await prepared(tmp_path, random=True)
     try:
+        key, _, _ = await app._closing_due(context, active_reply=True)
         for index in range(app.config.behavior_daily_limit):
             await app.store.reserve_quota(
                 f"existing:{index}", context, 0, period="2026-11-06", purpose="behavior",
@@ -116,6 +127,50 @@ async def test_closing_without_shared_send_quota_does_not_append_or_generate(tmp
         await app.merge_closing_into_reply(message)
         assert await app.on_reply_submitted(message) is True
         assert len(message.result.chain) == 1 and host.sends == 0
+        rows, _ = closing_failures(app, le_export)
+        [failure] = rows
+        assert (failure["stage"], failure["status"], failure["reason_code"]) == (
+            "reserve", "pending", "closing_budget")
+        ledger = await app.store.get_intent(context, key)
+        assert (ledger["status"], ledger["reason_code"]) == ("cancelled", "closing_cancelled")
+    finally:
+        await app.terminate()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("error", "code"), [
+    (RuntimeError("private_single_word"), "unknown"),
+    (ValueError("synthetic exception body 175468923 https://example.test/detail"), "unknown"),
+    (ValueError("task_timeout"), "task_timeout"),
+    (ModelResultUnknown("another_private_word"), "model_result_unknown"),
+    (ModelUnavailable("model_token_limit"), "model_token_limit"),
+])
+async def test_closing_failure_preserves_primary_reply_and_records_safe_stage(
+        tmp_path, le_export, le_log, error, code):
+    app, host, _, _, message, context = await prepared(tmp_path, random=True)
+    try:
+        key, _, _ = await app._closing_due(context, active_reply=True)
+
+        async def generate(*args, **kwargs):
+            raise error
+
+        app.purpose_model = generate
+        await app.merge_closing_into_reply(message)
+        assert await app.on_reply_submitted(message) is True
+        assert [part.text for part in message.result.chain] == ["synthetic reply"] and host.sends == 0
+        ledger = await app.store.get_intent(context, key)
+        assert (ledger["status"], ledger["reason_code"]) == ("failed", "closing_cancelled")
+        rows, contents = closing_failures(app, le_export)
+        [failure] = rows
+        assert (failure["stage"], failure["status"], failure["reason_code"]) == (
+            "generate", "generating", code)
+        assert failure["intent_id"] == key and failure["closing_random"] is True
+        assert failure["exception_type"] == type(error).__name__
+        assert "stage=generate status=generating" in le_log.text
+        assert f"exc={type(error).__name__} code={code} random=True" in le_log.text
+        for private in ("private_single_word", "synthetic exception body", "175468923",
+                        "https://example.test/detail", "another_private_word", "Traceback"):
+            assert private not in "\n".join(contents.values()) and private not in le_log.text
     finally:
         await app.terminate()
 

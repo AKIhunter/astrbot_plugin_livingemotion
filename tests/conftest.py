@@ -1,4 +1,5 @@
 from dataclasses import replace
+import zipfile
 
 import pytest
 
@@ -18,6 +19,22 @@ def le_log():
     logger.clear()
     yield logger
     logger.clear()
+
+
+@pytest.fixture
+def le_export():
+    from astrbot_plugin_livingemotion.runtime.diagnostics import prepare
+
+    def export(app):
+        recorder, snapshot, sources = prepare(app)
+        bundle = recorder.export(snapshot, sources)
+        try:
+            with zipfile.ZipFile(bundle.path) as archive:
+                return {name: archive.read(name).decode() for name in archive.namelist()}
+        finally:
+            bundle.close()
+
+    return export
 
 
 @pytest.fixture

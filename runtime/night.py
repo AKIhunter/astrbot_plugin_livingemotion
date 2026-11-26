@@ -6,7 +6,12 @@ import asyncio
 from contextvars import ContextVar
 from dataclasses import replace
 from datetime import datetime, time, timedelta
+from pathlib import Path
+from time import monotonic, time as wall_clock
+from traceback import walk_tb
 from zoneinfo import ZoneInfo
+
+from astrbot.api import logger
 
 from ..contracts import (
     ActorRole, Context, Event, Availability, NightPhase, NightState, SceneKind, SleepState, StateWrite, stable_key, to_dict,
@@ -29,9 +34,51 @@ from ..domain.night import (
 )
 from ..services.catchup import CatchupPolicy, build_catchup, catchup_intent
 from ..services.experience import ExperienceService, log_dream_skip
+from .diagnostics import record_runtime
 from .projector import snapshot
 
 NIGHT_DISPLAY_ONLY = ContextVar("livingemotion_night_display_only", default=False)
+_PLUGIN_ROOT = Path(__file__).resolve().parents[1]
+_TICK_LOG_INTERVAL = 30 * 60
+_TICK_LOG_KEYS = 64
+
+
+def _fault_site(exc):
+    site = "outside_plugin"
+    for frame, line in walk_tb(exc.__traceback__):
+        file = Path(frame.f_code.co_filename)
+        if file.suffix == ".py" and file.is_relative_to(_PLUGIN_ROOT):
+            site = f"{file.name}:{line} {frame.f_code.co_name}"
+    return site
+
+
+def _capture_tick_failure(store, state, exc, logged):
+    at = wall_clock()
+    stage, exc_type, site = state["stage"], type(exc).__name__, _fault_site(exc)
+    signature = stage, exc_type, site
+    previous = state["fault"]
+    same = previous is not None and signature == (
+        previous["stage"], previous["exception_type"], previous["site"])
+    fault = {
+        "at": at, "stage": stage, "exception_type": exc_type, "site": site,
+        "first_at": previous["first_at"] if same else at,
+        "count": previous["count"] + 1 if same else 1,
+    }
+    state["fault"] = fault
+    now = monotonic()
+    last_logged = logged.get(signature)
+    if last_logged is not None and now - last_logged < _TICK_LOG_INTERVAL:
+        return
+    logged[signature] = now
+    if len(logged) > _TICK_LOG_KEYS:
+        del logged[min(logged, key=logged.__getitem__)]
+    record_runtime(store, "scheduler_tick_failed", **fault)
+    try:
+        # 只传异常类名和代码位置，避免终端打印异常正文或源码行。
+        logger.exception("[LE-scheduler] tick 失败 stage=%s site=%s exc=%s count=%s",
+                         stage, site, exc_type, fault["count"], exc_info=False)
+    except Exception:
+        pass
 
 
 class NightRuntime:
@@ -558,18 +605,29 @@ class NightRuntime:
 
     async def _tick_loop(self):
         from ..storage.console_data import refresh_relationship_lists, relationship_list_delay
+        state = self._scheduler_state = {
+            "stage": None, "in_flight": False, "started_at": None,
+            "finished_at": None, "last_success_at": None, "fault": None,
+        }
+        logged = {}
         while not self.closed and self.config.enabled:
             await asyncio.sleep(min(self.config.scheduler_seconds,
                                     relationship_list_delay(self.store.clock(), self.config)))
+            state.update(stage="relationship_refresh", in_flight=True, started_at=wall_clock())
             try:
                 # 即使无人打开控制台，零点也更新日列表；3D 和运行时好感继续实时计算。
                 await refresh_relationship_lists(self.store, self.instance_id, self.config)
+                state["stage"] = "tick"
                 await self.tick()
                 self._task_fault = ""
+                state.update(last_success_at=wall_clock(), fault=None)
             except asyncio.CancelledError:
                 raise
-            except Exception:
+            except Exception as exc:
                 self._task_fault = "scheduler_tick_failed"
+                _capture_tick_failure(self.store, state, exc, logged)
+            finally:
+                state.update(in_flight=False, finished_at=wall_clock())
 
     async def _manual_persona_text(self, context) -> str:
         """手动生成时的人格文本：不依赖实时事件，按已记录的会话路由现取。
@@ -608,9 +666,14 @@ class NightRuntime:
         # 自动梦境被前置门禁拦下时原本只剩一个返回值，页面之外看不到；补一条
         # 去重日志。queue_dream 内部的门禁会按更细的原因自己记日志。
         dream_key = f"auto:{context.scope_key}" if kind == "dream" else ""
-        if await self.store.auto_daily_blocked(context, kind, day):
+
+        def log_skip(reason):
             if dream_key:
-                log_dream_skip("daily_content_preserved", key=dream_key)
+                log_dream_skip(reason, key=dream_key, store=self.store,
+                               scope_key=context.scope_key)
+
+        if await self.store.auto_daily_blocked(context, kind, day):
+            log_skip("daily_content_preserved")
             return {"status": "skipped", "reason_code": "daily_content_preserved"}
         result = {"status": "skipped", "reason_code": "generation_disabled"}
         service = None
@@ -619,16 +682,14 @@ class NightRuntime:
                     and getattr(self.config, kind + "_enabled")):
                 if self.effective_mode(context) != "active":
                     result = {"status": "skipped", "reason_code": "observe_only"}
-                    if dream_key:
-                        log_dream_skip("observe_only", key=dream_key)
+                    log_skip("observe_only")
                 else:
                     source = await self.bridge.current(context)
                     persistent = source is None
                     persisted_prompt = (await self.automatic_persona(context))[0] if persistent else ""
                     if not persistent and not await self.validate_context(context):
                         result = {"status": "rejected", "reason_code": "context_changed"}
-                        if dream_key:
-                            log_dream_skip("context_changed", key=dream_key)
+                        log_skip("context_changed")
                     else:
                         persona_text = (await self.persona_style(
                                             context.persona_id, source.persona.prompt)
@@ -650,7 +711,7 @@ class NightRuntime:
                                 context, night, persona_text=persona_text, manual=manual,
                             )
             elif dream_key:
-                log_dream_skip("generation_disabled", key=dream_key)
+                log_skip("generation_disabled")
         except ValueError as exc:
             # 只公开约定的诊断码，不把供应商异常消息传给控制台。
             code = str(exc)
@@ -663,12 +724,10 @@ class NightRuntime:
             result = {"status": ("rejected" if code in (
                 "persona_unavailable", "source_unavailable", "context_changed") else "unavailable"),
                 "reason_code": code}
-            if dream_key:
-                log_dream_skip(code, key=dream_key)
+            log_skip(code)
         except Exception:
             result = {"status": "unavailable", "reason_code": "experience_preparation_unavailable"}
-            if dream_key:
-                log_dream_skip("experience_preparation_unavailable", key=dream_key)
+            log_skip("experience_preparation_unavailable")
         # 触发时间：页面用它显示「什么时候点的」，而不是让管理员自己猜。
         result.setdefault("attempted_at", self.store.clock())
         result.setdefault("day", day)

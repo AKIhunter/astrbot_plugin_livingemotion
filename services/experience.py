@@ -45,6 +45,7 @@ from ..contracts import (
 from ..ports.memory import Material, MemoryPort, MemoryRequest
 from ..runtime import BackgroundRuntime
 from ..runtime.background import ModelResultUnknown
+from ..runtime.diagnostics import DREAM_SKIP_CODES, known_code, record_runtime
 from ..storage import SQLiteStore
 from ..domain.dreaming import DEFAULT_THEMES, dream_profile, six_emotions
 from ..domain.emotion import decay_affect
@@ -62,11 +63,13 @@ SEALED_DAY: ContextVar[bool] = ContextVar("livingemotion_sealed_day", default=Fa
 _DREAM_SKIP: dict[str, str] = {}
 
 
-def log_dream_skip(reason: str, *, key: str = "auto") -> None:
+def log_dream_skip(reason: str, *, key: str = "auto", store=None, scope_key=None) -> None:
     if _DREAM_SKIP.get(key) == reason:
         return
     _DREAM_SKIP[key] = reason
-    logger.info("dream skipped: %s (scope=%s)", reason, key)
+    code = known_code(reason, DREAM_SKIP_CODES)
+    logger.info("dream skipped: %s (scope=%s)", code, key)
+    record_runtime(store, "dream_skip", scope_key=scope_key, reason_code=code)
 
 
 def clear_dream_skip(key: str = "auto") -> None:
@@ -1087,24 +1090,28 @@ class ExperienceService:
     ) -> dict[str, Any]:
         # 自动调度每 60 秒重试同一场梦，按 scope 去重，只在拦截原因变化时打一行。
         key = f"{'manual' if manual else 'auto'}:{context.scope_key}"
+
+        def log_skip(reason):
+            log_dream_skip(reason, key=key, store=self.store, scope_key=context.scope_key)
+
         if not self._enabled(ContentKind.DREAM):
-            log_dream_skip("generation_disabled", key=key)
+            log_skip("generation_disabled")
             return _result("skipped", "generation_disabled")
         if not manual and await self.store.auto_daily_blocked(
                 context, "dream", datetime.fromtimestamp(
                     self._now(), ZoneInfo(self.policy.timezone)).date().isoformat()):
-            log_dream_skip("daily_content_preserved", key=key)
+            log_skip("daily_content_preserved")
             return _result("skipped", "daily_content_preserved")
         # 手动触发不看「睡够没睡够」：梦的内容来自当晚已入库的素材，管理员点了
         # 就说明现在要做。睡眠时长 / REM 的门槛只用于自动调度，避免半夜反复生成。
         if not manual:
             if self.night_guard is None:
-                log_dream_skip("night_guard_unavailable", key=key)
+                log_skip("night_guard_unavailable")
                 return _result("unsupported", "night_revalidation_unavailable")
             reason = await self._night_live_gate(
                 context, night, offline_recovery=offline_recovery)
             if reason is not None:
-                log_dream_skip(reason, key=key)
+                log_skip(reason)
                 return _result("skipped", "dream_requires_live_rem")
         anchor = night.sleep_started_at
         if anchor is None:
@@ -1121,9 +1128,10 @@ class ExperienceService:
         limit = max(self.policy.dream_per_night, 5) if manual else self.policy.dream_per_night * 3
         if not manual and await self.store.quota_usage(
                 period=night_id, pool="dream_saved", purpose="dream") >= self.policy.dream_per_night:
+            log_skip("dream_success_limit")
             return _result("skipped", "dream_success_limit")
         if used >= limit:
-            log_dream_skip("experience_attempt_limit", key=key)
+            log_skip("experience_attempt_limit")
             return _result("skipped", "experience_attempt_limit")
         period = f"{night_id}:{used + 1}"
         entry_id = stable_key("dream", _owner(context), period)
@@ -1145,7 +1153,7 @@ class ExperienceService:
         if result.get("status") == "queued":
             clear_dream_skip(key)
         else:
-            log_dream_skip(str(result.get("reason_code") or result.get("status")), key=key)
+            log_skip(str(result.get("reason_code") or result.get("status")))
         return result
 
     async def _queue_entry(

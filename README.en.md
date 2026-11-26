@@ -80,7 +80,7 @@ The guides are written in Chinese.
 | Every field, default, location, effect and example | [Configuration reference](docs/config-reference.md) |
 | Nine emotions, object emotion dimension and auto-refresh | [Emotion spectrum](docs/ta-emotion-spectrum.md) |
 | How control shapes mood, chat and history | [Control integration](docs/control-integration.md) |
-| Exporting the sanitized diagnostic ZIP | [Diagnostic guide](docs/diagnostics.md) |
+| Exporting the sanitized diagnostic ZIP and understanding its contents and coverage | [Diagnostic guide](docs/diagnostics.md) |
 | Save conflicts, nothing generated or sent | [Troubleshooting](docs/troubleshooting.md) |
 | All topics and developer interfaces | [Documentation index](docs/README.md) |
 

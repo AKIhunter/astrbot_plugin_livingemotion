@@ -23,6 +23,9 @@ class Host:
         self.persona_manager = self
         self.conversation_manager = self
 
+    def get_config(self):
+        return {}
+
     def get_registered_star(self, name):
         return None
 

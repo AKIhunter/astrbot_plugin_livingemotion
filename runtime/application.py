@@ -45,13 +45,14 @@ from ..services.behavior import BehaviorHistory, BehaviorPolicy, BehaviorService
 from ..services.experience import LENIENT_SAVE
 from ..services.catchup import FullCatchupService
 from ..storage.catchup import CatchupArchive
-from .background import BackgroundRuntime
+from .background import BackgroundRuntime, ModelResultUnknown
 from .console import ApplicationError as ApplicationError
 from .console import Console
+from .diagnostics import QUEUE_FAILURE_CODES, QUOTA_FAILURE_CODES, known_code, record_runtime
 from .lifecycle import Lifecycle
 
 from .materials import Materials
-from .models import Generation
+from .models import Generation, ModelUnavailable
 from .memory import AutoMemoryIngestor, build_memory_backend
 from .night import NightRuntime
 from .projector import Projector, current_affect, snapshot, stored_context_emotions
@@ -87,6 +88,31 @@ PROMISE_TRACE_HINTS = (
 # 睡前晚安的去重闸门：本条回复已经在道晚安时，插件再追加一句就是重复。
 # 词面刻意收窄到明确的道别说法，避免把「我不困」这类句子误拦。
 _GOODNIGHT_RE = re.compile(r"晚安|该睡了|先睡了|去睡了|这就睡|要睡了|休息了|早点休息")
+
+# 后台执行器有时会把模型错误整理成普通 ValueError，只允许已知原因码。
+_CLOSING_VALUE_CODES = QUEUE_FAILURE_CODES | QUOTA_FAILURE_CODES | frozenset((
+    "closing_budget", "closing_intent_changed", "closing_context_changed", "closing_no_result",
+    "caller_cancelled", "task_cancelled", "task_timeout", "model_result_unknown", "job_failed",
+    "context_changed", "provider_changed", "model_unavailable",
+    "provider_budget_contract_unsupported",
+))
+_CLOSING_MODEL_CODES = frozenset((
+    "provider_budget_contract_unsupported", "model_unavailable", "invalid_output_budget",
+    "context_changed", "model_purpose_invalid", "model_request_invalid", "model_token_limit",
+    "context_or_provider_changed",
+))
+
+
+def _closing_failure_code(exc):
+    if isinstance(exc, ModelUnavailable):
+        return known_code(exc.args[0] if exc.args else None, _CLOSING_MODEL_CODES)
+    if type(exc) is ValueError:
+        return known_code(exc.args[0] if exc.args else None, _CLOSING_VALUE_CODES)
+    if isinstance(exc, ModelResultUnknown):
+        return "model_result_unknown"
+    if isinstance(exc, TimeoutError):
+        return "task_timeout"
+    return "unknown"
 
 
 # 回复归档冲突：先短退避重试，仍冲突则放行发送并在后台补写。
@@ -1936,10 +1962,12 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             )
             return
         old = "pending"
+        stage = "affect"
         try:
             affect = source_affect(current_affect(
                 await self.store.get_state(context, "bot"), now=now), context)
             emotion_snapshot = ",".join(affect.labels)
+            stage = "reserve"
             period = datetime.fromtimestamp(now, ZoneInfo(self.config.timezone)).date().isoformat()
             quota = await self.store.reserve_quota(
                 key + ":send", context, generation, period=period, purpose="closing", pool="send",
@@ -1947,6 +1975,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             )
             if quota.get("status") != "reserved":
                 raise ValueError("closing_budget")
+            stage = "intent"
             for state in ("reserved", "generating"):
                 result = await self.store.transition_intent(
                     context, key, generation, expected_status=old, status=state,
@@ -1956,13 +1985,16 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                 if result.get("status") != "updated":
                     raise ValueError("closing_intent_changed")
                 old = state
+            stage = "generate"
             text = await self._closing_line(context, key, night, reason)
+            stage = "validate"
             from ..services.output import public_text_allowed
             if (not public_text_allowed(text) or revision != self.revision
                     or not await self.validate_context(context, generation)
                     or await self.store.human_watermark(context) != intent.human_watermark
                     or (await super().availability(context)).block_chat):
                 raise ValueError("closing_context_changed")
+            stage = "merge"
             result = merge_event.get_result()
             if result is None or not getattr(result, "chain", None):
                 raise ValueError("closing_no_result")
@@ -1975,6 +2007,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                 raise ValueError("closing_intent_changed")
             old = "sending"
             result.chain.extend(self.bridge.chain("\n" + text).chain)
+            stage = "submit"
             # Submission remains unknown until an actual correlated transport
             # receipt; ordinary host hooks do not upgrade this to delivered.
             await self.store.transition_intent(
@@ -1984,7 +2017,20 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             )
             await self.store.finish_quota(key + ":send", status="unknown",
                                           reason_code="closing_host_submission")
-        except Exception:
+        except Exception as exc:
+            exc_type, code = type(exc).__name__, _closing_failure_code(exc)
+            random_enabled = self.config.closing_random
+            record_runtime(self.store, "closing_merge_failed", intent_id=key,
+                           stage=stage, status=old, exception_type=exc_type,
+                           reason_code=code, closing_random=random_enabled)
+            try:
+                # 宿主默认会格式化原始异常，终端只输出这组安全字段。
+                logger.exception(
+                    "[LE-closing] 晚安并入失败 key=%s stage=%s status=%s exc=%s code=%s random=%s",
+                    key[:24], stage, old, exc_type, code, random_enabled, exc_info=False,
+                )
+            except Exception:
+                pass
             await self.store.transition_intent(
                 context, key, generation, expected_status=old,
                 status="cancelled" if old == "pending" else "failed",
@@ -2029,6 +2075,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         return result
 
     def _start_scheduler(self):
+        self._scheduler_state = None
         self._scheduler = asyncio.create_task(self._tick_loop(), name="livingemotion-scheduler")
 
     async def _watch_config(self):

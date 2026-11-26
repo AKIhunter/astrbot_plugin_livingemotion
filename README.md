@@ -78,7 +78,7 @@
 | 每个配置项的默认值、位置、作用与例子 | [完整配置参考](docs/config-reference.md) |
 | 九项情绪、对象情绪维度与自动刷新 | [情绪谱说明](docs/ta-emotion-spectrum.md) |
 | 底气怎样影响情绪、聊天与历史 | [掌控感说明](docs/control-integration.md) |
-| 一键导出近3天的脱敏诊断包 | [诊断日志](docs/diagnostics.md) |
+| 导出近 3 天的脱敏诊断包、确认文件内容和证据范围 | [诊断日志](docs/diagnostics.md) |
 | 常见问题、保存冲突、不生成、不发送 | [排障手册](docs/troubleshooting.md) |
 | 全部专题文档与开发接口 | [文档索引](docs/README.md) |
 

@@ -7,14 +7,19 @@
 | 文件 | 内容 |
 | --- | --- |
 | `说明.txt`、`manifest.json` | 范围、条数、实际时间、缺失来源、损坏/截断计数及 SHA-256 |
-| `environment.json`、`settings.json` | 本地版本、采集健康、集成状态及白名单设置；Provider 的 `api_type` 未声明时为 `null` |
-| `runtime.jsonl` | 独立保留的运行位置、异常类型、事件、状态投影、行为及承诺摘要 |
+| `environment.json`、`settings.json` | 本地版本、采集健康、调度状态、集成状态和白名单设置；Provider 的 `api_type` 未声明时为 `null` |
+| `runtime.jsonl` | 梦境跳过、晚安并入失败、调度失败等结构化事件，以及既有运行日志和业务摘要 |
 | `events.jsonl` | 事件 ID、角色、时间、代次与会话别名 |
 | `emotion.jsonl` | 仍保留的情绪数值、受控投影追踪和精力变化 |
 | `behavior.jsonl` | 主动行为状态、实际/模拟标记和已有投递回执 |
 | `promises.jsonl` | 承诺状态、到期时间、重试次数与是否存在错误 |
+| `experiences.jsonl` | 日记/梦境归档元数据、手动任务、最新自动结果和窗口内的尝试预留数 |
 
-不导出完整配置、数据库、聊天正文、提示词、媒体、承诺描述/记忆片段及日记梦境。凭据在采集和导出时脱敏，账号使用一致别名，内部事件/任务 ID 保留。运行日志不记录任意文本参数或拼接正文，只保留格式模板、位置和异常帧。承诺的自由文本错误只输出存在状态。
+不导出完整配置、数据库、聊天正文、提示词、媒体、承诺描述/记忆片段、日记或梦境正文和标题。凭据在采集和导出时脱敏，账号和客户端提供的手动生成请求 ID 使用一致别名。既有日志处理器只保留模板和安全栈帧；新增事件由业务代码写入固定字段，不采集任意日志参数或异常消息。承诺的自由文本错误只输出存在状态。
+
+`settings.json` 补充作息、晚安、补答、日记/梦境及主动行为的生效配置；`dream_owner_qq_set` 只表示是否填写通知号码。`environment.json` 的 `scheduler` 显示当前任务、阶段、开始/结束时间与最近成功时间。`in_flight` 表示该轮还没结束，单次快照无法判断是否卡死；一轮完成也不代表消息已送达。
+
+`experiences.jsonl` 按 `source` 区分 `entry`、`job`、`auto` 和 `attempts`。其中 `auto` 是每类最近一次可用结果，正常的梦境门禁需查 `runtime.jsonl` 的 `dream_skip`。预留数按创建时间落在窗口内的账本行统计，不等同于真实模型调用次数或费用。缺少归档不等同于从未生成。
 
 `runtime/diagnostics.py` 定义数据白名单与只读来源；`diagnostic_bundle.py` 负责采集、脱敏、留存、压缩和清理。业务提交成功后记录摘要，采集失败不会改变提交结果。持续记录独立于原有情绪 48 小时历史和承诺记忆片段 TTL，不延长业务留存。SQLite 导出使用独立只读事务，不复制数据库，也不占业务写入队列。
 
@@ -27,7 +32,9 @@
 离线验证：
 
 ```bash
-python -m pytest -q tests/test_diagnostic_bundle.py tests/test_diagnostics_sources.py tests/verification/test_logger_contract.py
+python -m pytest -q tests/test_diagnostic_bundle.py tests/test_diagnostics_sources.py \
+  tests/integration/test_retro_closing.py tests/experience/test_restart_private.py \
+  tests/verification/test_logger_contract.py
 npm --prefix tests/ui test
 ```
 
