@@ -5,7 +5,7 @@
 ![livingEmotion wordmark and state lines](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-4.29.1–4.29.4-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.10.1-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.10.2-3a8060)](CHANGELOG.md)
 
 [简体中文](README.md) · **English**
 
@@ -136,11 +136,11 @@ Platform declarations cover basic message intake. QQ OneBot has isolated-host ac
 
 ## 📜 Changelog
 
-Current version: `v0.10.1` (2026-11-26)
+Current version: `v0.10.2` (2026-11-27)
 
-- 🐛 Fixed "Fill with the main model" reporting every failure the same way: no model text, a timeout and an unavailable model now get separate messages. When the model returns no text, the page suggests raising the output token limit or trying another model.
-- 🧩 No configuration or database migration.
+- 🐛 Fixed emotions staying stuck at "satisfied + alert": an emotion baseline raised by model analysis used to never come down. It now returns to the default with a 12-hour half-life, shared by all four dimensions.
+- 🧩 No configuration or database migration; the emotion rule version stays `emotion-3`.
 
-Previous version 0.10.0 added the "Onboarding guide" on the Settings page and "Fill with the main model" for the style summary.
+Previous version 0.10.1 gave "Fill with the main model" separate failure messages for no model text, a timeout and an unavailable model.
 
 Full history: [CHANGELOG.md](CHANGELOG.md) (Chinese).

@@ -16,9 +16,9 @@ from astrbot_plugin_livingemotion.contracts import (
     Relationship, canonical_json,
 )
 from astrbot_plugin_livingemotion.domain.emotion import (
-    BASELINE, DIMENSIONS, RULE_VERSION, EmotionPolicy, apply_control, apply_emotion,
-    control_value, decay_affect, emotion_policy, event_signals, expression_context,
-    observe_human, resolve_mode, shift_baseline,
+    BASELINE, BASELINE_HALF_LIFE, DIMENSIONS, RULE_VERSION, EmotionPolicy, apply_control,
+    apply_emotion, control_value, decay_affect, emotion_policy, event_signals,
+    expression_context, observe_human, resolve_mode, shift_baseline,
 )
 
 
@@ -466,6 +466,56 @@ class ControlTests(unittest.TestCase):
         self.assertEqual(plain, decay_affect(state, now=1800, policy=policy))
         with self.assertRaises(ValueError):
             decay_affect(state, now=1800, policy=policy, drift=(0.0, 0.0))
+
+    def test_refined_baseline_regresses_to_default_with_twelve_hour_half_life(self):
+        """被轮询顶到上限的基准自己会回落，情绪不再长期钉在「满足 + 警觉」。"""
+        pinned = BotAffect(pleasure=.70, arousal=.85, social_need=0.0,
+                           baseline_pleasure=.70, baseline_arousal=.85,
+                           baseline_social_need=0.0,
+                           baseline_refined=True, updated_at=0.0)
+        half = decay_affect(pinned, now=BASELINE_HALF_LIFE)
+        self.assertAlmostEqual(half.baseline_pleasure, .70 / 2, places=9)
+        self.assertAlmostEqual(half.baseline_arousal, .3 + (.85 - .3) / 2, places=9)
+        self.assertAlmostEqual(half.baseline_social_need, .3 / 2, places=9)
+        self.assertAlmostEqual(half.pleasure, .70 / 2, places=6)
+        self.assertTrue(half.baseline_refined)
+        day = decay_affect(pinned, now=2 * BASELINE_HALF_LIFE)
+        self.assertAlmostEqual(day.pleasure, .70 / 4, places=6)
+        # 标签跟着基准走：8 小时后不再「警觉」，27 小时后不再「满足」。
+        self.assertIn("alert", decay_affect(pinned, now=7 * 3600).labels)
+        self.assertNotIn("alert", decay_affect(pinned, now=8 * 3600).labels)
+        self.assertIn("content", decay_affect(pinned, now=26 * 3600).labels)
+        self.assertEqual(decay_affect(pinned, now=27 * 3600).labels, ("calm",))
+
+    def test_baseline_regression_ignores_path_and_rules_keep_the_regressed_baseline(self):
+        """分步回归与一次回归的基准相同；规则事件带回回归后的基准，不写回旧值。"""
+        pinned = BotAffect(pleasure=.70, arousal=.85, social_need=0.0,
+                           baseline_pleasure=.70, baseline_arousal=.85,
+                           baseline_social_need=0.0,
+                           baseline_refined=True, updated_at=0.0)
+        direct = decay_affect(pinned, now=48 * 3600)
+        ticks = pinned
+        for hour in range(1, 49):
+            ticks = decay_affect(ticks, now=hour * 3600)
+        for name in DIMENSIONS:
+            self.assertAlmostEqual(getattr(ticks, f"baseline_{name}"),
+                                   getattr(direct, f"baseline_{name}"), places=9)
+            # 回落目标在缓慢移动，逐小时回落与一步到位只有很小的路径差。
+            self.assertAlmostEqual(getattr(ticks, name), getattr(direct, name), delta=2e-3)
+        applied = apply_emotion(ticks, event(48 * 3600, signals=("care",)), now=48 * 3600)
+        for name in DIMENSIONS:
+            self.assertEqual(getattr(applied["affect"], f"baseline_{name}"),
+                             getattr(ticks, f"baseline_{name}"))
+        self.assertTrue(applied["affect"].baseline_refined)
+
+    def test_unrefined_state_keeps_old_decay_and_its_baseline_fields(self):
+        """没被轮询写过的状态：读数仍回落到默认基准，原字段逐位不变。"""
+        legacy = BotAffect(pleasure=.8, baseline_pleasure=.9, updated_at=1000)
+        decayed = decay_affect(legacy, now=2800)
+        self.assertAlmostEqual(decayed.pleasure, .8 / 2, places=9)
+        self.assertEqual((decayed.baseline_pleasure, decayed.baseline_arousal,
+                          decayed.baseline_social_need, decayed.baseline_refined),
+                         (.9, .3, .3, False))
 
 
 if __name__ == "__main__":

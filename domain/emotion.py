@@ -29,6 +29,10 @@ BASELINE_BLEND = 0.3
 # 基准安全上限（归一化到 0..1）：平常水平不该是满格。轮询读数达到或超过
 # 这个值时视为饱和，基准只向它收敛，不再被读数顶走；对应愉悦 0.70、其余 0.85。
 BASELINE_CEILING = 0.85
+# 基准回归：被轮询抬离默认值的基准，自身按这个半衰期（秒）回到默认值，四维共用。
+# 此前基准只由轮询单向推着走：读数贴顶时基准被顶到安全上限后再不回落，情绪
+# 长期钉在「满足 + 警觉」，没有新刺激也降不下来。
+BASELINE_HALF_LIFE = 43200.0
 # 底气（掌控感）：中性 0.5，只由模型轮询写入，EMA 0.2 约等于最近 5 次样本；
 # 没有新样本时按 60 分钟半衰期回落到中性，避免长期停留在一个僵尸数值上。
 CONTROL_NEUTRAL = 0.5
@@ -59,9 +63,12 @@ def baseline_values(state: BotAffect,
     return tuple(getattr(state, f"baseline_{name}") for name in DIMENSIONS)
 
 
-def _baseline_fields(state: BotAffect) -> dict[str, Any]:
-    """原样带上基准字段：衰减和规则都不改基准，只由轮询写回。"""
-    return {**{f"baseline_{name}": getattr(state, f"baseline_{name}") for name in DIMENSIONS},
+def _baseline_fields(state: BotAffect,
+                     bases: tuple[float, ...] | None = None) -> dict[str, Any]:
+    """带上基准字段：规则改情绪时原样保留；衰减时传入已向默认值回归的基准。"""
+    if bases is None:
+        bases = tuple(getattr(state, f"baseline_{name}") for name in DIMENSIONS)
+    return {**{f"baseline_{name}": value for name, value in zip(DIMENSIONS, bases)},
             "baseline_refined": state.baseline_refined}
 
 
@@ -493,22 +500,31 @@ def decay_affect(state: BotAffect, *, now: float,
 
     drift 只改「往哪回落」，不改当前值，因此是幂等的：同一时刻重算结果一致，
     不会像事件增量那样每条消息累加。传 None 时行为与旧版完全相同。
+
+    基准被轮询写过（``baseline_refined``）时，基准自身也随这段流逝时间按
+    ``BASELINE_HALF_LIFE`` 向默认值回归，回归后的基准随状态写回；分步回归与
+    一次回归结果相同，何时落库不影响读数。没写过时与旧行为逐位相同。
     """
     _number(now, "now", 0)
     if now <= state.updated_at:
         return state
     elapsed = now - state.updated_at
     bases = baseline_values(state, policy.baseline)
+    if state.baseline_refined:
+        fade = 2 ** (-elapsed / BASELINE_HALF_LIFE)
+        bases = tuple(default + (base - default) * fade
+                      for base, default in zip(bases, policy.baseline))
+    targets = bases
     if drift is not None:
         if len(drift) != len(DIMENSIONS):
             raise ValueError("drift: expected four dimensions")
-        bases = tuple(
+        targets = tuple(
             min(1.0, max(-1.0 if name == "pleasure" else 0.0, base + _number(offset, "drift")))
             for name, base, offset in zip(DIMENSIONS, bases, drift)
         )
     values = tuple(
         baseline + (getattr(state, name) - baseline) * 2 ** (-elapsed / half_life)
-        for name, baseline, half_life in zip(DIMENSIONS, bases, policy.half_lives)
+        for name, baseline, half_life in zip(DIMENSIONS, targets, policy.half_lives)
     )
     evidence = tuple(ref for ref in state.evidence
                      if ref.expires_at is not None and ref.expires_at > now)
@@ -518,7 +534,8 @@ def decay_affect(state: BotAffect, *, now: float,
                      reason_codes=(("appraisal_concern", "time_decay") if concern
                                    else ("time_decay",)),
                      rule_version=RULE_VERSION, control=control_value(state, now),
-                     control_at=now, **_baseline_fields(state))
+                     control_at=now,
+                     **_baseline_fields(state, bases if state.baseline_refined else None))
 
 
 def observe_human(event: Event, *, now: float,

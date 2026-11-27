@@ -5,7 +5,7 @@
 ![livingEmotion 原创字标与状态线](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-4.29.1–4.29.4-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.10.1-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.10.2-3a8060)](CHANGELOG.md)
 
 **简体中文** · [English](README.en.md)
 
@@ -134,11 +134,11 @@
 
 ## 📜 更新日志
 
-当前版本：`v0.10.1`（2026-11-26）
+当前版本：`v0.10.2`（2026-11-27）
 
-- 🐛 修复「用主模型自动填写」失败时分不清原因：模型没有返回正文、等待超时、模型不可用现在各有提示；没有返回正文时会提示调大「模型输出上限」或换个模型。
-- 🧩 无配置迁移、无表结构变更。
+- 🐛 修复情绪长期停在「满足 + 警觉」：被模型分析抬高的情绪基准此前只升不降，现在按 12 小时半衰期回到默认值，四个维度共用。
+- 🧩 无配置迁移、无表结构变更；情绪规则版本仍为 `emotion-3`。
 
-上一版 0.10.0：设置页新增「新手引导」六步清单；「风格摘要」支持「用主模型自动填写」。
+上一版 0.10.1：「用主模型自动填写」失败时分开提示没有返回正文、等待超时和模型不可用。
 
 完整变化与历史版本见 [CHANGELOG.md](CHANGELOG.md)。
