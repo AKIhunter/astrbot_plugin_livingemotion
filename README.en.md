@@ -5,7 +5,7 @@
 ![livingEmotion wordmark and state lines](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-4.29.1–4.29.4-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.11.0-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.11.1-3a8060)](CHANGELOG.md)
 
 [简体中文](README.md) · **English**
 
@@ -28,9 +28,9 @@ Developer: [AKIhunter](https://github.com/AKIhunter). Feedback QQ group: 9913506
 | Keep experiences | Private journals and imagined dreams; optional local vectors or LivingMemory with independent read/write permission |
 | Shape expression | Native persona, style summary with main-model auto-fill, character presets, independent prompt switches and dual-theme pages |
 | Diagnose problems | One-click sanitized diagnostic ZIP of the last 72 hours at the top of the console; final-state log lines for object emotion analysis |
-| Set up step by step | "Onboarding guide" in Settings: a six-step checklist (persona, relationships, sleep schedule, prompt injection, style summary, models) that jumps to each setting |
+| Set up step by step | "Onboarding guide" at the top of the console: a six-step checklist (persona, relationships, sleep schedule, prompt injection, style summary, models) that opens from any tab and jumps to each setting |
 
-> **🚀 First time here?** After installing, open `livingemotion → Settings → Quick start`, choose the persona mode and save. Rule-based mood needs no model. Not sure what to configure first? Open "Onboarding guide" at the top of Settings for a six-step checklist.
+> **🚀 First time here?** After installing, open `livingemotion → Settings → Quick start`, choose the persona mode and save. Rule-based mood needs no model. Not sure what to configure first? Open "Onboarding guide" at the top of the page (next to the diagnostic export button) for a six-step checklist.
 
 ## Contents
 
@@ -136,12 +136,11 @@ Platform declarations cover basic message intake. QQ OneBot has isolated-host ac
 
 ## 📜 Changelog
 
-Current version: `v0.11.0` (2026-11-27)
+Current version: `v0.11.1` (2026-11-27)
 
-- 🔧 The diagnostic ZIP now separates why a dream was skipped, which stage a goodnight merge failed in, and the scheduler's latest success and failure. It adds journal and dream archives, manual jobs and the latest automatic results, without any body text.
-- 🔧 Empty options in the Settings model dropdowns now match actual behavior: leaving the default generation model empty shows "Use AstrBot main chat model"; leaving any other model empty shows "Use default generation model". Which model is used when empty is unchanged.
-- 🧩 No configuration or database migration; the export button and its usage are unchanged.
+- 🔧 The "Onboarding guide" entry moved from Settings to the top bar, to the left of the diagnostic export button. The six-step checklist opens from any tab and spans the row under the top bar; "Open settings" still jumps to the matching field in Settings.
+- 🧩 Position only: the checklist content and its checks are unchanged; no configuration or database migration.
 
-Previous version 0.10.2 fixed emotions staying stuck at "satisfied + alert": an emotion baseline raised by model analysis now returns to the default with a 12-hour half-life.
+Previous version 0.11.0 added night and scheduler evidence to the diagnostic ZIP and made the empty options in the Settings model dropdowns match actual behavior.
 
 Full history: [CHANGELOG.md](CHANGELOG.md) (Chinese).

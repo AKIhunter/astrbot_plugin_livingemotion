@@ -104,7 +104,7 @@ async function open(width, theme) {
   await page.goto(`${url}?scenario=native-dto`);
   await page.locator("#content[aria-busy=false]").waitFor();
   await page.locator(`[data-theme-choice="${theme}"]`).click();
-  await page.locator('[data-section="settings"]').click();
+  // 入口在顶栏：不先进设置页，确认在默认页签上就能打开。
   return page;
 }
 const stateReads = page => page.evaluate(() => window.__fixture.calls.filter(call => call.path === "console/state").length);
@@ -132,12 +132,18 @@ try {
     const tag = `${width}-${theme}`;
     const toggle = page.locator("#onboarding-toggle");
     const closed = await page.evaluate(() => document.documentElement.scrollWidth);
+    check(`${tag} entry reachable without opening settings`, await toggle.isVisible() && !await page.locator("#settings").isVisible());
     check(`${tag} entry`, await toggle.count() === 1 && (await toggle.textContent()) === "新手引导" &&
       await toggle.getAttribute("aria-expanded") === "false" && !await page.locator("#onboarding-panel").isVisible());
-    check(`${tag} entry sits above group jumps`, await page.evaluate(() => {
-      const panel = document.querySelector("#onboarding-panel");
-      return document.querySelector("#onboarding-toggle").nextElementSibling === panel &&
-        panel.nextElementSibling?.classList.contains("settings-jumps");
+    // 开关与「导出诊断日志」同一排、紧挨在它左边；面板占标题栏下方整行，不再挂在设置页里。
+    check(`${tag} entry sits in the masthead row, left of diagnostics export`, await page.evaluate(() => {
+      const toggle = document.querySelector("#onboarding-toggle"), panel = document.querySelector("#onboarding-panel");
+      const row = document.querySelector(".header-controls"), masthead = document.querySelector(".masthead");
+      const centers = [toggle, document.querySelector("#diagnosticsExport")]
+        .map(element => { const rect = element.getBoundingClientRect(); return rect.top + rect.height / 2; });
+      return toggle.parentElement === row && toggle.nextElementSibling?.id === "diagnosticsExport" &&
+        Math.abs(centers[0] - centers[1]) < 4 && panel.previousElementSibling === masthead &&
+        !row.contains(panel) && !document.querySelector("#settings").contains(panel);
     }));
     await toggle.click();
     check(`${tag} panel opens`, await toggle.getAttribute("aria-expanded") === "true" && await page.locator("#onboarding-panel").isVisible() &&
@@ -200,9 +206,12 @@ try {
     check(`${tag} stays open after automatic refresh`, await toggle.getAttribute("aria-expanded") === "true" &&
       await page.locator("#onboarding-panel").isVisible() && await page.locator("[data-onboarding-step]").count() === 6);
     await page.locator('[data-section="overview"]').click();
-    check(`${tag} hidden outside settings`, !await page.locator("#settings").isVisible());
+    check(`${tag} stays open outside settings`, !await page.locator("#settings").isVisible() &&
+      await page.locator("#onboarding-panel").isVisible());
     await page.locator('[data-section="experience"]').click();
-    check(`${tag} absent from diary settings`, await page.locator("#onboarding-toggle").count() === 0);
+    // 入口是全局的：日记页顶栏仍有且只有一个开关，设置区里不再重复出现清单。
+    check(`${tag} single entry on diary settings`, await page.locator("#onboarding-toggle").count() === 1 &&
+      await page.locator("#settings [data-onboarding], #settings #onboarding-toggle").count() === 0);
     await page.locator('[data-section="settings"]').click();
     check(`${tag} stays open after tab switch`, await toggle.getAttribute("aria-expanded") === "true" &&
       await page.locator("#onboarding-panel").isVisible() && await page.locator("[data-onboarding-step]").count() === 6);

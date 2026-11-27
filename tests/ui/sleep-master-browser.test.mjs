@@ -63,9 +63,19 @@ try {
     await page.locator("#content[aria-busy=false]").waitFor();
     assert.equal(await page.locator(".plugin-version").innerText(), `v${version}`);
     const header = await page.locator(".masthead").boundingBox();
-    const controls = await page.locator("#refresh, #language, [data-theme-choice]").evaluateAll(
+    const centers = await page.locator("#refresh, #language, [data-theme-choice]").evaluateAll(
       nodes => nodes.map(el => { const r = el.getBoundingClientRect(); return r.y + r.height / 2; }));
-    assert(Math.max(...controls) - Math.min(...controls) < 4);
+    if (width >= 600) assert(Math.max(...centers) - Math.min(...centers) < 4);
+    else {
+      // 窄屏（页面最小宽 700px）顶栏放不下品牌加五个控件：语言与主题作为一组整体换到第二排，刷新留在第一排。
+      const [refresh, preferences] = await page.locator("#refresh, .theme-control").evaluateAll(nodes => nodes.map(el => {
+        const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom };
+      }));
+      assert(preferences.top >= refresh.bottom - 1, "preferences group sits below the action row");
+      assert(Math.max(...centers.slice(1)) - Math.min(...centers.slice(1)) < 4, "language and theme share a row");
+    }
+    // 顶栏变挤时品牌字样也不能断成两行。
+    assert((await page.locator(".wordmark").boundingBox()).height < 40, "wordmark stays on one line");
     assert(header.height < (width < 600 ? 115 : 85));
     await page.locator('[data-section="behavior"]').click();
     const promise = page.locator('details.promise-card[data-promise-id="synthetic-promise-0"]');

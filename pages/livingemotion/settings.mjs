@@ -3,7 +3,6 @@ import { object, list, text, fieldValue, stageNames, DEFAULT_STAGE_NAMES } from 
 import { fieldHelp, localizedFieldLabel } from "./config-resources.mjs?v=ta-omissions-20261119-r3";
 import { node, button } from "./dom.mjs?v=eff0d6f932b0";
 import { renderPromptInjection, syncPromptInjection } from "./prompt-injection.mjs?v=0.6.0";
-import { mountOnboarding, syncOnboarding } from "./onboarding.mjs?v=model-label-20261127";
 const labels = resource({
   context_emotions_enabled: t("委屈、受伤与害羞"),
   context_emotions_dimension: t("对象情绪维度"),
@@ -738,7 +737,6 @@ export function renderSettings(root, state, options, updateControls, description
   }
   // 分区与按钮一起挂上：有分区才有按钮，不会留下点不动的死按钮。
   root.append(jumps, ...builtSections);
-  if (!experienceOnly) mountOnboarding(jumps, state);
   mountRelationshipEditor(root, state);
 }
 
@@ -851,5 +849,4 @@ export function syncSettingsValues(root, state) {
       });
     }
   }
-  syncOnboarding(root, state);
 }

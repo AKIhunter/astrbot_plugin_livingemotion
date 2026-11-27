@@ -1,6 +1,5 @@
 import { t } from "./i18n.mjs?v=eff0d6f932b0";
 import { list, text } from "./model.mjs?v=eff0d6f932b0";
-import { jumpToSettingsGroup } from "./settings.mjs?v=model-label-20261127";
 import { node, button } from "./dom.mjs?v=eff0d6f932b0";
 
 const filled = value => text(value, "").trim() !== "";
@@ -45,7 +44,7 @@ const STEPS = [
     help: "默认生成模型留空就用 astrbot主聊天模型，其他项留空就沿用默认生成模型，只在某项需要单独指定时才选。向量模型是另一类模型，只有本地向量记忆需要，留空即未配置。",
     configured: values => MODELS.some(([key]) => filled(values[key])) },
 ];
-// 设置页每 60 秒自动刷新、切换页签都会重建 DOM：展开状态留在模块里，清单不会被自动收起。
+// 页面每 60 秒自动刷新、切换页签都会重建内容区：展开状态留在模块里，清单不会被自动收起。
 let open = false;
 // 风格摘要不在配置值里：只跟风格摘要编辑器自己的 data-custom 同步。
 let styleCustom = false, view = null, observer = null;
@@ -59,7 +58,7 @@ function modelState(state, key) {
 }
 // 只改状态文字，不重建清单：自动刷新时正在点按的按钮不会丢焦点。
 function paint(panel, state) {
-  if (!panel) return;
+  if (!panel || !state.data?.config) return;
   const values = state.data.config.values;
   for (const step of STEPS) {
     const done = step.configured(values);
@@ -71,17 +70,18 @@ function paint(panel, state) {
     control.querySelector(".onboarding-model-state").textContent = modelState(state, control.dataset.onboardingKey);
   }
 }
-function goTo(root, state, group, selector) {
-  jumpToSettingsGroup(root, group, state);
-  const section = root.querySelector(`[data-task-group="${group}"]`);
+// 「去设置」：由 app.mjs 先切到设置页并展开分区（已在设置页时不重建表单），再把焦点放到这一步的第一个相关字段。
+function goTo(host, group, selector) {
+  host.openSettings(group);
+  const section = host.settings.querySelector(`[data-task-group="${group}"]`);
   if (!section) return; // 找不到分区时 jumpToSettingsGroup 已给出控制台提示。
   section.scrollIntoView({ block: "start" });
   section.querySelector(selector)?.focus();
 }
-function renderModels(root, state) {
+function renderModels(host) {
   const rows = node("ul", undefined, "onboarding-models");
   for (const [key, name, use] of MODELS) {
-    const control = button("", () => goTo(root, state, groupOf(state, key), `#config-${key}`), "onboarding-model");
+    const control = button("", () => goTo(host, groupOf(host.state, key), `#config-${key}`), "onboarding-model");
     control.dataset.onboardingKey = key;
     control.append(node("span", t(name), "onboarding-model-name"), node("span", t(use), "onboarding-model-use"),
       node("span", undefined, "onboarding-model-state"));
@@ -89,36 +89,39 @@ function renderModels(root, state) {
   }
   return rows;
 }
-function renderStep(step, index, root, state) {
+function renderStep(step, index, host) {
   const item = node("li", undefined, "onboarding-step"); item.dataset.onboardingStep = step.id;
   const body = node("div", undefined, "onboarding-text");
   body.append(node("h3", `${index + 1}. ${t(step.title)}`), node("p", t(step.help), "hint"));
-  const go = button(t("去设置"), () => goTo(root, state, groupOf(state, step.key), step.focus), "onboarding-go");
+  const go = button(t("去设置"), () => goTo(host, groupOf(host.state, step.key), step.focus), "onboarding-go");
   go.setAttribute("aria-label", t("去设置：{0}", [t(step.title)]));
   item.append(body, node("span", undefined, "status"), go);
-  if (step.id === "models") item.append(renderModels(root, state));
+  if (step.id === "models") item.append(renderModels(host));
   return item;
 }
-export function mountOnboarding(jumps, state) {
-  const root = jumps.parentElement;
-  const panel = node("section", undefined, "onboarding"); panel.id = "onboarding-panel";
-  panel.dataset.onboarding = ""; panel.hidden = !open; panel.setAttribute("aria-labelledby", "onboarding-toggle");
-  const toggle = button(t("新手引导"), () => {
-    open = !open; panel.hidden = !open; toggle.setAttribute("aria-expanded", String(open));
-  }, "onboarding-toggle");
-  toggle.id = "onboarding-toggle"; toggle.setAttribute("aria-expanded", String(open));
-  toggle.setAttribute("aria-controls", panel.id);
+// 开关（#onboarding-toggle）和面板（#onboarding-panel）是 index.html 里的固定节点：
+// 开关在顶栏、与「导出诊断日志」同一排，面板占标题栏下方整行，任何页签都能展开。
+// 切换语言时 app.mjs 会再调一次：每次都重建清单，展开状态沿用模块里的 open。
+export function mountOnboarding(settings, state, openSettings) {
+  const host = { settings, state, openSettings };
+  const toggle = document.getElementById("onboarding-toggle");
+  const panel = document.getElementById("onboarding-panel");
   const list = node("ol", undefined, "onboarding-steps");
-  list.append(...STEPS.map((step, index) => renderStep(step, index, root, state)));
-  panel.append(list);
-  jumps.before(toggle, panel);
+  list.append(...STEPS.map((step, index) => renderStep(step, index, host)));
+  panel.replaceChildren(list); panel.hidden = !open;
+  toggle.setAttribute("aria-expanded", String(open));
+  // 用赋值而不是 addEventListener：重复挂载不会叠出多个点击处理。
+  toggle.onclick = () => {
+    open = !open; panel.hidden = !open; toggle.setAttribute("aria-expanded", String(open));
+  };
   paint(panel, state);
-  view = { root, state };
+  view = { settings, panel, state };
   // 风格摘要编辑器读完或保存后会改写 data-custom：据此刷新第 5 步的状态。
   observer ??= new MutationObserver(() => {
-    styleCustom = view.root.querySelector(".style-summary-text")?.dataset.custom === "true";
-    paint(view.root.querySelector("[data-onboarding]"), view.state);
+    styleCustom = view.settings.querySelector(".style-summary-text")?.dataset.custom === "true";
+    paint(view.panel, view.state);
   });
-  observer.observe(root, { attributes: true, attributeFilter: ["data-custom"], subtree: true });
+  observer.observe(settings, { attributes: true, attributeFilter: ["data-custom"], subtree: true });
 }
-export function syncOnboarding(root, state) { paint(root.querySelector("[data-onboarding]"), state); }
+// 状态标记只改文字，不重建清单：自动刷新时正在点按的按钮不会丢焦点。
+export function syncOnboarding(state) { paint(document.getElementById("onboarding-panel"), state); }

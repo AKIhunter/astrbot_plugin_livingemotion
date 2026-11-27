@@ -168,7 +168,8 @@ h1, .hero-value, .emotion-h2, .wordmark { font-family: var(--display); font-weig
 h2 { font-size: 20px; } h3 { font-size: 16px; }
 ul { padding-left: 24px; }
 .masthead { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 12px 0; border-bottom: 1px solid var(--line); }
-.wordmark { display: flex; align-items: baseline; font-size: 30px; line-height: 1.1; letter-spacing: -.065em; font-weight: 650; }
+/* 品牌字样不换行：顶栏控件变多时由控件自己换行，不能把字样挤成两行断字。 */
+.wordmark { display: flex; align-items: baseline; white-space: nowrap; font-size: 30px; line-height: 1.1; letter-spacing: -.065em; font-weight: 650; }
 .wordmark span { font-weight: 350; }
 .wordmark i { width: 8px; height: 8px; border-radius: 50%; margin-left: 8px; background: var(--accent); }
 .eyebrow, .micro { color: var(--muted); font: 11px/1.6 var(--mono); }
@@ -558,9 +559,9 @@ dialog h2 { margin: 12px 0 16px; } dialog input { width: 100%; margin-top: 8px; 
 .coupling-row { display: flex; flex-wrap: wrap; gap: .55rem; align-items: baseline; }
 .coupling-name { min-width: 7.5rem; font-weight: 600; }
 .coupling-state { padding: .08rem .55rem; border-radius: 999px; border: 1px solid currentColor; opacity: .85; font-size: .86em; }
-/* 新手引导：入口紧贴分区跳转按钮上方；清单扁平，状态沿用 .status，模型行整行可点。 */
-.onboarding-toggle { min-height: 34px; padding: 6px 14px; font-size: 13px; }
-.onboarding-toggle[aria-expanded="true"] { background: var(--accent-bg); color: var(--accent-ink); border-color: var(--accent); }
+/* 新手引导：开关在顶栏、与「导出诊断日志」同一排（尺寸随 .header-controls button），面板占标题栏下方整行；
+   清单扁平，状态沿用 .status，模型行整行可点。 */
+#onboarding-toggle[aria-expanded="true"] { background: var(--accent-bg); color: var(--accent-ink); border-color: var(--accent); }
 .onboarding { margin: 12px 0 20px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); min-width: 0; }
 .onboarding-steps { list-style: none; margin: 0; padding: 0; }
 .onboarding-step { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
@@ -570,7 +571,8 @@ dialog h2 { margin: 12px 0 16px; } dialog input { width: 100%; margin-top: 8px; 
 .onboarding-text h3 { font-size: 14px; }
 .onboarding-text p { margin: 2px 0 0; }
 .onboarding-go { min-height: 32px; padding: 4px 12px; font-size: 13px; }
-.onboarding-models { grid-column: 1 / -1; list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 4px; }
+/* 面板占整行：模型行按可用宽度排成多列（桌面三列、平板两列、手机一列），不再一条占满整行。 */
+.onboarding-models { grid-column: 1 / -1; list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 4px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
 .onboarding-model { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 12px; align-items: center; width: 100%; min-height: 32px; padding: 4px 12px; text-align: left; font-size: 13px; background: transparent; }
 .onboarding-model-use { grid-column: 1; color: var(--muted); font-size: 12px; }
 .onboarding-model-state { grid-column: 2; grid-row: 1 / span 2; color: var(--accent); text-align: right; }

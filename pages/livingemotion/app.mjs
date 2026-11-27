@@ -11,7 +11,8 @@ import { mountRelationships, emotionExplainer } from "./charts/relationships.mjs
 import { contextEmotionPicker } from "./scope-picker.mjs?v=ta-person-20261126-r1";
 import { mountEnergy } from "./charts/energy.mjs?v=eff0d6f932b0";
 import { emotionSpectrum } from "./charts/emotion-spectrum.mjs?v=onboarding-20261126";
-import { renderSettings as settingsView, jumpToSettingsGroup, syncSettingsValues } from "./settings.mjs?v=model-label-20261127";
+import { renderSettings as settingsView, jumpToSettingsGroup, syncSettingsValues } from "./settings.mjs?v=onboarding-top-20261127";
+import { mountOnboarding, syncOnboarding } from "./onboarding.mjs?v=onboarding-top-20261127";
 import { EXPERIENCE_TABS, experienceTabs, selectExperienceTab, turnPage, cancelPageTurn } from "./experience.mjs?v=eff0d6f932b0";
 import { reconcileDraft } from "./draft.mjs?v=eff0d6f932b0";
 import { bindDiagnosticExport } from "./diagnostics.mjs?v=20261125";
@@ -1351,6 +1352,11 @@ function navigateToSettings(group) {
   navigate("settings");
   jumpToSettingsGroup($("settings"), group, state);
 }
+// 顶栏「新手引导」的「去设置」：已在设置页时只展开分区、不重建表单（保留没保存的草稿），否则先切到设置页。
+function openSettingsGroup(group) {
+  if (state.section === "settings" && $("settings").childElementCount > 0) jumpToSettingsGroup($("settings"), group, state);
+  else navigateToSettings(group);
+}
 function render(preserveSettings = false) {
   for (const label of document.querySelectorAll("[data-section-label]")) label.textContent = SECTIONS[label.dataset.sectionLabel][2];
   const [number, name, title] = SECTIONS[state.section];
@@ -1362,6 +1368,8 @@ function render(preserveSettings = false) {
   });
   document.body.dataset.leSection = state.section;
   if (!state.data) { updateControls(); return; }
+  // 顶栏引导不挂在某个页签下：每次渲染都按最新配置值刷新清单里的状态标记。
+  syncOnboarding(state);
   const detail = object(state.data.mode_detail);
   const labels = { active: t("参与中 · 自主发送"), observe_only: t("仅观察 · 不自主发送"), disabled: t("已停用") };
   let modeLabel = labels[state.data.mode] || t("模式未提供");
@@ -1941,6 +1949,7 @@ function navigate(section, focus = false) {
 }
 async function boot() {
   staticUI();
+  mountOnboarding($("settings"), state, openSettingsGroup);
   bindDiagnosticExport($("diagnosticsExport"), $("diagnosticsStatus"),
     () => window.AstrBotPluginView || window.AstrBotPluginPage, t);
   matchMedia("(prefers-reduced-motion: reduce)").addEventListener("change", event => {
@@ -1959,6 +1968,7 @@ async function boot() {
   $("language").value = locale();
   $("language").addEventListener("change", () => {
     setLocale($("language").value); staticUI();
+    mountOnboarding($("settings"), state, openSettingsGroup);
     window.dispatchEvent(new Event("livingemotion:locale"));
     render(); renderEnvironment(state.data?.environment);
     if (state.data) $("connection").textContent = state.stale ? t("旧快照 · 写操作已停用") : t("更新于 {0}", [date(state.data.updated_at)]);

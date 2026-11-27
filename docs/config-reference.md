@@ -1,6 +1,6 @@
 # 配置参考
 
-适用 LivingEmotion 0.11.0；2026-11-27依据公开 schema、保存校验和实际 Console DTO 核对。
+适用 LivingEmotion 0.11.1；2026-11-27依据公开 schema、保存校验和实际 Console DTO 核对。
 维护者修改配置、范围或帮助文案时同步生成本表，每次提交运行 `python scripts/check_docs.py`。
 全部功能开关和参数均逐项列出；使用操作见[使用手册](user-guide.md)，原理见[技术说明](technical-guide.md)。
 
