@@ -5,7 +5,7 @@
 ![livingEmotion wordmark and state lines](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-4.29.1–4.29.4-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.10.2-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.11.0-3a8060)](CHANGELOG.md)
 
 [简体中文](README.md) · **English**
 
@@ -136,11 +136,12 @@ Platform declarations cover basic message intake. QQ OneBot has isolated-host ac
 
 ## 📜 Changelog
 
-Current version: `v0.10.2` (2026-11-27)
+Current version: `v0.11.0` (2026-11-27)
 
-- 🐛 Fixed emotions staying stuck at "satisfied + alert": an emotion baseline raised by model analysis used to never come down. It now returns to the default with a 12-hour half-life, shared by all four dimensions.
-- 🧩 No configuration or database migration; the emotion rule version stays `emotion-3`.
+- 🔧 The diagnostic ZIP now separates why a dream was skipped, which stage a goodnight merge failed in, and the scheduler's latest success and failure. It adds journal and dream archives, manual jobs and the latest automatic results, without any body text.
+- 🔧 Empty options in the Settings model dropdowns now match actual behavior: leaving the default generation model empty shows "Use AstrBot main chat model"; leaving any other model empty shows "Use default generation model". Which model is used when empty is unchanged.
+- 🧩 No configuration or database migration; the export button and its usage are unchanged.
 
-Previous version 0.10.1 gave "Fill with the main model" separate failure messages for no model text, a timeout and an unavailable model.
+Previous version 0.10.2 fixed emotions staying stuck at "satisfied + alert": an emotion baseline raised by model analysis now returns to the default with a 12-hour half-life.
 
 Full history: [CHANGELOG.md](CHANGELOG.md) (Chinese).

@@ -522,7 +522,8 @@ TA 住所城市|TA home city|TA の居住都市
 高级设置 · 预算、阈值与边界|Advanced · budgets, thresholds and limits|詳細設定 · 予算・閾値・制限
 跟随当前会话人格|Follow current conversation persona|現在の会話人格に従う
 待配置|Setup required|要設定
-沿用当前聊天模型|Use current chat model|現在のチャットモデルを使用
+沿用默认生成模型|Use default generation model|デフォルトの生成モデルを使用
+astrbot主聊天模型|Use AstrBot main chat model|AstrBotのメインチャットモデルを使用
 更改由宿主校验并写回原生配置。|The host validates changes and saves native configuration.|変更はホストが検証し、ネイティブ設定に保存します。
 更改后保存到原生配置，由宿主校验。|Save changes to native configuration for host validation.|変更をネイティブ設定に保存し、ホストが検証します。
 当前值为“{0}”。按此项类型填写并保存，实际效果受相关模块开关影响。|Current value: “{0}”. Enter the expected type and save; related module switches affect behavior.|現在値は「{0}」です。項目の型に合わせて入力・保存してください。動作は関連モジュールの設定にも依存します。
@@ -662,7 +663,7 @@ TA 情绪雷达，实线为当前，虚线为领域基准；数值见下方|TA e
 「允许 TA 睡眠」是睡眠和自动作息的总开关，在「长夜」分区，默认开启。关闭后 TA 始终清醒、精力保持 100%；开启时要在「快速开始」分区填好时区，自动作息才会运行。|“Allow TA to sleep” is the master switch for sleep and the automatic schedule. It sits under “Night” and is on by default. Off keeps TA awake with energy at 100%; on needs a time zone filled in under “Quick start” before the schedule runs.|「TA の睡眠を許可」は睡眠と自動作息の総スイッチで、「長い夜」にあり、既定でオンです。オフにすると TA は常に起きていて精力が 100% のままです。オンで動かすには「クイックスタート」でタイムゾーンを設定する必要があります。
 都在「提示词注入」分区。人物性格和三条普通提示词（情绪与毒舌、关系与行动边界、作息与收尾）默认关闭，打开才加进回复，关闭不追加；通用说明默认开启，关掉后不再注入情绪和关系说明。|All under “Prompt injection”. The character personality and the three plain prompts (tone, relationship boundaries, sleep and wrap-up) are off by default; on adds them to replies, off adds nothing. The shared notes are on by default; turning them off stops the emotion and relationship notes from being injected.|すべて「プロンプト挿入」にあります。人物性格と3つの通常プロンプト（感情と毒舌、関係と行動の境界、作息と締めくくり）は既定でオフです。オンにすると返信に追加され、オフなら追加されません。共有の説明は既定でオンで、オフにすると感情と関係の説明を入れなくなります。
 在「人格与状态模式」分区、原生人格下拉框下方。可以手写，也可以用「用主模型自动填写」；留空就用原生人格前缀，写了只给本插件用，不改原生人格。|Under “Persona and state mode”, below the native persona dropdown. Write it yourself or use “Auto-fill with the main model”. Empty uses the native persona prefix; a written summary is used by this plugin only and leaves the native persona untouched.|「人格と状態モード」のネイティブ人格のプルダウンの下にあります。手で書くことも「主モデルで自動入力」で埋めることもできます。空欄なら原生人格の先頭部分を使い、書いた内容はこのプラグインだけで使われ、原生人格は変更しません。
-全部留空就是跟随主模型，只在某项需要单独指定时才选。默认生成模型留空时用当前聊天模型；向量模型是另一类模型，只有本地向量记忆需要，留空即未配置。|Leave everything empty to follow the main model; pick a model only where a task needs its own. Leave the default generation model empty and the current chat model is used. The embedding model is a different kind, needed only for local vector memory; empty means not configured.|すべて空欄なら主モデルに従います。個別に指定したい項目だけ選んでください。既定の生成モデルが空欄なら現在のチャットモデルを使います。ベクトルモデルは別種で、ローカルベクトル記憶でのみ必要です。空欄は未設定です。`;
+默认生成模型留空就用 astrbot主聊天模型，其他项留空就沿用默认生成模型，只在某项需要单独指定时才选。向量模型是另一类模型，只有本地向量记忆需要，留空即未配置。|Leave the default generation model empty to use the AstrBot main chat model; leave any other item empty to use the default generation model. Pick a model only where a task needs its own. The embedding model is a different kind, needed only for local vector memory; empty means not configured.|既定の生成モデルを空欄にすると AstrBot のメインチャットモデルを使い、他の項目を空欄にすると既定の生成モデルに従います。個別に指定したい項目だけ選んでください。ベクトルモデルは別種で、ローカルベクトル記憶でのみ必要です。空欄は未設定です。`;
 const shell = `livingEmotion · TA 的生活控制台|livingEmotion · TA life console|livingEmotion · TA の生活コンソール
 跳到主要内容|Skip to main content|本文へスキップ
 中文|中文|中文

@@ -1,6 +1,6 @@
 # 安装与升级
 
-适用0.10.2，Python与依赖由宿主管理。metadata声明支持AstrBot 4.29.1–4.29.4；
+适用0.11.0，Python与依赖由宿主管理。metadata声明支持AstrBot 4.29.1–4.29.4；
 范围外版本须独立验收，见[兼容边界](compatibility.md)。
 
 1. 在AstrBot插件市场搜索LivingEmotion，或导入[仓库](https://github.com/AKIhunter/astrbot_plugin_livingemotion)。

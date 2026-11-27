@@ -1,6 +1,6 @@
 import { t } from "./i18n.mjs?v=eff0d6f932b0";
 import { list, text } from "./model.mjs?v=eff0d6f932b0";
-import { jumpToSettingsGroup } from "./settings.mjs?v=draft-errors-20261126";
+import { jumpToSettingsGroup } from "./settings.mjs?v=model-label-20261127";
 import { node, button } from "./dom.mjs?v=eff0d6f932b0";
 
 const filled = value => text(value, "").trim() !== "";
@@ -42,7 +42,7 @@ const STEPS = [
     help: "在「人格与状态模式」分区、原生人格下拉框下方。可以手写，也可以用「用主模型自动填写」；留空就用原生人格前缀，写了只给本插件用，不改原生人格。",
     configured: () => styleCustom },
   { id: "models", key: "provider_id", focus: "#config-provider_id", title: "模型选择",
-    help: "全部留空就是跟随主模型，只在某项需要单独指定时才选。默认生成模型留空时用当前聊天模型；向量模型是另一类模型，只有本地向量记忆需要，留空即未配置。",
+    help: "默认生成模型留空就用 astrbot主聊天模型，其他项留空就沿用默认生成模型，只在某项需要单独指定时才选。向量模型是另一类模型，只有本地向量记忆需要，留空即未配置。",
     configured: values => MODELS.some(([key]) => filled(values[key])) },
 ];
 // 设置页每 60 秒自动刷新、切换页签都会重建 DOM：展开状态留在模块里，清单不会被自动收起。

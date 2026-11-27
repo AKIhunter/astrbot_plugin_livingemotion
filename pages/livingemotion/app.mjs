@@ -11,7 +11,7 @@ import { mountRelationships, emotionExplainer } from "./charts/relationships.mjs
 import { contextEmotionPicker } from "./scope-picker.mjs?v=ta-person-20261126-r1";
 import { mountEnergy } from "./charts/energy.mjs?v=eff0d6f932b0";
 import { emotionSpectrum } from "./charts/emotion-spectrum.mjs?v=onboarding-20261126";
-import { renderSettings as settingsView, jumpToSettingsGroup, syncSettingsValues } from "./settings.mjs?v=draft-errors-20261126";
+import { renderSettings as settingsView, jumpToSettingsGroup, syncSettingsValues } from "./settings.mjs?v=model-label-20261127";
 import { EXPERIENCE_TABS, experienceTabs, selectExperienceTab, turnPage, cancelPageTurn } from "./experience.mjs?v=eff0d6f932b0";
 import { reconcileDraft } from "./draft.mjs?v=eff0d6f932b0";
 import { bindDiagnosticExport } from "./diagnostics.mjs?v=20261125";

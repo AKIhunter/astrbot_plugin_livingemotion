@@ -3,7 +3,7 @@ import { object, list, text, fieldValue, stageNames, DEFAULT_STAGE_NAMES } from 
 import { fieldHelp, localizedFieldLabel } from "./config-resources.mjs?v=ta-omissions-20261119-r3";
 import { node, button } from "./dom.mjs?v=eff0d6f932b0";
 import { renderPromptInjection, syncPromptInjection } from "./prompt-injection.mjs?v=0.6.0";
-import { mountOnboarding, syncOnboarding } from "./onboarding.mjs?v=draft-errors-20261126";
+import { mountOnboarding, syncOnboarding } from "./onboarding.mjs?v=model-label-20261127";
 const labels = resource({
   context_emotions_enabled: t("委屈、受伤与害羞"),
   context_emotions_dimension: t("对象情绪维度"),
@@ -492,7 +492,8 @@ export function renderSettings(root, state, options, updateControls, description
             ? field.options.filter(item => item?.value !== "") : source;
         if (Array.isArray(choices)) {
           field.type = "enum";
-          field.options = [{ value: "", label: field.key === "persona_id" ? t("跟随当前会话人格") : /embedding/.test(field.key) ? t("待配置") : t("沿用当前聊天模型") },
+          // 留空项按字段区分：默认生成模型留空＝用宿主当前会话的聊天模型；其余模型字段留空＝沿用默认生成模型。
+          field.options = [{ value: "", label: field.key === "persona_id" ? t("跟随当前会话人格") : /embedding/.test(field.key) ? t("待配置") : /^(model_)?provider_id$/.test(field.key) ? t("astrbot主聊天模型") : t("沿用默认生成模型") },
             ...choices.map(item => ({ value: item.value ?? item.id, label: item.name ?? item.label ?? item.id }))];
         } else if (Array.isArray(field.options)) field.type = "enum";
       }

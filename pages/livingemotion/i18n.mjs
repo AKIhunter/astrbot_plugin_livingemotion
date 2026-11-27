@@ -1,4 +1,4 @@
-import { messages } from "./messages.mjs?v=baseline-regress-20261127";
+import { messages } from "./messages.mjs?v=model-label-20261127";
 const reverseMessages = new Map(Object.entries(messages).flatMap(([key, values]) => values.map(value => [value, key])));
 const storageKey = "livingemotion.locale.v1";
 export const locales = ["zh-CN", "en", "ja"];
