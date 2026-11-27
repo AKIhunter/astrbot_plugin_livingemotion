@@ -5,7 +5,7 @@
 ![livingEmotion 原创字标与状态线](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-4.29.1–4.29.4-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.11.2-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.12.0-3a8060)](CHANGELOG.md)
 
 **简体中文** · [English](README.en.md)
 
@@ -134,11 +134,8 @@
 
 ## 📜 更新日志
 
-当前版本：`v0.11.2`（2026-11-27）
+当前版本：`v0.12.0`（2026-11-28）
 
-- 🐛 「新手引导」的模型清单：已选模型名很长时，标题不再被挤成一字一行，长模型名只在右侧折行。
-- 🧩 只改页面样式，清单内容和判定不变；无配置迁移、无表结构变更。
-
-上一版 0.11.1：「新手引导」入口挪到页面顶栏（「导出诊断日志」左侧）；0.11.0：诊断包补齐夜间与调度证据，模型下拉留空项文案按实际行为区分。
+- 🔧 配合 LivingHello 2.11.0，承诺图片由 LH 起稿、改词和发出，LE 保留原承诺及结案记录。提示词模型与额度到 LH「AI生图」设置。详见[配套与迁移](docs/image-prompt-retry.md)。
 
 完整变化与历史版本见 [CHANGELOG.md](CHANGELOG.md)。

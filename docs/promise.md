@@ -1,6 +1,6 @@
 # 承诺的识别、兑现与取消
 
-适用LE 0.11.2 / LH 2.10.0。入口：“主动行为 → 承诺”和“设置 → 承诺兑现”。
+适用 LE 0.12.0 / LH 2.11.0。入口：“主动行为 → 承诺”和“设置 → 承诺兑现”。
 `promise_enabled`控制建立和执行；关闭保留已有任务。页面可展开任务并点击
 “取消后续处理”，聊天取消标记沿用同一事务入口。
 具体默认值、范围和例子见[配置参考](config-reference.md)。
@@ -31,12 +31,16 @@ flowchart TD
     A["到期扫描"] --> B["复核来源、代次与宿主归属"]
     B --> C["原子领取原事项"]
     C --> D{"图片需求？"}
-    D -->|是| E["LH生成与统一图片投递"]
+    D -->|是| E{"LH 契约可用？"}
     D -->|否| F["LE组成正文并经宿主发送"]
-    E --> G{"已受理？"}
+    E -->|是| L["LH 起稿、改词、生成和投递"]
+    E -->|版本不匹配| M["原事项延期，保留重试额度"]
+    E -->|其他暂不可用| I["scheduled / retry_ready"]
+    L --> G{"确认交付？"}
     F --> G
     G -->|是| H["sent + 原事项交付记录"]
-    G -->|明确可重试失败| I["scheduled / retry_ready"]
+    G -->|明确可重试失败| I
+    G -->|需要调整| N["保留原事项，等待调整"]
     G -->|图片结果未知| J["暂停，核对后处理"]
 ```
 
@@ -56,7 +60,7 @@ flowchart TD
 | waiting | 等待调整、服务恢复或人工核对 |
 | unknown | 图片生成/发送副作用不明，不自动重试 |
 | delegated | 宿主拥有任务，LE不执行 |
-| sent / cancelled / failed | 已受理、已取消、终态失败 |
+| sent / cancelled / failed | 已交付、已取消、终态失败 |
 
 生成阶段检查点为retry_ready/generating/generated/sending/sent/held/unknown。
 已生成文件只重试投递；generating/sending/unknown不再次生图。
