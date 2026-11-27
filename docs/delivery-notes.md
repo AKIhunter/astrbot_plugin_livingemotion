@@ -52,7 +52,8 @@ CI先独立执行这两组检查，再运行原合成浏览器矩阵，以便分
 README只作当前入口；配置参考从schema、Console和同源帮助生成。
 修改帮助后运行`python scripts/check_docs.py --write`，并重新导出真实UI DTO：
 `python tests/ui/export-native-dto.py`。不能手改证据里的源码hash。
-CI检查全部Markdown链接、元数据、schema默认值、便携测试、双插件矩阵和UI。
+CI检查全部Markdown链接、元数据、schema默认值、便携测试、旧版图片契约和UI；
+新承诺生图按上面的配套源码命令验证。
 历史文档统一见[CHANGELOG](../CHANGELOG.md)，旧原件可由固定Git提交追溯。
 
 测试证据放仓库外，不提交私人路径、数据库、原始消息、密钥或临时模型连接。

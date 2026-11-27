@@ -4,11 +4,13 @@ import json
 import os
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 from astrbot_plugin_livingemotion.runtime.promise_service import PromiseService
+from astrbot_plugin_livingemotion.runtime.promise_actions import DELIVERY_CONTRACT
 from test_promise_actions import scenario, add
 from test_application import application, Message
 from astrbot_plugin_livingemotion.contracts import Context
@@ -23,7 +25,7 @@ def mapping(scenario, monkeypatch, tmp_path):
         # 部署后的相邻插件使用宿主标准包名。
         lh = Path(__file__).resolve().parents[3] / "astrbot_plugin_LivingHello"
     assert (lh / "images/guard_image_prompt.py").is_file(), (
-        "此显式矩阵需要 LH 2.8.0 源码，请设置 LIVINGHELLO_SOURCE")
+        "此显式矩阵需要配套 LH 源码，请设置 LIVINGHELLO_SOURCE")
     monkeypatch.syspath_prepend(str(lh))
     spec = importlib.util.spec_from_file_location("_lh_prompt_mapping_fixture", lh / "images/guard_image_prompt.py")
     module = importlib.util.module_from_spec(spec)
@@ -48,13 +50,56 @@ def mapping(scenario, monkeypatch, tmp_path):
                 "attempted_prompt": prepared["prompt"], "request_id": request_id}}
         guard.observe(request_id, prepared, "success")
         return {"status": "generated", "path": str(s.file), "request_id": request_id,
-                "effective_prompt": prepared["prompt"], "prompt": prompt}
+                "effective_prompt": prepared["prompt"], "prompt": prompt,
+                "original_prompt": event.get_extra("_livinghello_image_original_prompt"),
+                "deferred_promise_id": event.get_extra("livingemotion:promise_id"),
+                "session": s.context.route, "delivery_contract": DELIVERY_CONTRACT}
 
     s.peer.generate_deferred_image = AsyncMock(side_effect=generate)
     s.reject = "content_rejected"
     s.app.send_promise_notice = AsyncMock(return_value="sent")
-    s.app.purpose_model = AsyncMock(return_value="blue blouse")
+    s.app.purpose_model = AsyncMock(return_value="这张暂时还没弄好。")
+    s.prompt_text = AsyncMock(return_value="blue blouse")
+    if (lh / "images/guard_promise_image.py").is_file():
+        from images.guard_promise_image import generate_promise_image
+
+        claims = set()
+
+        def claim(key):
+            if key in claims:
+                return False
+            claims.add(key)
+            return True
+
+        async def execute(event, prompt, *, authorize):
+            assert await authorize()
+            return await s.peer.generate_deferred_image(event, prompt)
+
+        settings = SimpleNamespace(
+            refresh=lambda: None, blocked=lambda _: False, values={**values, "enabled": True},
+            prompt_policy=s.peer.get_image_prompt_mapping_contract,
+            learned_pairs=lambda: guard.learned(guard.scope(values, connection)),
+            prompt_text=SimpleNamespace(complete=s.prompt_text),
+            prepare_prompt_repair=lambda prompt, proposal, scope: guard.prepare_repair(
+                values, connection, prompt, proposal),
+            claim_deferred_run=claim, deferred_run_claimed=lambda key: key in claims)
+        plugin = SimpleNamespace(
+            _image_generation=lambda: settings,
+            get_deferred_image_contract=s.peer.get_deferred_image_contract,
+            generate_deferred_image=execute)
+        s.peer.generate_promise_image = lambda *a, **kw: generate_promise_image(plugin, *a, **kw)
+        s.real_executor = True
+    else:
+        s.real_executor = False
     return s
+
+
+@pytest.fixture(autouse=True)
+def require_current_executor(request, mapping):
+    # CI still pins a released, older LH to exercise the existing facade; the
+    # real executor matrix requires a checkout containing this paired change.
+    if request.node.name != "test_facade_readiness_and_authorized_handoff_preserve_original":
+        assert mapping.real_executor, "需要包含 guard_promise_image.py 的 LH 配套源码"
 
 
 def proposal(source="blouse", target="shirt", **changes):
@@ -69,7 +114,7 @@ async def test_prompt_retry_budget_is_actual_configured_minimum(mapping, le_limi
     s.image_values["prompt_guard_retry_limit"] = lh_limit
     words = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta",
              "eta", "theta", "iota", "kappa", "lambda"]
-    s.app.purpose_model.side_effect = [words[0]] + [
+    s.prompt_text.side_effect = [words[0]] + [
         proposal(words[i], words[i+1]) for i in range(expected)]
     pid = await add(s)
     await s.service.run_due()
@@ -90,7 +135,7 @@ async def test_delay_retry_and_prompt_retry_share_le_budget(mapping):
     pid = await add(s)
     await s.service.store._run(lambda db: db.execute(
         "UPDATE promises SET retry_count=2 WHERE promise_id=?", (pid,)))
-    s.app.purpose_model.side_effect = ["alpha", proposal("alpha", "beta")]
+    s.prompt_text.side_effect = ["alpha", proposal("alpha", "beta")]
     await s.service.run_due()
     row = await s.service.promises.get(pid)
     assert row["retry_count"] == 2
@@ -107,7 +152,7 @@ async def test_explicit_rejection_retries_same_scene_then_learns(mapping):
         return await initial(event, prompt)
 
     s.peer.generate_deferred_image.side_effect = accept_repair
-    s.app.purpose_model.side_effect = ["blue blouse", proposal()]
+    s.prompt_text.side_effect = ["blue blouse", proposal()]
     pid = await add(s)
     assert await s.service.run_due() == 1
     row = await s.service.promises.get(pid)
@@ -118,12 +163,15 @@ async def test_explicit_rejection_retries_same_scene_then_learns(mapping):
     assert s.generated[0][0] != s.generated[1][0]
     assert s.peer.calls == 2 and len(s.sends) == 1
     assert s.guard.apply(s.image_values, s.connection, "red blouse")["prompt"] == "red shirt"
-    assert s.app.purpose_model.call_args.args[1] == "closing"
+    s.app.purpose_model.assert_not_awaited()
+    assert s.prompt_text.await_count == 2
+    assert s.prompt_text.await_args.kwargs["read_legacy"]() == {
+        "closing": "", "general": "", "fallback": "", "daily_limit": 48}
 
 
 async def test_retries_are_bounded_and_exhaustion_waits_for_user(mapping):
     s = mapping
-    s.app.purpose_model.side_effect = ["blue blouse", proposal(), proposal("blue", "azure")]
+    s.prompt_text.side_effect = ["blue blouse", proposal(), proposal("blue", "azure")]
     pid = await add(s)
     assert await s.service.run_due() == 0
     row = await s.service.promises.get(pid)
@@ -145,8 +193,8 @@ async def test_non_repairable_failures_do_not_request_rewrite(mapping, kind):
     pid = await add(s)
     await s.service.run_due()
     assert s.peer.calls == 1
-    assert not any("整理提示词" in call.args[2] for call in s.app.purpose_model.await_args_list)
-    assert s.app.purpose_model.await_count == (1 if "unknown" in kind else 2)
+    assert s.prompt_text.await_count == 1
+    assert s.app.purpose_model.await_count == (0 if "unknown" in kind else 1)
     row = await s.service.promises.get(pid)
     assert row["status"] == ("unknown" if "unknown" in kind else "waiting")
     s.clock[0] += 3600
@@ -165,7 +213,7 @@ async def test_disabled_noop_or_scene_change_waits_without_second_image(mapping,
               "invalid": "invalid",
               "pose": proposal(changes_scene=True, notice="建议改站姿，需要你确认。")}.get(cause, proposal())
     # 被拒的提议会在预算内重新提议；通知生成有自己的模型调用。
-    s.app.purpose_model.side_effect = ["blue blouse", answer, answer, "这张暂时还没弄好。"]
+    s.prompt_text.side_effect = ["blue blouse", answer, answer]
     pid = await add(s)
     await s.service.run_due()
     assert s.peer.calls == 1 and (await s.service.promises.get(pid))["status"] == "waiting"
@@ -180,12 +228,12 @@ async def test_cancel_during_rewrite_prevents_paid_retry(mapping):
 
     # running准备阶段通过事务直接模拟“整会话取消”，取消代次也会被实时检查。
     async def cancel_midway(*args, **kwargs):
-        if "整理提示词" in args[2]:
+        if "整理同一张图的提示词" in args[2]:
             await s.service.store._run(lambda db: db.execute(
                 "UPDATE promises SET status='cancelled' WHERE promise_id=?", (pid,)))
             return proposal()
         return "blue blouse"
-    s.app.purpose_model.side_effect = cancel_midway
+    s.prompt_text.side_effect = cancel_midway
     await s.service.run_due()
     assert s.peer.calls == 1 and (await s.service.promises.get(pid))["status"] == "cancelled"
 
@@ -197,7 +245,7 @@ async def test_handoff_schedules_only_authorized_content_retry(mapping):
     result = await s.service.promises.accept_image_handoff(
         s.context, request_id="handoff-image", source_event_id="source", failure=failure)
     assert result["task_status"] == "scheduled"
-    s.app.purpose_model.return_value = proposal()
+    s.prompt_text.return_value = proposal()
     s.reject = ""
     s.clock[0] += 301
     assert await s.service.run_due() == 1 and s.peer.calls == 1
@@ -214,7 +262,7 @@ async def test_restart_with_prepared_repair_reuses_it_without_model_call(mapping
         "prompt_retry_count": 1, "prompt_repair": recipe})
     s.service = PromiseService(s.service.store, s.app)
     s.reject = ""
-    s.app.purpose_model.side_effect = AssertionError("恢复准备结果不能重新调用模型")
+    s.prompt_text.side_effect = AssertionError("恢复准备结果不能重新调用模型")
     assert await s.service.run_due() == 1
     assert s.peer.calls == 1 and s.generated[0][2]["prompt"] == "blue shirt"
 
@@ -241,19 +289,11 @@ async def test_new_adjustment_round_can_return_to_old_prompt_without_reusing_quo
     s.app.config.promise_retry_limit = 1
     keys = []
 
-    async def budgeted(context, purpose, system, data, job_id, **_):
-        if "只输出这句话本身" in system:
-            return "这张暂时还没弄好。"
-        generation = await s.service.store.get_generation(context)
-        receipt = await s.service.store.reserve_quota(
-            job_id, context, generation, period="2026-11-23",
-            purpose=purpose, limit=200)
-        assert receipt["status"] == "reserved"
-        await s.service.store.finish_quota(job_id, status="succeeded", reason_code="completed")
-        keys.append(job_id)
-        return proposal() if "整理提示词" in system else "blue blouse"
+    async def budgeted(_event, key, system, data, **_):
+        keys.append(key)
+        return proposal() if "整理同一张图的提示词" in system else "blue blouse"
 
-    s.app.purpose_model.side_effect = budgeted
+    s.prompt_text.side_effect = budgeted
     pid = await add(s)
     await s.service.run_due()
     for index, prompt in enumerate(("red blouse", "blue blouse"), 1):
@@ -276,14 +316,35 @@ async def test_rate_limit_after_repair_preserves_recipe_and_does_not_rewrite_aga
         s.reject = next(kinds)
         return await generate(event, prompt)
     s.peer.generate_deferred_image.side_effect = successive
-    s.app.purpose_model.side_effect = ["blue blouse", proposal()]
+    s.prompt_text.side_effect = ["blue blouse", proposal()]
     pid = await add(s)
     assert await s.service.run_due() == 0
     assert (await s.service.promises.get(pid))["status"] == "scheduled"
     s.clock[0] += 301
     assert await s.service.run_due() == 1
-    assert s.app.purpose_model.await_count == 2 and s.peer.calls == 3
+    assert s.prompt_text.await_count == 2 and s.peer.calls == 3
     assert s.generated[-1][2]["prompt"] == "blue shirt"
+
+
+@pytest.mark.parametrize("phase,reason", [("draft", "prompt_text_quota_exhausted"),
+                                          ("repair", "prompt_text_result_unknown")])
+async def test_prompt_text_stop_keeps_promise_and_sends_notice_without_le_model(mapping, phase, reason):
+    from images.guard_image_text import PromptTextUnavailable
+
+    s = mapping
+    s.prompt_text.side_effect = ((["blue blouse"] if phase == "repair" else [])
+                                 + [PromptTextUnavailable(reason)])
+    pid = await add(s)
+    await s.service.run_due()
+    row = await s.service.promises.get(pid)
+    saved = json.loads(row["action_result_json"])
+    assert (row["status"], row["action_state"]) == ("waiting", "held")
+    assert saved["reason_code"] == reason
+    assert s.peer.calls == (1 if phase == "repair" else 0)
+    s.app.purpose_model.assert_not_awaited()
+    assert "补一句" in s.app.send_promise_notice.await_args.args[1]
+    assert (await s.service.promises.resume_image_handoff(
+        s.context, pid, prompt="花园里的橙色猫", source_event_id="new-user"))["status"] == "resumed"
 
 
 async def test_facade_readiness_and_authorized_handoff_preserve_original(mapping, tmp_path):

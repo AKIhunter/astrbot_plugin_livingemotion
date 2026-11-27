@@ -34,7 +34,7 @@ jobs:
           # 保留父提交，让 git show --check 只核验当前差异。
           fetch-depth: 2
           persist-credentials: false
-      - name: Pin LivingHello for explicit image prompt matrix
+      - name: Pin released LivingHello for legacy image facade parity
         uses: actions/checkout@v4
         with:
           repository: AKIhunter/astrbot_plugin_livinghello
@@ -133,7 +133,7 @@ jobs:
           printf '%s\n' \
             'Default pytest includes portable budgets, verification and all 18 F6 regressions.' \
             'Excluded explicit tiers: tests/host, tests/console/test_console.py, tests/budgets/test_model_payload.py, tests/integration/test_image_prompt_mapping.py.' \
-            'The image prompt matrix runs separately with a pinned LivingHello checkout.' \
+            'The legacy facade is checked with a pinned LivingHello; the full paired matrix uses a matching checkout.' \
             'Run their explicit pinned-host commands in docs/delivery-notes.md; this job does not certify them.'
       - name: Reject raw tracked evidence and personal workspace paths
         run: |
@@ -176,15 +176,39 @@ jobs:
           PY
       - name: Portable Python regression tests
         run: python -m pytest -q
-      - name: Explicit paired image prompt matrix
+      - name: Explicit paired legacy image prompt facade
         env:
           LIVINGHELLO_SOURCE: ${{ github.workspace }}/.image-prompt-peer
-        run: python -m pytest -q -o addopts="-ra --strict-markers" tests/integration/test_image_prompt_mapping.py
-      - name: Explicit paired original image facade matrix
+        run: python -m pytest -q -o addopts="-ra --strict-markers" tests/integration/test_image_prompt_mapping.py -k facade_readiness
+      - name: Explicit paired legacy immediate image handoff
         env:
           ASTRBOT_NATIVE_SOURCE: ${{ github.workspace }}/.image-contract-host/astrbot
           PYTHONPATH: ${{ github.workspace }}
-        run: python -B ../.image-prompt-peer/scripts/run_image_handoff_tests.py
+        run: |
+          python -B - <<'PY'
+          from pathlib import Path
+          import sys
+          import unittest
+
+          peer = Path("../.image-prompt-peer").resolve()
+          sys.path[:0] = [str(peer), str(peer / "tests")]
+          from scripts.run_offline_tests import install_framework_stubs
+          install_framework_stubs()
+          from image_result_handoff import ImageResultHandoffTests
+
+          # Older LH's deferred execution fixtures expect LE to still write prompts.
+          cases = (
+              "test_success_completes_original_and_next_turn_knows",
+              "test_send_rejection_keeps_original_without_duplicate",
+              "test_second_picture_does_not_complete_second_original",
+              "test_unbound_success_keeps_old_task",
+              "test_unknown_result_cannot_be_reclaimed",
+              "test_content_failure_with_mapping_off_records_question_on_original",
+              "test_lost_binding_receipt_never_charges",
+          )
+          suite = unittest.TestSuite(ImageResultHandoffTests(case) for case in cases)
+          sys.exit(not unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful())
+          PY
       - name: Committed whitespace check
         run: git show --format= --check HEAD
 

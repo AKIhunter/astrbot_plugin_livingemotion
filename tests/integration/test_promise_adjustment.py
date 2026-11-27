@@ -100,7 +100,7 @@ async def test_due_rejection_asks_and_keeps_original_resume_entry(scenario):
     notice = isolate_notice(s)
     s.app.purpose_model = AsyncMock(return_value="窗边的猫")
     s.peer.generate_deferred_image = AsyncMock(return_value={
-        "status": "unknown", "failure": failure()})
+        "status": "failed", "failure": failure()})
     assert await s.service.run_due() == 0
     row = await s.service.promises.get(pid)
     assert (row["status"], row["action_state"], row["handoff_key"]) == (
@@ -310,7 +310,7 @@ async def test_adjusted_request_can_ask_again_after_new_rejection(scenario):
     await s.service.run_due()
     await s.service.promises.resume_image_handoff(
         s.context, pid, prompt="花园里的猫", source_event_id="new-source")
-    s.peer.generate_deferred_image = AsyncMock(return_value={"status": "unknown", "failure": {
+    s.peer.generate_deferred_image = AsyncMock(return_value={"status": "failed", "failure": {
         **failure(request_id="request-two"), "prompt": "花园里的猫"}})
     s.clock[0] += 21
     await s.service.run_due()
@@ -344,7 +344,7 @@ async def test_user_can_cancel_picture_after_adjustment_fails(scenario):
     pid = await handoff(s)
     await s.service.promises.resume_image_handoff(
         s.context, pid, prompt="花园里的猫", source_event_id="new-source")
-    s.peer.generate_deferred_image = AsyncMock(return_value={"status": "unknown", "failure": {
+    s.peer.generate_deferred_image = AsyncMock(return_value={"status": "failed", "failure": {
         **failure(request_id="request-two"), "prompt": "花园里的猫"}})
     s.clock[0] += 21
     await s.service.run_due()
@@ -364,15 +364,15 @@ async def test_photo_selfie_and_drawing_share_adjustment_choice(scenario, descri
     pid = await add(s, description)
     notice = isolate_notice(s)
     s.app.purpose_model = AsyncMock(side_effect=[
-        "窗边的自拍", "这张暂时还没弄好，晚点再给你。",
+        "这张暂时还没弄好，晚点再给你。",
         "这张暂时还没弄好，晚点再给你。"])
     s.peer.generate_deferred_image = AsyncMock(return_value={
-        "status": "unknown", "failure": {**failure(), "prompt": "窗边的自拍"}})
+        "status": "failed", "failure": {**failure(), "prompt": "窗边的自拍"}})
     await s.service.run_due()
     await s.service.promises.resume_image_handoff(
         s.context, pid, prompt="花园里的自拍", source_event_id="new-source")
     s.peer.generate_deferred_image.return_value = {
-        "status": "unknown", "failure": {**failure(request_id="request-two"), "prompt": "花园里的自拍"}}
+        "status": "failed", "failure": {**failure(request_id="request-two"), "prompt": "花园里的自拍"}}
     s.clock[0] += 21
     await s.service.run_due()
     assert notice.await_count == 2

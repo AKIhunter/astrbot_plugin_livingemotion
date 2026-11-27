@@ -368,6 +368,7 @@ class PromiseStore:
                                original_prompt=prompt, attempted_prompt=prompt, prompt_retry_count=0)
                 failure.pop("prompt_repair", None)
                 failure.pop("notice", None)
+                failure.pop("rejected_prompts", None)
                 description = "生图：" + prompt[:490]
                 db.execute(
                     """UPDATE promises SET status='scheduled',action_state='retry_ready',
@@ -759,6 +760,49 @@ class PromiseStore:
             return changed.rowcount == 1
 
         return await self.store._run(write)
+
+    async def finish_image_delivery(self, context, row, text, *, ttl_seconds, recovery=False):
+        """Commit the promise and its trace together against the exact observed action."""
+        await self.ensure()
+        now = self.store.clock()
+        text = str(text)[:4000]
+        pid = row["promise_id"]
+        if row.get("status") not in (("running", "unknown") if recovery else ("running",)):
+            return False
+        if row.get("action_state") not in (("sending", "unknown") if recovery else ("sending", "sent")):
+            return False
+
+        def write(db):
+            def mutate():
+                changed = db.execute(
+                    """UPDATE promises SET status='sent',action_state='sent',delivered_text=?,
+                       sent_at=?,updated_at=?,waiting_since=0,last_error=''
+                       WHERE promise_id=? AND scope_key=? AND generation=? AND status=?
+                         AND action_state=? AND action_result_json=?
+                         AND handoff_account_key IN ('',?)""",
+                    (text, now, now, pid, context.scope_key, self.store._generation(db, context),
+                     row["status"], row["action_state"], row["action_result_json"],
+                     context.account_key))
+                if not changed.rowcount:
+                    return False
+                db.execute(
+                    """INSERT INTO promise_traces(trace_id,scope_key,promise_id,kind,summary,
+                       materials_json,reply_text,created_at,expires_at)
+                       VALUES(?,?,?,'delivery',?,'[]',?,?,?)
+                       ON CONFLICT(trace_id) DO NOTHING""",
+                    (f"{pid}:delivery", context.scope_key, pid,
+                     str(row.get("context_summary") or "")[:1200], text, now,
+                     now + max(60.0, float(ttl_seconds))))
+                return True
+
+            return self.store._transaction(db, mutate)
+
+        result = await self.store._run(write)
+        if result:
+            self.store.record_diagnostic("promise_transition", {
+                "at": now, "promise_id": pid, "status": "ok", "from": row["status"], "to": "sent",
+            })
+        return result
 
     async def get(self, promise_id: str) -> dict | None:
         await self.ensure()

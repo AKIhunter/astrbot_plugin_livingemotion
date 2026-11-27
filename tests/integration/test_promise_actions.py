@@ -10,7 +10,7 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 from astrbot_plugin_livingemotion.runtime.promise_actions import ImagePromiseAction, needs_image
-from astrbot_plugin_livingemotion.runtime.promise_actions import DELIVERY_CONTRACT
+from astrbot_plugin_livingemotion.runtime.promise_actions import DELIVERY_CONTRACT, PROMISE_IMAGE_CONTRACT
 from astrbot_plugin_livingemotion.livinghello_coupling import NAMES, discover
 from astrbot_plugin_livingemotion.runtime.promise_ownership import same_action
 from astrbot_plugin_livingemotion.runtime.promise_service import PromiseService
@@ -68,9 +68,34 @@ async def scenario(le_store, le_context, tmp_path, monkeypatch):
         calls = 0
         result = "generated"
         hold = None
+        draft = "窗边的橙色猫自拍"
 
         def get_deferred_image_contract(self):
-            return {"contract": "livinghello.deferred-image.v1", "available": self.available}
+            return {"contract": "livinghello.deferred-image.v1", "available": self.available,
+                    "promise_contract": PROMISE_IMAGE_CONTRACT}
+
+        async def generate_promise_image(self, event, intent, *, resume, authorize,
+                                         checkpoint, read_legacy):
+            """Stand-in for the peer contract. Prompt policy is tested with real LH separately."""
+            pid = intent["promise_id"]
+            result = {"contract": PROMISE_IMAGE_CONTRACT, "promise_id": pid}
+            if not await authorize():
+                return {**result, "status": "rejected"}
+            prompt = resume.get("prompt") or self.draft
+            if not await checkpoint("generating", resume):
+                return {**result, "status": "rejected"}
+            outcome = await self.generate_deferred_image(event, prompt)
+            if not isinstance(outcome, dict):
+                return {**result, "status": "unknown", "reason": "invalid_peer_receipt"}
+            status = outcome["status"]
+            if status == "generated":
+                return {**result, "status": status, "artifact": {
+                    **outcome, "deferred_promise_id": pid, "session": le_context.route,
+                    "delivery_contract": DELIVERY_CONTRACT}}
+            if status == "failed":
+                return {**result, "status": "waiting", "failure": {
+                    "adjustment_round": resume.get("adjustment_round", 0), **outcome["failure"]}}
+            return {**result, **outcome}
 
         async def generate_deferred_image(self, event, prompt):
             self.calls += 1
@@ -83,6 +108,11 @@ async def scenario(le_store, le_context, tmp_path, monkeypatch):
 
         def complete_deferred_image(self, request_id, status):
             marks.append((request_id, status))
+
+        async def deliver_deferred_image(self, event, artifact, *, authorize):
+            accepted = await authorize() and await host_send(le_context.route, ("image", artifact["path"]))
+            return {"contract": DELIVERY_CONTRACT, "request_id": artifact["request_id"],
+                    "status": "sent" if accepted else "rejected", "retryable": not accepted}
 
     peer = Peer()
 
@@ -120,7 +150,14 @@ async def scenario(le_store, le_context, tmp_path, monkeypatch):
         promise_actions_active=lambda: False, compose_promise=compose, send_promise_notice=text_send,
     )
     service = PromiseService(le_store, app)
-    monkeypatch.setattr(ImagePromiseAction, "make_event", lambda *args: Event("promise-fixed"))
+    def event(_, context, row):
+        value = Event(f"promise:{row['promise_id']}:{row['retry_count']}")
+        value.unified_msg_origin = context.route
+        value.get_sender_id = lambda: context.account_id
+        value.set_extra("livingemotion:promise_id", row["promise_id"])
+        return value
+
+    monkeypatch.setattr(ImagePromiseAction, "make_event", event)
     monkeypatch.setattr(ImagePromiseAction, "image_chain", staticmethod(lambda path: ("image", path)))
     return SimpleNamespace(service=service, app=app, peer=peer, mgr=mgr, clock=clock,
                            context=le_context, sends=sends, marks=marks, file=file)
@@ -362,6 +399,45 @@ async def test_missing_new_delivery_api_waits_without_legacy_fallback(scenario):
     s.peer.deliver_deferred_image = deliver
     s.clock[0] += 300
     assert await s.service.run_due() == 1 and s.peer.calls == 1
+
+
+async def test_old_peer_waits_without_spending_or_using_legacy_generation(scenario):
+    s = scenario
+    s.peer.get_deferred_image_contract = lambda: {
+        "contract": "livinghello.deferred-image.v1", "available": True}
+    pid = await add(s)
+    assert await s.service.run_due() == 0
+    row = await s.service.promises.get(pid)
+    assert (row["status"], row["retry_count"], row["last_error"]) == (
+        "scheduled", 0, "image_executor_version")
+    assert s.peer.calls == 0 and s.sends == []
+
+
+@pytest.mark.parametrize("proof", ["sent", "wrong_id", "wrong_promise", "missing"])
+async def test_restart_reconciles_exact_receipt_without_sending_again(scenario, proof):
+    s = scenario
+    pid = await add(s)
+    rid = "image-one"
+    await s.service.promises.move(pid, status="running", expect=("scheduled",))
+    await s.service.promises.checkpoint_action(pid, "sending", {
+        "stage": "delivery", "request_id": rid, "deferred_promise_id": pid,
+        "session": s.context.route, "path": str(s.file), "detail": "雨天街景",
+        "delivery_contract": DELIVERY_CONTRACT})
+    s.peer.get_promise_image_receipt = lambda *_: None if proof == "missing" else {
+        "status": "sent", "contract": DELIVERY_CONTRACT,
+        "request_id": "other" if proof == "wrong_id" else rid,
+        "promise_id": "other" if proof == "wrong_promise" else pid}
+    s.file.unlink()  # Reconciliation proves a past send even if the temporary image expired.
+    s.service = PromiseService(s.service.store, s.app)
+    await s.service.run_due()
+    first = await s.service.promises.get(pid)
+    s.clock[0] += 60
+    await s.service.run_due()
+    assert await s.service.promises.get(pid) == first
+    assert first["status"] == ("sent" if proof == "sent" else "unknown")
+    trace = await s.service.promises.latest_trace(s.context.scope_key, s.clock[0])
+    assert (trace and trace["reply_text"]) == ("雨天街景" if proof == "sent" else None)
+    assert s.sends == [] and s.peer.calls == 0
 
 
 @pytest.mark.parametrize("name", NAMES)

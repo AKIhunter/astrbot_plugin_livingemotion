@@ -1,4 +1,4 @@
-"""延迟图片的显式动作契约；只有生成与发送均完成才兑现。"""
+"""Delegate image promises to LH; scheduling and completion remain in LE."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from pathlib import Path
 
 from astrbot.api import logger
 
-from ..contracts import prompt_json, stable_key
 from ..livinghello_coupling import discover
 
 IMAGE = re.compile(
@@ -16,6 +15,7 @@ IMAGE = re.compile(
     r"画[一个张幅]|拍[一个张]|生成.{0,8}图")
 DEADLINE_SECONDS = 600.0
 DELIVERY_CONTRACT = "livinghello.deferred-image-delivery.v1"
+PROMISE_IMAGE_CONTRACT = "livinghello.promise-image.v2"
 
 
 def needs_image(description: str) -> bool:
@@ -48,32 +48,33 @@ class ImagePromiseAction:
 
         if not await allowed():
             return {"status": "rejected"}
-        if row.get("action_state") == "sent":
-            try:
-                delivered = json.loads(row.get("action_result_json") or "{}")
-            except (ValueError, TypeError):
-                delivered = {}
-            return {"status": "sent", "text": str(delivered.get("detail") or "图片已发送")}
-        peer = self.peer()
-        if peer is None:
-            return {"status": "unavailable"}
         state = str(row.get("action_state") or "")
         try:
             artifact = json.loads(row.get("action_result_json") or "{}")
         except (TypeError, ValueError):
             return {"status": "unknown"}
+        if not isinstance(artifact, dict):
+            return {"status": "unknown"}
+        if state == "sent":
+            return {"status": "sent", "text": str(artifact.get("detail") or "图片已发送")}
         if state in ("generating", "sending", "unknown"):
             return {"status": "unknown"}
+        peer = self.peer()
+        if peer is None:
+            return {"status": "unavailable"}
         if state != "generated":
             contract = peer.get_deferred_image_contract()
             if (contract.get("contract") != "livinghello.deferred-image.v1"
                     or contract.get("available") is not True):
                 return {"status": "unavailable"}
+            if (contract.get("promise_contract") != PROMISE_IMAGE_CONTRACT
+                    or not callable(getattr(peer, "generate_promise_image", None))):
+                return {"status": "unavailable", "reason": "image_executor_version"}
             artifact = await self.generate(context, row, peer, artifact, state, allowed)
             if artifact.get("status") != "generated":
                 return artifact
             artifact["detail"] = str(artifact.get("revised") or artifact.get("effective_prompt")
-                                     or artifact.get("prompt"))[:4000]
+                                     or artifact.get("prompt") or "图片已发送")[:4000]
             if not await store.checkpoint_action(pid, "generated", artifact):
                 return {"status": "unknown"}
         path = str(artifact.get("path") or "")
@@ -103,15 +104,17 @@ class ImagePromiseAction:
                 await store.checkpoint_action(pid, "unknown", artifact)
                 return {"status": "unknown"}
             if outcome.get("status") == "sent":
-                await store.checkpoint_action(pid, "sent", artifact)
+                # PromiseService closes the action and writes its trace in one transaction.
                 return {"status": "sent", "text": str(artifact.get("detail") or "图片已发送")}
             if outcome.get("status") == "rejected" and outcome.get("retryable") is True:
                 await store.checkpoint_action(pid, "generated", artifact)
                 return {"status": "rejected"}
             await store.checkpoint_action(pid, "unknown", artifact)
             return {"status": "unknown"}
+        if artifact.get("deferred_promise_id"):
+            return {"status": "unknown"}
         peer = current
-        # 兼容旧 LH 与升级前已生成的资源；旧接口仍由调用方发送、报告额度结果。
+        # 只为升级前已经生成的旧资源保留旧投递，不用旧版入口生成新图。
         chain = self.image_chain(path)
         artifact["stage"] = "delivery"
         if not await store.checkpoint_action(pid, "sending", artifact):
@@ -123,7 +126,6 @@ class ImagePromiseAction:
             peer.complete_deferred_image(artifact.get("request_id"), "unknown")
             return {"status": "unknown"}
         if accepted is not True:
-            # 宿主 False 明确表示未找到适配器，可重试发已有图。
             await store.checkpoint_action(pid, "generated", artifact)
             return {"status": "rejected"}
         await store.checkpoint_action(pid, "sent", artifact)
@@ -132,10 +134,11 @@ class ImagePromiseAction:
         except Exception:
             # 发送完成已写盘；对端额度标记失败不能再发一遍图片。
             pass
-        return {"status": "sent", "text": artifact["detail"]}
+        return {"status": "sent", "text": str(artifact.get("detail") or "图片已发送")}
 
     @staticmethod
     def mapping_policy(peer):
+        """Read advertised readiness for the pre-existing immediate failure handoff."""
         method = getattr(peer, "get_image_prompt_mapping_contract", None)
         policy = method() if callable(method) else {}
         if not isinstance(policy, dict) or policy.get("contract") != "livinghello.image-prompt-mapping.v1":
@@ -143,194 +146,90 @@ class ImagePromiseAction:
         return policy
 
     async def generate(self, context, row, peer, prior, state, allowed):
-        """只有明确失败能进入局部改词；每个尝试在收费前持久化并有独立 ID。"""
+        """Pass intent and checkpoint opaque executor state; LH owns the image prompts."""
         pid, store = row["promise_id"], self.service.promises
-        policy = self.mapping_policy(peer)
-        prompt = ((prior.get("prompt") if prior.get("prompt_repair") else
-                   prior.get("attempted_prompt") or prior.get("prompt"))
-                  if state == "retry_ready" else None)
-        if prompt is None:
-            source = await self.app.bridge.current(context)
-            persona = getattr(getattr(source, "persona", None), "prompt", "")
-            soft = policy.get("limits", {}).get("desc_soft", 400)
-            prompt = await self.app.purpose_model(
-                context, "closing",
-                f"把已约定的图片需求写成具体画面描述，尽量不超过{soft}字。"
-                "保留人物、场景、风格和必要动作，用简洁表情词，避免重复堆叠细节。"
-                "只输出生图描述，不声称图片已经完成。不使用参考图片。",
-                prompt_json({"persona": await self.app.persona_style(context.persona_id, persona),
-                             "promised": row.get("description"), "detail": row.get("note"),
-                             "context": row.get("context_summary")}),
-                self.model_job_key("promise-image-prompt", row, prior),
-                max_output_tokens=500, delivery=True)
-        prompt = str(prompt or "").strip()
-        if not prompt:
-            return {"status": "unavailable"}
-        original = str(prior.get("original_prompt") or prompt)
-        artifact = dict(prior)
-        while True:
-            policy = self.mapping_policy(peer)
-            # 两端预算都有效；改词与确定失败延迟重试共用LE预算，不截断持久计数。
-            limit = (max(0, min(10, int(policy.get("retry_limit", 0)),
-                                self.service.retry_limit - int(row.get("retry_count") or 0)))
-                     if policy.get("enabled") else 0)
-            count = max(0, int(artifact.get("prompt_retry_count") or 0))
-            if artifact.get("prompt_repair") and count > limit:
-                artifact.update(kind="prompt_adjustment_required",
-                                notice="自动调整次数已经用完，我先保留当前需求。")
-                return await self.hold(context, pid, artifact, prompt, original)
-            kind = artifact.get("kind")
-            if kind in {"content_rejected", "prompt_too_long", "prompt_adjustment_required"}:
-                method = getattr(peer, "prepare_image_prompt_repair", None)
-                if count >= limit or artifact.get("use_reference") or not callable(method):
-                    return await self.hold(context, pid, artifact, prompt, original)
-                if not await allowed():
-                    return {"status": "rejected"}
-                learned_pairs = []
-                learn_method = getattr(peer, "get_image_prompt_learned", None)
-                if callable(learn_method):
-                    try:
-                        learned_pairs = learn_method() or []
-                    except Exception:
-                        learned_pairs = []
-                answer = await self.app.purpose_model(
-                    context, "closing",
-                    "为同一张图片整理提示词，目标是「让同一张图能生成出来」，不是「换成另一张图」。"
-                    "两条已被大量实测钉死的硬事实："
-                    "① 描述密度是第一杀手——同一套衣服 40~60 字能过，堆到 200 字修饰必拒；"
-                    "② 材质词有有效期——薄纱、欧根纱都出现过整体失效（同一句 40 分钟内从 200 变 451，"
-                    "而同期风景与棉质对照全部正常，不是账号问题）。当前优先「欧根纱」，"
-                    "失效时退「雪纺」。两者都活时优先欧根纱，质地更接近薄透感。"
-                    "凡是「要透/要薄/要性感」的诉求就写这个优先材质，不要自创别的材质词。"
-                    "推荐句式（40~60 字，实测 200）："
-                    "「写实生活照，{身份}，{发色}，{瞳色}。她穿{颜色}{优先材质}长袖睡裙，{姿势}。」"
-                    "逐字实测 200 的两个例子："
-                    "「写实生活照，成年白龙娘恰比，银白色长发，淡紫色眼睛。她穿浅紫色欧根纱长袖睡裙，靠在沙发上。」"
-                    "「写实生活照，成年白龙娘恰比，银白色长发，淡紫色眼睛。她穿浅紫色欧根纱长袖睡裙，"
-                    "侧躺在床上，一条腿自然屈起，手臂自然放在身侧，靠近镜头。」（66 字，全要素可过）"
-                    "姿势与款式的组合约束（单项都安全，叠加才拒，务必成对判断）："
-                    "侧躺——只有长袖睡裙能配；吊带睡裙配侧躺必拒，把「吊带睡裙」改成「长袖睡裙」；"
-                    "靠沙发——吊带、长袖都可以，这是吊带款唯一安全的位置；"
-                    "站——只有长袖能配，吊带站着必拒；"
-                    "仰躺、平躺——一律必拒，改成「侧躺」；"
-                    "坐着、坐床沿、靠着床头半坐——一律必拒，改成「侧躺」。"
-                    "动作词的硬边界（单独出现就拒，与字数完全无关）："
-                    "不能写「双腿自然放松」「双腿自然伸开」「双腿分开」「双腿叉开」「双臂张开」「四肢张开」；"
-                    "安全等义表述（实测 200）：「一条腿自然屈起」「手臂自然放在身侧」。"
-                    "镜头语言完全安全，可自由叠加：俯拍视角、靠近镜头、望着镜头、手臂自然放在身侧。"
-                    "其它必须替换的：「半透明」→「雪纺」；「上衣」→「衬衫」；"
-                    "「内衣」「吊带背心」→「长袖衬衫，扣子扣好」；「短款吊带」→「长袖连衣裙」；"
-                    "「巴里纱」任何款式都拒，必须换掉。"
-                    "极简重写必须逐字保留原文出现过的：站、坐、躺、跪、腰、肩、锁骨、肚脐、裸、脱衣、年龄词。"
-                    "可以砍掉它们周围的修饰，但词本身不能消失，否则签名校验会判定为改了画面；原文没有的词也不要加。"
-                    "禁止改变人物身份、年龄、体型。"
-                    "若必须改动上述受保护词，changes_scene=true，等待用户确认。"
-                    "只输出JSON：{\"changes_scene\":false,\"substitutions\":[{\"from\":\"原词\",\"to\":\"等义词\"}]}。"
-                    "描述过长时用shortened_prompt代替substitutions，按上面的句式重写。"
-                    "不能保证通过生图服务；没有合适等义调整就给空列表。",
-                    prompt_json({"prompt": prompt, "reason": kind,
-                                 "image_model": policy.get("scope", {}).get("model"),
-                                 "limits": policy.get("limits"),
-                                 "tested_pairs": learned_pairs,
-                                 "retry_note": (
-                                     "上一轮提议因可能改变姿势、表情、年龄或衣着覆盖度被拒。"
-                                     "请换一处词，或改用不含上述敏感概念的等义写法。"
-                                     if count else "")}),
-                    self.model_job_key("promise-image-repair", row, artifact, count, prompt),
-                    max_output_tokens=500, delivery=True)
-                try:
-                    proposal = json.loads(re.sub(r"^```(?:json)?\s*|\s*```$", "", str(answer).strip()))
-                    repair = method(prompt, proposal, expected_scope=policy.get("scope"))
-                except (ValueError, TypeError):
-                    repair = {"status": "invalid"}
-                if not await allowed():
-                    return {"status": "rejected"}
-                if not isinstance(repair, dict) or repair.get("status") != "ready":
-                    # 改词提议被拒是「这一轮不行」，不是「需要用户决策」：
-                    # 计数器 +1 后重提（最多 limit 轮），只有预算耗尽才 hold 交出。
-                    # 2026-11-22 实测 19983c5d：只提一次就 hold 挂死 30 分钟。
-                    if isinstance(repair, dict) and repair.get("notice"):
-                        artifact.update(kind="prompt_adjustment_required", notice=repair["notice"])
-                    artifact["prompt_retry_count"] = count + 1
-                    artifact["prompt"] = prompt
-                    if not await store.checkpoint_action(pid, "retry_ready", artifact):
-                        return {"status": "rejected"}
-                    continue
-                artifact.update(prompt_repair=repair, kind="adjusted_prompt",
-                                prompt=prompt, original_prompt=original, prompt_retry_count=count + 1)
-                count += 1
-                # 改词是可恢复的准备动作；崩溃后复用该候选，不能重新消耗次数。
-                if not await store.checkpoint_action(pid, "retry_ready", artifact):
-                    return {"status": "rejected"}
-            if not await allowed():
-                return {"status": "rejected"}
-            event = self.make_event(context, row)
-            # 用户明确调整是新一轮；同一轮重放仍保持固定收费 ID。
-            event.message_obj.message_id += (
-                ":round:" + str(int(artifact.get("adjustment_round") or 0))
-                + ":prompt:" + str(count))
-            event.set_extra("_livinghello_image_original_prompt", original)
-            event.set_extra("_livinghello_prompt_retry_count", count)
-            event.set_extra("_livinghello_image_prompt_repair", artifact.get("prompt_repair"))
-            if not await store.checkpoint_action(pid, "generating", artifact):
-                return {"status": "rejected"}
-            outcome = await peer.generate_deferred_image(event, prompt)
-            if not isinstance(outcome, dict):
-                artifact.update(kind="result_unknown", reason_code="invalid_peer_receipt")
-                await store.checkpoint_action(pid, "unknown", artifact)
-                logger.warning("[LE-promise] 图片回执 %s reason=invalid_peer_receipt", pid[:8])
-                return {"status": "unknown"}
-            failure = outcome.get("failure")
-            if isinstance(failure, dict):
-                failure = {**failure, "prompt": failure.get("prompt") or prompt,
-                           "original_prompt": original, "use_reference": False,
-                           "prompt_retry_count": count,
-                           "adjustment_round": int(prior.get("adjustment_round") or 0)}
-                kind = failure.get("kind")
-                logger.warning("[LE-promise] 图片失败 %s request=%s kind=%s reason=%s type=%s",
-                               pid[:8], str(failure.get("request_id") or "-")[:16], kind,
-                               failure.get("reason_code") or kind,
-                               failure.get("exception_type") or "-")
-                if kind in {"content_rejected", "prompt_too_long", "prompt_adjustment_required"}:
-                    prompt = str(failure.get("attempted_prompt") or failure["prompt"])
-                    artifact = failure
-                    if not await store.checkpoint_action(pid, "retry_ready", artifact):
-                        return {"status": "unknown"}
-                    continue
-                # 超时或投递未知即使带 failure 字段也不能进入重试队列。
-                if kind in {"result_unknown", "delivery_unknown"}:
-                    await store.checkpoint_action(pid, "unknown", failure)
-                    return {"status": "unknown"}
-                if kind == "rate_limited":
-                    failure.update(prompt_repair=artifact.get("prompt_repair"),
-                                   prompt=prompt)
-                    await store.checkpoint_action(pid, "retry_ready", failure)
-                    return {"status": "rejected", "reason": kind}
-                await store.checkpoint_action(pid, "held", failure)
-                return {"status": "waiting", "reason": kind}
-            if outcome.get("status") == "unavailable":
-                await store.checkpoint_action(pid, "retry_ready", artifact)
-                return outcome
-            if outcome.get("status") != "generated":
-                artifact.update(reason_code=str(outcome.get("reason") or "peer_result_unknown"))
-                await store.checkpoint_action(pid, "unknown", artifact)
-                return {"status": "unknown"}
-            return {**outcome, "prompt": prompt, "original_prompt": original,
-                    "prompt_retry_count": count}
+        attempt = int(row.get("retry_count") or 0)
+        resume = prior if state == "retry_ready" else {}
+        source = await self.app.bridge.current(context)
+        persona = getattr(getattr(source, "persona", None), "prompt", "")
+        intent = {
+            "promise_id": pid, "attempt": attempt,
+            "retry_budget": max(0, self.service.retry_limit - attempt),
+            "description": str(row.get("description") or "")[:500],
+            "detail": str(row.get("note") or "")[:4000],
+            "context": str(row.get("context_summary") or "")[:1200],
+            "persona": str(await self.app.persona_style(context.persona_id, persona) or "")[:4000],
+        }
 
-    @staticmethod
-    def model_job_key(purpose, row, artifact, *parts):
-        """新调整轮次可用新预算；不复用或删除已结算的额度记录（issue #9）。"""
-        return stable_key(purpose, row["promise_id"],
-                          int(artifact.get("adjustment_round") or 0),
-                          int(row.get("retry_count") or 0), *parts)
+        async def checkpoint(phase, progress):
+            return (phase in {"retry_ready", "generating"} and isinstance(progress, dict)
+                    and await store.checkpoint_action(pid, phase, progress))
 
-    async def hold(self, context, pid, failure, prompt, original):
-        failure = {**failure, "prompt": prompt, "original_prompt": original,
-                   "use_reference": False}
-        if not await self.service.promises.hold_image_request(context, pid, failure):
+        def read_legacy():
+            # One-time migration of selection only. LE never runs an image prompt model.
+            config = self.app.config
+            return dict(closing=getattr(config, "closing_provider_id", ""),
+                        general=getattr(config, "provider_id", ""),
+                        fallback=getattr(config, "fallback_provider_id", ""),
+                        daily_limit=getattr(config, "model_daily_limit", 48))
+
+        outcome = await peer.generate_promise_image(
+            self.make_event(context, row), intent, resume=resume, authorize=allowed,
+            checkpoint=checkpoint, read_legacy=read_legacy)
+        if (not isinstance(outcome, dict) or outcome.get("contract") != PROMISE_IMAGE_CONTRACT
+                or outcome.get("promise_id") != pid):
+            await store.checkpoint_action(pid, "unknown", {"reason_code": "invalid_peer_receipt"})
+            logger.warning("[LE-promise] 图片回执 %s reason=invalid_peer_receipt", pid[:8])
             return {"status": "unknown"}
-        return {"status": "waiting", "reason": failure.get("kind", "content_rejected")}
+        status = outcome.get("status")
+        if status == "generated":
+            artifact = outcome.get("artifact")
+            if (isinstance(artifact, dict) and artifact.get("status") == "generated"
+                    and artifact.get("delivery_contract") == DELIVERY_CONTRACT
+                    and artifact.get("deferred_promise_id") == pid
+                    and artifact.get("session") == context.route):
+                return artifact
+            await store.checkpoint_action(pid, "unknown", {"reason_code": "invalid_image_artifact"})
+            return {"status": "unknown"}
+        failure = outcome.get("failure")
+        if isinstance(failure, dict):
+            kind = str(failure.get("kind") or "provider_error")
+            logger.warning("[LE-promise] 图片失败 %s request=%s kind=%s reason=%s type=%s",
+                           pid[:8], str(failure.get("request_id") or "-")[:16], kind,
+                           failure.get("reason_code") or kind,
+                           failure.get("exception_type") or "-")
+            if status == "unknown":
+                await store.checkpoint_action(pid, "unknown", failure)
+                return {"status": "unknown"}
+            if status == "waiting":
+                if kind in {"content_rejected", "prompt_too_long", "prompt_adjustment_required"}:
+                    saved = await store.hold_image_request(context, pid, failure)
+                else:
+                    saved = await store.checkpoint_action(pid, "held", failure)
+                return {"status": "waiting", "reason": kind} if saved else {"status": "unknown"}
+        if status == "unknown" and isinstance(outcome.get("reason"), str):
+            await store.checkpoint_action(pid, "unknown", {"reason_code": outcome["reason"][:120]})
+        if status in {"rejected", "unavailable"}:
+            return {"status": status, "reason": outcome.get("reason")}
+        return {"status": "unknown"}
+
+    async def recover_sent(self, context, row, artifact):
+        """Only a scoped, confirmed LH receipt can close an interrupted delivery."""
+        if (artifact.get("deferred_promise_id") != row["promise_id"]
+                or artifact.get("stage") != "delivery" or not artifact.get("request_id")):
+            return False
+        lookup = getattr(self.peer(), "get_promise_image_receipt", None)
+        if not callable(lookup):
+            return False
+        receipt = lookup(self.make_event(context, row), artifact)
+        if (not isinstance(receipt, dict) or receipt.get("contract") != DELIVERY_CONTRACT
+                or receipt.get("status") != "sent"
+                or receipt.get("promise_id") != row["promise_id"]
+                or receipt.get("request_id") != artifact["request_id"]):
+            return False
+        return await self.service.promises.finish_image_delivery(
+            context, row, str(artifact.get("detail") or "图片已发送"),
+            ttl_seconds=self.service._trace_ttl(), recovery=True)
 
     def make_event(self, context, row):
         from astrbot.core.cron.events import CronMessageEvent

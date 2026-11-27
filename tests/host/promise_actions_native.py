@@ -15,6 +15,7 @@ import sys
 import tempfile
 import time
 from types import ModuleType, SimpleNamespace
+from unittest.mock import AsyncMock, patch
 import uuid
 
 
@@ -94,18 +95,11 @@ async def run(livinghello):
     from astrbot_plugin_livingemotion.runtime.promise_actions import ImagePromiseAction
     from astrbot_plugin_livingemotion.storage import SQLiteStore
     from test_image_generation import Event, ImageGenerationTests
-    from main import Main
 
     image_fixture = ImageGenerationTests(methodName="runTest")
     image_fixture.setUp()
-    image_fixture.plugin.get_deferred_image_contract = lambda: Main.get_deferred_image_contract(
-        image_fixture.plugin)
-    image_fixture.plugin.generate_deferred_image = lambda event, prompt: Main.generate_deferred_image(
-        image_fixture.plugin, event, prompt)
-    image_fixture.plugin.complete_deferred_image = lambda rid, status: Main.complete_deferred_image(
-        image_fixture.plugin, rid, status)
-    image_fixture.plugin.deliver_deferred_image = lambda event, artifact, **kwargs: Main.deliver_deferred_image(
-        image_fixture.plugin, event, artifact, **kwargs)
+    image_fixture.promise_image_plugin()
+    image_fixture.service.prompt_text.complete = AsyncMock(return_value="窗边橙色猫自拍")
     folder = tempfile.TemporaryDirectory()
     store = SQLiteStore(Path(folder.name) / "test.sqlite3", clock=lambda: 1800000000.0)
     await store.open()
@@ -148,7 +142,7 @@ async def run(livinghello):
         config=SimpleNamespace(timezone="UTC", promise_enabled=True),
         revision="native", _preparation_guard=lambda *a, **k: ready(True),
         _contexts={"native": context}, persona_style=lambda *a: ready("猫"),
-        purpose_model=lambda *a, **k: ready("窗边橙色猫自拍"),
+        purpose_model=AsyncMock(side_effect=AssertionError("LE 不负责为图片起稿")),
         promise_actions_active=lambda: False,
     )
     service = PromiseService(store, app)
@@ -177,7 +171,7 @@ async def run(livinghello):
         cron_event = ImagePromiseAction(service).make_event(context, row)
         assert cron_event.unified_msg_origin == context.route
         assert cron_event.get_sender_id() == context.account_id and cron_event.role == "member"
-        assert cron_event.message_obj.message_id == "promise:" + pid
+        assert cron_event.message_obj.message_id == "promise:" + pid + ":0"
         # 图链使用宿主公开构造签名，HTTP 与平台只在最后一步替换。
         from astrbot.api.event import MessageChain
         MessageChain.__init__ = lambda self, chain=None: setattr(self, "chain", chain or [])
@@ -187,14 +181,32 @@ async def run(livinghello):
         assert (await service.promises.get(pid))["status"] == "sent"
         row = await service.promises.get(pid)
         artifact = json.loads(row["action_result_json"])
-        replay = await image_fixture.plugin.deliver_deferred_image(cron_event, artifact)
+        replay = await image_fixture.plugin.deliver_deferred_image(
+            cron_event, artifact, authorize=lambda: ready(True))
         assert replay["status"] == "sent" and replay["reason"] == "already_sent"
         assert len(sends) == 1
+
+        second = await service.remember(context, [("2分钟", "画一张蓝色鲸鱼图片")])
+        second_id = second[0]["promise_id"]
+        store.clock = lambda: 1800000240.0
+        with patch.object(service.promises, "finish_image_delivery", new=AsyncMock(return_value=False)):
+            assert await service.run_due() == 0
+        interrupted = await service.promises.get(second_id)
+        assert (interrupted["status"], interrupted["action_state"]) == ("running", "sending")
+        restored = PromiseService(store, app)
+        assert await restored.heal() == 1
+        assert await restored.heal() == 0
+        assert (await restored.promises.get(second_id))["status"] == "sent"
+        traces = await store._run(lambda db: db.execute(
+            "SELECT COUNT(*) FROM promise_traces WHERE promise_id=? AND kind='delivery'", (second_id,)
+        ).fetchone()[0])
+        assert traces == 1 and len(sends) == 2 and image_fixture.service._request.await_count == 2
         print(json.dumps({
             "status": "passed", "checks": [
                 "real_toolset_wrapper", "real_future_task_creation", "same_turn_provenance",
                 "real_cron_event_route_sender_role", "public_image_contract",
-                "image_delivery_and_checkpoint", "unified_delivery_receipt_replay"],
+                "image_delivery_and_checkpoint", "unified_delivery_receipt_replay",
+                "recover_missing_le_commit_from_lh_receipt"],
             "paid_requests": 0, "platform_requests": 0,
         }, ensure_ascii=False))
     finally:

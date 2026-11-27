@@ -259,12 +259,7 @@ class PromiseService:
     # ---------- 到期执行 ----------
 
     async def heal(self) -> int:
-        """把卡在 running/unknown 的行拉回队列。
-
-        这两种状态没人再扫：move 的目标集里没有它们往回走的路。
-        进程被 kill、上游超时、宿主导回 unknown 都会留在这里。
-        启动时跑一次，之后每轮 tick 也顺手跑，成本是一次 UPDATE。
-        """
+        """恢复未发起的动作；已进入投递阶段的图片只读核对真实回执。"""
         await self.promises.ensure()
         # 旧版本把到点项挂成 awaiting 等下一轮回复；现在到点就发，
         # 那些遗留行没人再取，启动和每轮 tick 顺手放回队列。
@@ -288,12 +283,27 @@ class PromiseService:
         for row in stuck:
             promise_id = row["promise_id"]
             try:
-                external = json.loads(row["action_result_json"] or "{}").get("external_image") is True
+                artifact = json.loads(row["action_result_json"] or "{}")
             except (ValueError, TypeError):
-                external = False
-            if external:
+                artifact = {}
+            if not isinstance(artifact, dict):
+                artifact = {}
+            if artifact.get("external_image") is True:
                 # 普通图片由 LH 保存真实结果；tick 不能抢回执行或触发重复收费。
                 continue
+            if (row["action_state"] in ("sending", "unknown")
+                    and artifact.get("deferred_promise_id") == promise_id
+                    and artifact.get("stage") == "delivery"):
+                from .promise_actions import ImagePromiseAction
+                try:
+                    current = await self.promises.get(promise_id)
+                    context = await self._live_context(current) if current else None
+                    if (context and current["action_result_json"] == row["action_result_json"]
+                            and await ImagePromiseAction(self).recover_sent(context, current, artifact)):
+                        healed += 1
+                        continue
+                except Exception as exc:
+                    logger.warning("[LE-promise] 回执核对 %s type=%s", promise_id[:8], type(exc).__name__)
             if row["action_state"] in ("generating", "sending", "unknown"):
                 if row["status"] == "running":
                     await self.promises.move(
@@ -444,12 +454,10 @@ class PromiseService:
             status = outcome.get("status")
             if status == "sent":
                 text = str(outcome.get("text") or "图片已发送")
-                await self.promises.move(promise_id, status="sent", expect=("running",))
-                await self.promises.set_delivery(promise_id, text)
-                await self.promises.put_trace(
-                    scope_key=context.scope_key, promise_id=promise_id, kind="delivery",
-                    summary=str(row.get("context_summary") or ""),
-                    reply_text=text, ttl_seconds=self._trace_ttl())
+                current = await self.promises.get(promise_id)
+                if not current or not await self.promises.finish_image_delivery(
+                        context, current, text, ttl_seconds=self._trace_ttl()):
+                    return False
                 logger.warning("[LE-promise] 图片已提交 %s", promise_id[:8])
                 return True
             if status == "unknown":
@@ -483,7 +491,8 @@ class PromiseService:
                 artifact = {}
             await self.promises.defer(
                 promise_id, retry_at=self.store.clock() + RETRY_BACKOFF,
-                error="image_" + str(status),
+                error=str(outcome.get("reason") or "image_" + str(status)),
+                no_penalty=outcome.get("reason") == "image_executor_version",
                 max_retry=max(0, self.retry_limit - int(artifact.get("prompt_retry_count") or 0)))
             current = await self.promises.get(promise_id)
             if current and current["status"] == "failed":
@@ -609,10 +618,11 @@ class PromiseService:
         # 用 closing 模型按人格/情绪/关系生成一句生活化的「晚点给」话术；
         # 生成失败回退到固定借口。承诺 defer 重试在后台继续，用户无感。
         kind = artifact.get("kind") or claimed.get("last_error")
+        prompt_text_stopped = str(artifact.get("reason_code") or "").startswith("prompt_text_")
         text = None
         try:
             # 未知结果不能用「重新拍」借口掩盖；也无需额外付费生成核对说明。
-            if kind in {"result_unknown", "delivery_unknown"}:
+            if prompt_text_stopped or kind in {"result_unknown", "delivery_unknown"}:
                 raise ValueError("unknown_result_notice")
             persona = await self.app.persona_style(
                 context.persona_id, getattr(self.app.config, "persona_prompt", ""))
@@ -640,6 +650,8 @@ class PromiseService:
             text = (text or "").strip().strip('"')[:120]
         except Exception:
             text = None
+        if prompt_text_stopped:
+            text = "这张的画面描述还没准备好。你可以补一句想要的画面，我再试。"
         if not text:
             text = {
                 "result_unknown": "这张还没拿到结果，我先核对一下，暂时不重复生成。",
