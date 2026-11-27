@@ -339,6 +339,8 @@ Object.defineProperty(window, "__fixture", { value: {
   calls, get state() { return clone(data); },
   // 测试专用：模拟另一位管理员写入；不会进入生产页面包。
   changeConfig(patch, revision) { Object.assign(data.config.values, patch); data.config.revision = revision; },
+  // 测试专用：改写某个选项的显示名，模拟线上很长的「显示名 · 模型 ID」。
+  renameOption(value, label) { for (const field of data.config.fields) for (const option of field.options || []) if (option?.value === value) option.label = label; },
   setFeeling(value) { data.feeling = clone(value); },
   setEnvironment(value) { data.environment = clone(value); },
   setPromises(value) { data.behavior.promises = clone(value); },

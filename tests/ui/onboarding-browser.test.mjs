@@ -235,6 +235,25 @@ try {
         await page.locator("#onboarding-panel").isVisible() && await page.locator("[data-onboarding-step]").count() === 6);
     }
     await page.locator("#language").selectOption("zh-CN");
+    // 线上模型名是「显示名 · 模型 ID」，与线上等长：标题和用途仍各占一行，模型名只在状态列内折行。
+    await page.evaluate(() => {
+      window.__fixture.renameOption("fixture-chat", "合成配置01名字1017 · deepseek-v4.1-flash");
+      window.__fixture.changeConfig({ fallback_provider_id: "fixture-chat", behavior_provider_id: "fixture-chat" }, "onboarding-long");
+    });
+    const before = await stateReads(page);
+    await page.locator("#refresh").click();
+    await settled(page, before);
+    // 英文的用途说明本来就按单词折行，只要求标题不折行。
+    const tidy = singleLineUse => page.locator("[data-onboarding-key]").evaluateAll((rows, singleLineUse) => rows.map(row => {
+      const oneLine = selector => { const element = row.querySelector(selector); return element.getBoundingClientRect().height <= parseFloat(getComputedStyle(element).lineHeight) + 1; };
+      return oneLine(".onboarding-model-name") && (!singleLineUse || oneLine(".onboarding-model-use")) &&
+        row.querySelector(".onboarding-model-state").getBoundingClientRect().right <= row.getBoundingClientRect().right + 1;
+    }), singleLineUse);
+    for (const [language, singleLineUse] of [["zh-CN", true], ["en", false]]) {
+      if (language === "en") await page.locator("#language").selectOption(language);
+      const layout = await tidy(singleLineUse);
+      check(`${tag} long model names keep titles on one line (${language})`, layout.length === 9 && layout.every(Boolean));
+    }
     await page.close();
   }
 

@@ -21,7 +21,7 @@ def _private_route(event) -> str | None:
 
 
 @register("astrbot_plugin_livingemotion", "AKIhunter",
-          "Independent source-scoped bot state", "0.11.1")
+          "Independent source-scoped bot state", "0.11.2")
 class LivingEmotionPlugin(Star):
     api_version = 1
 

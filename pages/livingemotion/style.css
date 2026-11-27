@@ -573,6 +573,8 @@ dialog h2 { margin: 12px 0 16px; } dialog input { width: 100%; margin-top: 8px; 
 .onboarding-go { min-height: 32px; padding: 4px 12px; font-size: 13px; }
 /* 面板占整行：模型行按可用宽度排成多列（桌面三列、平板两列、手机一列），不再一条占满整行。 */
 .onboarding-models { grid-column: 1 / -1; list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 4px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
-.onboarding-model { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 12px; align-items: center; width: 100%; min-height: 32px; padding: 4px 12px; text-align: left; font-size: 13px; background: transparent; }
-.onboarding-model-use { grid-column: 1; color: var(--muted); font-size: 12px; }
-.onboarding-model-state { grid-column: 2; grid-row: 1 / span 2; color: var(--accent); text-align: right; }
+/* 标题列按内容取宽、最多 65%；模型名再长也只在状态列内换行，不把标题挤成一字一行。 */
+.onboarding-model { display: grid; grid-template-columns: fit-content(65%) minmax(0, 1fr); gap: 0 12px; align-items: center; width: 100%; min-height: 32px; padding: 4px 12px; text-align: left; font-size: 13px; background: transparent; }
+.onboarding-model-name, .onboarding-model-use { grid-column: 1; word-break: keep-all; }
+.onboarding-model-use { color: var(--muted); font-size: 12px; }
+.onboarding-model-state { grid-column: 2; grid-row: 1 / span 2; min-width: 0; overflow-wrap: anywhere; text-wrap: balance; color: var(--accent); text-align: right; }

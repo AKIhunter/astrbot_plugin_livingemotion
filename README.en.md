@@ -5,7 +5,7 @@
 ![livingEmotion wordmark and state lines](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-4.29.1–4.29.4-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.11.1-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.11.2-3a8060)](CHANGELOG.md)
 
 [简体中文](README.md) · **English**
 
@@ -136,11 +136,11 @@ Platform declarations cover basic message intake. QQ OneBot has isolated-host ac
 
 ## 📜 Changelog
 
-Current version: `v0.11.1` (2026-11-27)
+Current version: `v0.11.2` (2026-11-27)
 
-- 🔧 The "Onboarding guide" entry moved from Settings to the top bar, to the left of the diagnostic export button. The six-step checklist opens from any tab and spans the row under the top bar; "Open settings" still jumps to the matching field in Settings.
-- 🧩 Position only: the checklist content and its checks are unchanged; no configuration or database migration.
+- 🐛 Onboarding model list: with a long selected model name, titles are no longer squeezed to one character per line; the model name wraps on the right only.
+- 🧩 Style change only; the checklist content and its checks are unchanged. No configuration or database migration.
 
-Previous version 0.11.0 added night and scheduler evidence to the diagnostic ZIP and made the empty options in the Settings model dropdowns match actual behavior.
+Previous version 0.11.1 moved the "Onboarding guide" entry to the top bar; 0.11.0 added night and scheduler evidence to the diagnostic ZIP and made the empty options in the Settings model dropdowns match actual behavior.
 
 Full history: [CHANGELOG.md](CHANGELOG.md) (Chinese).
