@@ -5,7 +5,7 @@
 ![livingEmotion wordmark and state lines](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-4.29.1–4.29.4-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.12.1-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.12.2-3a8060)](CHANGELOG.md)
 
 [简体中文](README.md) · **English**
 
@@ -136,8 +136,8 @@ Platform declarations cover basic message intake. QQ OneBot has isolated-host ac
 
 ## 📜 Changelog
 
-Current version: `v0.12.1` (2026-11-28)
+Current version: `v0.12.2` (2026-11-28)
 
-- 🔧 Diagnostic exports now include message archiving, reply reservations, early stops and send callbacks. Match events across exports with LH 2.11.2. See [diagnostics](docs/diagnostics.md).
+- When debounce or LH stops a request before generation, LE no longer reserves a reply ID. If the message comes back, it can be evaluated again. See [diagnostics](docs/diagnostics.md).
 
 Full history: [CHANGELOG.md](CHANGELOG.md) (Chinese).

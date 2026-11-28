@@ -2,12 +2,12 @@
 
 import asyncio
 from dataclasses import replace
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 from astrbot_plugin_livingemotion.contracts import Context, StateWrite, to_dict
+from test_application import request_to_model
 from test_retro_reply import FinalMessage, at_time
 
 
@@ -20,7 +20,7 @@ async def test_host_hook_keeps_submission_rejection_reason(tmp_path, reason):
     app, host, _, _ = await at_time(tmp_path, 12, config={"night_schedule_enabled": False})
     try:
         message = FinalMessage(identifier="denied")
-        await app.on_llm_request(message, SimpleNamespace(extra_user_content_parts=[]))
+        await request_to_model(app, message)
         app.reply_submitted = AsyncMock(return_value={
             "allowed": False, "status": "rejected", "reason_code": reason,
         })
@@ -54,7 +54,7 @@ async def test_real_host_submission_survives_normal_wake(tmp_path, finish):
         assert (await app.store.write_states(context, await app.store.get_generation(context), (
             StateWrite("night", to_dict(state), record.version, owner=record.owner),
         ))).accepted
-        await app.on_llm_request(message, SimpleNamespace(extra_user_content_parts=[]))
+        await request_to_model(app, message)
         assert message.get_extra("livingemotion:reply_lease")
         clock[0] = finish
         # 真实宿主钩子内部先 tick 清理会话，再走真实提交事务。
@@ -73,7 +73,7 @@ async def test_record_host_submission_preserves_bool_interface(tmp_path):
     app, host, _, _ = await at_time(tmp_path, 12, config={"night_schedule_enabled": False})
     try:
         message = FinalMessage(identifier="accepted")
-        await app.on_llm_request(message, SimpleNamespace(extra_user_content_parts=[]))
+        await request_to_model(app, message)
         context = Context.from_dict(message.get_extra("livingemotion:context"))
         identifier = message.get_extra("livingemotion:reply_lease")["attempt_id"]
         assert await app.record_host_submission(context, identifier, "synthetic") is True
@@ -90,7 +90,7 @@ async def test_archive_version_conflict_allows_delivery_and_retries(tmp_path):
     app, host, _, _ = await at_time(tmp_path, 12, config={"night_schedule_enabled": False})
     try:
         message = FinalMessage(identifier="archive-conflict")
-        await app.on_llm_request(message, SimpleNamespace(extra_user_content_parts=[]))
+        await request_to_model(app, message)
         context = Context.from_dict(message.get_extra("livingemotion:context"))
         identifier = message.get_extra("livingemotion:reply_lease")["attempt_id"]
         app.api.ingest_event = AsyncMock(return_value={

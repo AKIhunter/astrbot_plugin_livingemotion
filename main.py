@@ -22,7 +22,7 @@ def _private_route(event) -> str | None:
 
 
 @register("astrbot_plugin_livingemotion", "AKIhunter",
-          "Independent source-scoped bot state", "0.12.1")
+          "Independent source-scoped bot state", "0.12.2")
 class LivingEmotionPlugin(Star):
     api_version = 1
 
@@ -162,6 +162,12 @@ class LivingEmotionPlugin(Star):
         if self.application.closed:
             return
         self.application._promises().ownership.wrap_tools(event, request)
+
+    # LH、第三方防抖及 LE 自身的流式门禁都在此前执行。宿主遇到停止即跳出，
+    # 因此被否决的请求不会在这里占用回复 ID；本钩子仍可在调用主模型前拒绝重入。
+    @filter.on_llm_request(priority=-sys.maxsize - 11)
+    async def admit_final_request(self, event: AstrMessageEvent, request: ProviderRequest):
+        await self.application.admit_llm_request(event, request)
 
     @getattr(filter, "after_message_sent", lambda **kw: lambda fn: fn)(
         priority=-sys.maxsize - 2)

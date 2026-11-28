@@ -93,6 +93,14 @@ async def application(tmp_path, config=None):
     return app, host, native
 
 
+async def request_to_model(app, event, request=None):
+    if request is None:
+        request = SimpleNamespace(extra_user_content_parts=[])
+    await app.on_llm_request(event, request)
+    if not getattr(event, "stopped", False):
+        await app.admit_llm_request(event, request)
+
+
 @pytest.mark.asyncio
 async def test_native_qq_names_and_number_grants_keep_private_group_separate(tmp_path):
     app, _, native = await application(tmp_path, {
@@ -675,7 +683,7 @@ async def test_wake_catchup_revalidated_and_scheduled_sleep_waits_for_receipt(tm
         relation = await app.store.get_state(context, "relationship", context.account_id)
         await app.correct_relationship(context.account_key, expected_version=relation.version,
                                        score=900, reason="synthetic", actor_id="verified")
-        await app.on_llm_request(message, SimpleNamespace(extra_user_content_parts=[]))
+        await request_to_model(app, message)
         night = await app.advance_scope(context)
         assert night.phase == NightPhase.SETTLING
         await app.confirm_reply(ReplyReceipt(context, "unknown", clock[0], message_id="m1"))

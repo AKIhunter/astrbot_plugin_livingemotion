@@ -5,7 +5,7 @@
 ![livingEmotion 原创字标与状态线](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-4.29.1–4.29.4-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.12.1-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.12.2-3a8060)](CHANGELOG.md)
 
 **简体中文** · [English](README.en.md)
 
@@ -134,8 +134,8 @@
 
 ## 📜 更新日志
 
-当前版本：`v0.12.1`（2026-11-28）
+当前版本：`v0.12.2`（2026-11-28）
 
-- 🔧 诊断包补齐消息归档、回复占位、提前停止和发送回调，可按同一事件编号与 LH 2.11.2 对照。详见[诊断日志](docs/diagnostics.md)。
+- 防抖或 LH 在生成前拦下请求时，LE 不再提前占用回复 ID；同一消息再次送达时可正常判定。详见[诊断日志](docs/diagnostics.md)。
 
 完整变化与历史版本见 [CHANGELOG.md](CHANGELOG.md)。

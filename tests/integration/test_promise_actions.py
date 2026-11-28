@@ -15,6 +15,7 @@ from astrbot_plugin_livingemotion.livinghello_coupling import NAMES, discover
 from astrbot_plugin_livingemotion.runtime.promise_ownership import same_action
 from astrbot_plugin_livingemotion.runtime.promise_service import PromiseService
 from astrbot_plugin_livingemotion.contracts import to_dict
+from test_application import request_to_model
 from test_retro_reply import FinalMessage, at_time
 
 
@@ -599,7 +600,7 @@ async def test_marker_is_created_after_send_only(tmp_path):
         message = FinalMessage(identifier="delayed-marker")
         message.send = lambda *a, **k: ready(None)
         request = SimpleNamespace(extra_user_content_parts=[])
-        await app.on_llm_request(message, request)
+        await request_to_model(app, message, request)
         message.result.chain = [SimpleNamespace(text="晚点提醒你 <!--promise:2分钟:提醒给花浇水-->")]
         from astrbot_plugin_livingemotion.contracts import Context
         context = Context.from_dict(message.get_extra("livingemotion:context"))
@@ -626,7 +627,7 @@ async def test_failed_or_partial_send_hook_cannot_create_ghost_promise(tmp_path,
                 raise OSError("isolated send failure")
             return False if receipt == "negative" else None
         message.send = send
-        await app.on_llm_request(message, SimpleNamespace(extra_user_content_parts=[]))
+        await request_to_model(app, message)
         message.result.chain = [SimpleNamespace(text="晚点提醒你"),
                                 SimpleNamespace(text="放心 <!--promise:2分钟:提醒给花浇水-->")]
         assert await app.on_reply_submitted(message) is True

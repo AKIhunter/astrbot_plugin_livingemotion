@@ -19,6 +19,8 @@
 
 排查无回复时，在 `runtime.jsonl` 按 `flow_id` 串起 `ingest` → `supplement_request` → `reply_admission` → `reply_submission` → `after_message_sent`，再用同一个 ID 查 LH 的诊断包。`native_post_type` 可区分普通消息、通知和平台请求；未知值标为 `other`，没有原始类型标为 `unavailable`。相同事件和回复占位别名、不同 `flow_id` 表示同一个原始消息 ID 进入了两个独立宿主事件。后一个事件记录 `reason_code=reply_exists` 时，可确认 LE 因占位已存在而停止。`reply_submission` 的 `status=submitted` 表示 LE 通过了发送前校验；`after_message_sent` 的 `status=observed` 表示看到宿主发送回调，不能证明对端收到消息。
 
+`supplement_request` 先准备本轮上下文和提示词。LH、已知第三方防抖和 LE 的流式门禁均放行后，`admit_final_request` 才复核来源、配置与作息并登记回复，发放提交凭证。前面的钩子叫停时没有 `reply_admission`，也不消耗唤醒回复轮数；同一原始消息 ID 再次进入可正常重新判定。已登记的作息 v2 请求继续使用相同的去重键；即使没有有效答复或送达回执，LE 也不会主动重跑或释放占位。若另装的插件排在 `admit_final_request` 之后才叫停，仍可能留下占位。
+
 `host_stop` 保留 AstrBot 已实际输出的停止标记。宿主日志携带已关联的 `host_trace_id` 时，也能收录同一流水线的其他插件停止和警告、错误位置。没有宿主追踪 ID 的停止标记只能按时间参考。`environment.json` 显示当前宿主追踪开关和日志收集状态；启动失败前未初始化的采集、宿主未输出的日志、轮转删除的记录无法补回。
 
 `settings.json` 补充作息、晚安、补答、日记/梦境及主动行为的生效配置；`dream_owner_qq_set` 只表示是否填写通知号码。`environment.json` 的 `scheduler` 显示当前任务、阶段、开始/结束时间与最近成功时间。`in_flight` 表示该轮还没结束，单次快照无法判断是否卡死；一轮完成也不代表消息已送达。
@@ -43,7 +45,7 @@ python -m pytest -q tests/test_diagnostic_bundle.py tests/test_diagnostics_sourc
 npm --prefix tests/ui test
 ```
 
-对照两个诊断包，可用固定宿主的解释器回放重复投递；复用实际 `AstrMessageEvent`、追踪和请求派发，在临时目录验证两个 ZIP 的 `flow_id`、`host_trace_id` 和 `reply_exists`：
+对照两个诊断包，可用固定宿主的解释器回放重复投递。测试使用实际宿主派发、LE 和 LH 请求门禁，在公开防抖插件的优先级模拟它的停止行为，验证第一次被拦、重入、并发、提交后重入及两个 ZIP 的关联；主模型与发送均不接外部服务：
 
 ```bash
 python -B tests/host/diagnostic_flow.py --host-source /path/to/AstrBot --lh /path/to/LivingHello

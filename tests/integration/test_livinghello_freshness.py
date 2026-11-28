@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from astrbot_plugin_livingemotion.contracts import Context
+from test_application import request_to_model
 from test_retro_reply import FinalMessage, at_time
 
 
@@ -30,7 +31,7 @@ async def test_two_group_messages_during_generation_preserve_owned_reply(tmp_pat
     app, host, _, _ = await at_time(tmp_path, 12, config={"night_schedule_enabled": False})
     try:
         old = FinalMessage(identifier="old", group="group")
-        await app.on_llm_request(old, SimpleNamespace(extra_user_content_parts=[]))
+        await request_to_model(app, old)
         for i in range(2):
             await app.on_message(FinalMessage(identifier=f"new{i}", group="group"))
         delegate(old)
@@ -49,11 +50,11 @@ async def test_private_reply_survives_new_messages_beyond_livinghello_window(tmp
     install_window(host, 15)
     try:
         old = FinalMessage(identifier="old")
-        await app.on_llm_request(old, SimpleNamespace(extra_user_content_parts=[]))
+        await request_to_model(app, old)
         clock[0] += 16
         newer = FinalMessage(identifier="new")
         await app.on_message(newer)
-        await app.on_llm_request(newer, SimpleNamespace(extra_user_content_parts=[]))
+        await request_to_model(app, newer)
         assert await app.on_reply_submitted(old) is True
         assert await app.on_reply_submitted(newer) is True
         assert host.sends == 0
@@ -71,7 +72,7 @@ async def test_delegation_does_not_bypass_final_protections(tmp_path, case):
     app, host, native, _ = await at_time(tmp_path, 12, config={"night_schedule_enabled": False})
     try:
         old = FinalMessage(identifier="old", group="group")
-        await app.on_llm_request(old, SimpleNamespace(extra_user_content_parts=[]))
+        await request_to_model(app, old)
         await app.on_message(FinalMessage(identifier="new", group="group"))
         delegate(old)
         if case == "no_owner":

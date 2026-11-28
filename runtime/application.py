@@ -8,7 +8,7 @@ import random
 import re
 import time
 from collections import OrderedDict
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, time as wall_time, timedelta
 from pathlib import Path
 from uuid import uuid4
@@ -118,6 +118,17 @@ def _closing_failure_code(exc):
 # 回复归档冲突：先短退避重试，仍冲突则放行发送并在后台补写。
 ARCHIVE_RETRY_DELAYS = (0.0, 0.05, 0.1, 0.2)
 ARCHIVE_BACKGROUND_DELAYS = (0.5, 1.0, 2.0, 4.0, 5.0)
+
+
+@dataclass(frozen=True)
+class NativeReplyCandidate:
+    context: Context
+    message_id: str
+    attempt_index: int
+    revision: str
+    generation: int
+    watermark: int
+
 
 class Application(Console, NightRuntime, Generation, Materials, Refinement, Proactivity,
                   ManualExperienceRuntime, PersonaStyle):
@@ -1348,8 +1359,10 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                        [str(r.get("description") or "")[:16] for r in rows])
 
     async def on_llm_request(self, event, request):
+        """Prepare context and prompts before peer plugins decide whether to reply."""
         started, phase, context = time.monotonic(), "prepare", None
         native_step(self, event, "supplement_request", "entered")
+        request._livingemotion_reply_candidate = None
         from ..prompt_bundle import offer, request_variant, variant_for, prompts, shared_modules
         offer(request, "LE", {}, self.bridge.text_part)
         # Always remove stale blocks, including when disabled or after a reload.
@@ -1391,6 +1404,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                 event.set_extra("livingemotion:unavailable", "live_submission_unsupported")
                 return
             phase = "availability"
+            revision = self.revision
             generation = await self.store.get_generation(context)
             if self.config.night_policy_version == 2:
                 await self.advance_scope(context)
@@ -1414,20 +1428,12 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                     return
             phase = "catchup"
             await self._prepare_catchup(event, request, context)
-            attempt = stable_key("native-reply", context.scope_key,
-                                 str(event.message_obj.message_id),
-                                 event.get_extra("livingemotion:reply_attempt") or 0)
-            phase = "reply_admission"
-            if not await self._begin_reply_attempt(context, attempt, event=event, request_started=started):
-                event.stop_event()
-                return
-            event.set_extra("livingemotion:reply_attempt",
-                            (event.get_extra("livingemotion:reply_attempt") or 0) + 1)
-            event.set_extra("livingemotion:reply_lease", {
-                "attempt_id": attempt, "revision": self.revision, "generation": generation,
-                "watermark": await self.store.human_watermark(context),
-                "started_at": self.store.clock(),
-            })
+            # 只暂存这轮的校验基线。后续插件可以否决请求，不能提前占位或消耗唤醒轮数。
+            request._livingemotion_reply_candidate = NativeReplyCandidate(
+                context, str(event.message_obj.message_id),
+                event.get_extra("livingemotion:reply_attempt") or 0,
+                revision, generation, await self.store.human_watermark(context),
+            )
             phase = "supplement"
             state = source_affect(current_affect(
                 await self.store.get_state(context, "bot"), now=self.store.clock()), context)
@@ -1515,17 +1521,64 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             if (peer_policy is None or peer_policy.get("integrations", {}).get(
                     "livingemotion", {}).get("effective") is not True):
                 await self._inject_recalled_memory(event, request, context)
-            self._pending_replies[context.scope_key] = (
-                str(event.message_obj.message_id), self.store.clock() + 120,
-            )
-            self._pending_replies.move_to_end(context.scope_key)
-            while len(self._pending_replies) > 128:
-                self._pending_replies.popitem(last=False)
             native_step(self, event, "supplement_request", "ready", context=context, started=started)
         except Exception as exc:
             native_step(self, event, "supplement_request", "failed",
                         context=context, phase=phase, exc=exc, started=started)
             return
+
+    async def admit_llm_request(self, event, request):
+        candidate = getattr(request, "_livingemotion_reply_candidate", None)
+        if candidate is None:
+            return
+        request._livingemotion_reply_candidate = None
+        context = candidate.context
+        started = time.monotonic()
+
+        def stop(reason, *, exc=None):
+            native_step(self, event, "admit_final_request", "stopped", reason=reason, exc=exc,
+                        context=context, generation=candidate.generation, started=started)
+            event.stop_event()
+
+        from ..livinghello_coupling import allowed as coupling_allowed
+        try:
+            if (not coupling_allowed(getattr(self.bridge, "host", None), "livingemotion")
+                    or event.get_extra("livingemotion:context") != to_dict(context)
+                    or str(event.message_obj.message_id) != candidate.message_id
+                    or not await self.validate_context(context, candidate.generation)
+                    or self.effective_mode(context) != "active"
+                    or self.revision != candidate.revision):
+                stop("context_changed")
+                return
+            if not self._night_v2():
+                # v2 在原子准入时复核作息与唤醒轮数；旧作息仍沿用原来的聊天开关。
+                availability = await self.availability(context)
+                if availability.block_chat:
+                    stop(next(iter(availability.reason_codes), "unknown"))
+                    return
+            blocked = event.get_extra("_at_guard_delivery_blocked")
+            if blocked or (callable(getattr(event, "is_stopped", None)) and event.is_stopped()):
+                stop(blocked or "event_stopped")
+                return
+            attempt = stable_key("native-reply", context.scope_key, candidate.message_id,
+                                 candidate.attempt_index)
+            if not await self._begin_reply_attempt(
+                context, attempt, event=event, request_started=started,
+                expected_generation=candidate.generation,
+            ):
+                event.stop_event()
+                return
+            event.set_extra("livingemotion:reply_attempt", candidate.attempt_index + 1)
+            event.set_extra("livingemotion:reply_lease", {
+                "attempt_id": attempt, "revision": candidate.revision, "generation": candidate.generation,
+                "watermark": candidate.watermark, "started_at": self.store.clock(),
+            })
+            self._pending_replies[context.scope_key] = (candidate.message_id, self.store.clock() + 120)
+            self._pending_replies.move_to_end(context.scope_key)
+            while len(self._pending_replies) > 128:
+                self._pending_replies.popitem(last=False)
+        except Exception as exc:
+            stop("state_unavailable", exc=exc)
 
     async def _chat_wake(self, context, event):
         if self.config.night_policy_version < 2:
@@ -1540,14 +1593,17 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         normalized = replace(event, signals=(*event.signals, *(("native_bot_mention",) if native_at else ())))
         await self.wake_attempt(context, normalized)
 
-    async def _begin_reply_attempt(self, context, attempt_id, *, event=None, request_started=None):
-        result = await self.reply_started(context, attempt_id)
+    async def _begin_reply_attempt(self, context, attempt_id, *, event=None, request_started=None,
+                                   expected_generation=None):
+        result = await self.reply_started(context, attempt_id, expected_generation=expected_generation)
         allowed = result.get("allowed") is True
         native_step(self, event, "reply_admission", result.get("status"), context=context,
-                    reason=result.get("reason_code"), attempt_id=attempt_id)
+                    reason=result.get("reason_code"), attempt_id=attempt_id,
+                    generation=expected_generation)
         if not allowed and event is not None:
-            native_step(self, event, "supplement_request", "stopped", context=context,
-                        reason=result.get("reason_code"), attempt_id=attempt_id, started=request_started)
+            native_step(self, event, "admit_final_request", "stopped", context=context,
+                        reason=result.get("reason_code"), attempt_id=attempt_id,
+                        generation=expected_generation, started=request_started)
         if allowed:
             self._reply_tickets[attempt_id] = result.get("ticket")
             self._reply_contexts[attempt_id] = context

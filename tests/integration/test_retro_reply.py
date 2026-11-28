@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from astrbot_plugin_livingemotion.contracts import Context, StateWrite, to_dict
-from test_application import Message, application
+from test_application import Message, application, request_to_model
 
 
 CONFIG = {
@@ -57,6 +57,54 @@ async def seed_nap(app, message):
     ))).accepted
 
 
+async def test_veto_before_admission_preserves_last_wake_round(tmp_path):
+    app, _, _, _ = await at_time(tmp_path, 1, 30)
+    try:
+        first = FinalMessage(identifier="wake-replay")
+        await seed_nap(app, first)
+        request = SimpleNamespace(extra_user_content_parts=[])
+        await app.on_llm_request(first, request)
+        context = Context.from_dict(first.extra["livingemotion:context"])
+        first.stop_event()
+        await app.admit_llm_request(first, request)
+        assert first.get_extra("livingemotion:reply_attempt") is None
+        assert first.get_extra("livingemotion:reply_lease") is None
+        assert context.scope_key not in app._pending_replies
+        assert (await app.night_snapshot(context)).wake_replies_used == 0
+
+        retry = FinalMessage(identifier="wake-replay")
+        await request_to_model(app, retry)
+        assert not retry.stopped and retry.get_extra("livingemotion:reply_lease")
+        assert (await app.night_snapshot(context)).wake_replies_used == 1
+        assert await app.on_reply_submitted(retry) is True
+    finally:
+        await app.terminate()
+
+
+@pytest.mark.parametrize("change", ["source_reset", "native_config", "persona"])
+async def test_admission_rechecks_prepared_context_before_spending_round(tmp_path, change):
+    app, host, native, _ = await at_time(tmp_path, 12)
+    try:
+        message = FinalMessage(identifier="stale-reply")
+        request = SimpleNamespace(extra_user_content_parts=[])
+        await app.on_llm_request(message, request)
+        context = Context.from_dict(message.extra["livingemotion:context"])
+        generation = await app.store.get_generation(context)
+        if change == "source_reset":
+            assert (await app.store.clear_scope(context, generation)).accepted
+        elif change == "native_config":
+            native["mode"] = "observe_only"
+        else:
+            host.persona_id = "changed-persona"
+        await app.admit_llm_request(message, request)
+        assert message.stopped and message.get_extra("livingemotion:reply_lease") is None
+        attempts = await app.store._run(lambda db: db.execute(
+            "SELECT COUNT(*) FROM reply_attempts").fetchone()[0])
+        assert attempts == 0
+    finally:
+        await app.terminate()
+
+
 async def test_diagnostics_explain_duplicate_stop_and_distinguish_raw_events(tmp_path, le_export):
     app, _, _, clock = await at_time(tmp_path, 12)
     app.diagnostics.clock = lambda: clock[0] + 1
@@ -70,7 +118,7 @@ async def test_diagnostics_explain_duplicate_stop_and_distinguish_raw_events(tmp
         for message in messages:
             message.message_obj.raw_message = {"post_type": "message", "message_type": "private",
                                                "raw_message": "private-wire-body"}
-            await app.on_llm_request(message, SimpleNamespace(extra_user_content_parts=[]))
+            await request_to_model(app, message)
         assert not messages[0].stopped and messages[1].stopped
         for category, detail in raw_events:
             message = FinalMessage(identifier=f"private-{category}-id", body="")
@@ -80,8 +128,8 @@ async def test_diagnostics_explain_duplicate_stop_and_distinguish_raw_events(tmp
         clock[0] += 1
         exported = le_export(app)
         rows = [json.loads(line) for line in exported["runtime.jsonl"].splitlines()]
-        ready, = [row for row in rows if row.get("stage") == "supplement_request" and row["status"] == "ready"]
-        stopped, = [row for row in rows if row.get("stage") == "supplement_request" and row["status"] == "stopped"]
+        ready, = [row for row in rows if row.get("stage") == "reply_admission" and row["status"] == "accepted"]
+        stopped, = [row for row in rows if row.get("stage") == "admit_final_request" and row["status"] == "stopped"]
         assert stopped["reason_code"] == "reply_exists"
         assert stopped["reply_id"] == ready["reply_id"]
         assert stopped["event_id"] == ready["event_id"]
@@ -143,7 +191,7 @@ async def test_last_admitted_round_finishes_and_submission_window_starts_once(tm
         before = await app.night_snapshot(context)
         assert before.wake_session and before.first_reply_submitted_at is None
         request = SimpleNamespace(extra_user_content_parts=[])
-        await app.on_llm_request(message, request)
+        await request_to_model(app, message, request)
         started = await app.night_snapshot(context)
         assert started.wake_replies_used == 1 and started.display_state.value == "groggy"
         assert started.first_reply_submitted_at is None
@@ -164,7 +212,7 @@ async def test_last_admitted_round_finishes_and_submission_window_starts_once(tm
         # A new source cannot use the old generation's final-round admission.
         newer = FinalMessage(identifier="new")
         await app.on_message(newer)
-        await app.on_llm_request(newer, SimpleNamespace(extra_user_content_parts=[]))
+        await request_to_model(app, newer)
         # A valid new chat wake may establish a new bounded window, never renew the old one.
         assert (await app.night_snapshot(context)).wake_replies_used <= 1
     finally:
@@ -180,7 +228,7 @@ async def test_native_generation_error_keeps_round_without_reply_energy_or_windo
         await seed_nap(app, message)
         await app.on_message(message)
         context = Context.from_dict(message.extra["livingemotion:context"])
-        await app.on_llm_request(message, SimpleNamespace(extra_user_content_parts=[]))
+        await request_to_model(app, message)
         started = await app.night_snapshot(context)
         assert started.wake_replies_used == 1
         message.result.result_content_type = SimpleNamespace(name=kind)
@@ -202,7 +250,7 @@ async def test_deep_sleep_preempts_already_started_reply(tmp_path):
     try:
         message = FinalMessage(identifier="wake")
         await app.on_message(message)
-        await app.on_llm_request(message, SimpleNamespace(extra_user_content_parts=[]))
+        await request_to_model(app, message)
         clock[0] = datetime(2026, 11, 6, 3, tzinfo=timezone.utc).timestamp()
         assert await app.on_reply_submitted(message) is False
         context = Context.from_dict(message.extra["livingemotion:context"])
@@ -219,14 +267,14 @@ async def test_private_new_messages_never_cancel_inflight_reply(tmp_path, new_co
     app, host, _, clock = await at_time(tmp_path, 12, config={"night_schedule_enabled": False})
     try:
         old = FinalMessage(identifier="old")
-        await app.on_llm_request(old, SimpleNamespace(extra_user_content_parts=[]))
+        await request_to_model(app, old)
         newer = []
         for index in range(new_count):
             # 超过 LivingHello 旧版 15 秒连发窗口，确认时间差不再驱动丢弃。
             clock[0] += 16
             message = FinalMessage(identifier=f"new-{index}")
             await app.on_message(message)
-            await app.on_llm_request(message, SimpleNamespace(extra_user_content_parts=[]))
+            await request_to_model(app, message)
             newer.append(message)
         context = Context.from_dict(old.extra["livingemotion:context"])
         # 旧回复照常投递；同一个事件重复回调不会产生第二次投递。
@@ -273,7 +321,7 @@ async def test_stream_notifications_never_count_as_native_submission(tmp_path, c
     app, host, _, _ = await at_time(tmp_path, 12, config={"night_schedule_enabled": False})
     try:
         message = FinalMessage(identifier="stream-notification")
-        await app.on_llm_request(message, SimpleNamespace(extra_user_content_parts=[]))
+        await request_to_model(app, message)
         message.result.result_content_type = SimpleNamespace(name=content_type)
         assert await app.on_reply_submitted(message) is allowed
         context = Context.from_dict(message.extra["livingemotion:context"])

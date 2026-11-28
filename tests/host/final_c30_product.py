@@ -17,6 +17,7 @@ async def native_after_sent(core, e):
     from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
         AiocqhttpMessageEvent,
     )
+    from astrbot.core.star.star_handler import EventType
 
     p = plugin(core)
     saved = dict(p.application.native_config)
@@ -63,7 +64,7 @@ async def native_after_sent(core, e):
                 session_id=str(200100 + i),
                 bot=SimpleNamespace(send_private_msg=send_private_msg))
             await setup_persona(core, ev)
-            await p.supplement_request(ev, ProviderRequest(prompt="synthetic"))
+            await call_event_hook(ev, EventType.OnLLMRequestEvent, ProviderRequest(prompt="synthetic"))
             ctx = product("contracts").Context.from_dict(ev.get_extra("livingemotion:context"))
             state = await p.application.advance_scope(ctx)
             check(label + ".pending", state.phase.value == "settling")

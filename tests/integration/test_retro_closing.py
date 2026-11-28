@@ -8,6 +8,7 @@ import pytest
 from astrbot_plugin_livingemotion.contracts import Context
 from astrbot_plugin_livingemotion.runtime.background import ModelResultUnknown
 from astrbot_plugin_livingemotion.runtime.models import ModelUnavailable
+from test_application import request_to_model
 from test_retro_reply import FinalMessage, at_time
 
 
@@ -19,7 +20,7 @@ async def prepared(tmp_path, *, random=False):
     # Mirror the native MessageChain shape; no platform transport is used.
     app.bridge.chain = lambda text: SimpleNamespace(chain=[SimpleNamespace(text=text)])
     message = FinalMessage(identifier="closing-message")
-    await app.on_llm_request(message, SimpleNamespace(extra_user_content_parts=[]))
+    await request_to_model(app, message)
     context = Context.from_dict(message.extra["livingemotion:context"])
     return app, host, native, clock, message, context
 

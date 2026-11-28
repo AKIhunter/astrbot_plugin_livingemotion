@@ -25,7 +25,7 @@ async def reply_receipts(core, e):
         await p.application.refresh_config()
         ev = event("synthetic-receipt")
         await setup_persona(core, ev)
-        await p.supplement_request(ev, ProviderRequest(prompt="synthetic"))
+        await call_event_hook(ev, EventType.OnLLMRequestEvent, ProviderRequest(prompt="synthetic"))
         ctx = product("contracts").Context.from_dict(ev.get_extra("livingemotion:context"))
         state = await p.application.advance_scope(ctx)
         e.check("C30.native_pending_enters_settling", state.phase.value == "settling")
@@ -79,7 +79,8 @@ async def reply_receipts(core, e):
             base.message_obj.message_str, base.message_obj, base.platform_meta,
             session_id="synthetic-timeout-human")
         await setup_persona(core, timeout_ev)
-        await p.supplement_request(timeout_ev, ProviderRequest(prompt="synthetic timeout"))
+        await call_event_hook(timeout_ev, EventType.OnLLMRequestEvent,
+                              ProviderRequest(prompt="synthetic timeout"))
         timeout_ctx = product("contracts").Context.from_dict(
             timeout_ev.get_extra("livingemotion:context"))
         started = p.application.store.clock()
