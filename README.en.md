@@ -5,7 +5,7 @@
 ![livingEmotion wordmark and state lines](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-4.29.1–4.29.4-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.12.2-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.12.3-3a8060)](CHANGELOG.md)
 
 [简体中文](README.md) · **English**
 
