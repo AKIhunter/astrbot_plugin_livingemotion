@@ -139,3 +139,7 @@
 - 防抖或 LH 在生成前拦下请求时，LE 不再提前占用回复 ID；同一消息再次送达时可正常判定。详见[诊断日志](docs/diagnostics.md)。
 
 完整变化与历史版本见 [CHANGELOG.md](CHANGELOG.md)。
+
+## 交流群
+LivingEmotion & LivingHello 插件鱼群（QQ 群 991350637），扫码加入：
+<img src="assets/qq-group-991350637.png" alt="LivingEmotion & LivingHello 插件鱼群 QQ 群二维码" width="140">
