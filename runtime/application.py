@@ -436,6 +436,10 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                 revision=self.revision)
         except (ValueError, TimeoutError):
             return None
+        except Exception as exc:
+            # 补答失败只是少一句，不能让夜间任务循环卡在这里。
+            logger.warning("[LE-catchup] 醒后补答失败 exc=%s", type(exc).__name__)
+            return None
 
     async def _read_history(self, context, transcript, key, include_items):
         source = await self.bridge.current(context)
@@ -1071,6 +1075,10 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                 event.set_extra("livingemotion:historical_send_unknown", True)
         except (ValueError, TimeoutError):
             event.set_extra("livingemotion:catchup_status", "reading_pending")
+        except Exception as exc:
+            # 读历史是旁路：任何意外都不能让这一轮回复发不出去（否则消息会卡住）。
+            logger.warning("[LE-catchup] 准备失败，按无摘要继续 exc=%s", type(exc).__name__)
+            event.set_extra("livingemotion:catchup_status", "prepare_failed")
         finally:
             if started is not None:
                 elapsed = max(0, time.monotonic() - started)
