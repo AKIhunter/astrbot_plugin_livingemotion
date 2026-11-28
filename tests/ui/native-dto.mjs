@@ -1,7 +1,7 @@
 // Generated from real Console; synthetic host, no model or sends.
 export const nativeDTO = {
   "config": {
-    "revision": "1f94c8a26b3bd9454f2832963ef2ed72f51ef83fbde67fca83bc5c22a119b83d",
+    "revision": "b3407e1cc483eb4c253fab023f7b51c71be1eab2f8fe36deb93a4ec9ae32e756",
     "source": "AstrBot native plugin configuration",
     "values": {
       "enabled": true,
@@ -12,6 +12,7 @@ export const nativeDTO = {
       "proactive_native_yield": true,
       "emotion_model_enabled": false,
       "context_emotions_enabled": false,
+      "context_emotion_shadow_enabled": false,
       "context_emotions_dimension": "conversation",
       "dream_enabled": false,
       "dream_theme_pool": "[\"赛博朋克\", \"绿野仙踪\", \"生活日常\", \"星际漫游\", \"海底王国\", \"古堡奇遇\", \"森林童话\", \"校园时光\", \"蒸汽幻想\", \"云端旅行\", \"四季庭院\", \"时光回廊\"]",
@@ -255,6 +256,19 @@ export const nativeDTO = {
         "help": "工作模式为「参与表达与行动」时按聊天对象记录委屈、受伤和害羞，并用于回复。",
         "details": "在「设置 → 情绪」开启并保存；仅观察模式不新增这三项采集，在「设置 → 快速开始」将「工作模式」改为「参与表达与行动」后生效。到 TA 页选择具体会话查看。关闭后停止更新和表达。同页开启模型细化后，LLM按最近对话、语气和已有情绪判断；本轮分析复用，冷却期间补一次对象分析，共用每日额度，回复前最多等待1秒；超时不取消，分析在后台完成并写回，下一次回复和TA页生效。模型不可用只保留历史衰减；关闭模型细化时兼容本地规则，不具备语义理解。害羞需友好关系，并尊重关系说明中的边界。",
         "example": "帮助被认可后又被否认可产生委屈；直接贬低可产生受伤；亲密关注可产生害羞。",
+        "parent": "",
+        "level": 0
+      },
+      {
+        "key": "context_emotion_shadow_enabled",
+        "label": "对象情绪语义对照",
+        "section": "emotion",
+        "value": false,
+        "type": "boolean",
+        "advanced": false,
+        "help": "对照新旧对象情绪判定，只记录差异。",
+        "details": "在「设置 → 情绪」开启并保存，需同时开启对象情绪和模型分析。后台额外调用每个进程连续24小时最多12次；只在 AstrBot 日志记录差异，不改情绪、不影响回复上下文。关闭即停止额外调用。",
+        "example": "在 AstrBot 日志搜索 [LE-emotion-shadow]。",
         "parent": "",
         "level": 0
       },
@@ -2416,6 +2430,7 @@ export const nativeDTO = {
         "field_keys": [
           "emotion_model_enabled",
           "context_emotions_enabled",
+          "context_emotion_shadow_enabled",
           "scheduler_seconds",
           "model_concurrency",
           "queue_size",
@@ -3001,7 +3016,7 @@ export const nativeDTO = {
     },
     "revision": "config-1",
     "config": {
-      "revision": "1f94c8a26b3bd9454f2832963ef2ed72f51ef83fbde67fca83bc5c22a119b83d",
+      "revision": "b3407e1cc483eb4c253fab023f7b51c71be1eab2f8fe36deb93a4ec9ae32e756",
       "source": "AstrBot native plugin configuration",
       "values": {
         "enabled": true,
@@ -3012,6 +3027,7 @@ export const nativeDTO = {
         "proactive_native_yield": true,
         "emotion_model_enabled": false,
         "context_emotions_enabled": false,
+        "context_emotion_shadow_enabled": false,
         "context_emotions_dimension": "conversation",
         "dream_enabled": false,
         "dream_theme_pool": "[\"赛博朋克\", \"绿野仙踪\", \"生活日常\", \"星际漫游\", \"海底王国\", \"古堡奇遇\", \"森林童话\", \"校园时光\", \"蒸汽幻想\", \"云端旅行\", \"四季庭院\", \"时光回廊\"]",
@@ -3255,6 +3271,19 @@ export const nativeDTO = {
           "help": "工作模式为「参与表达与行动」时按聊天对象记录委屈、受伤和害羞，并用于回复。",
           "details": "在「设置 → 情绪」开启并保存；仅观察模式不新增这三项采集，在「设置 → 快速开始」将「工作模式」改为「参与表达与行动」后生效。到 TA 页选择具体会话查看。关闭后停止更新和表达。同页开启模型细化后，LLM按最近对话、语气和已有情绪判断；本轮分析复用，冷却期间补一次对象分析，共用每日额度，回复前最多等待1秒；超时不取消，分析在后台完成并写回，下一次回复和TA页生效。模型不可用只保留历史衰减；关闭模型细化时兼容本地规则，不具备语义理解。害羞需友好关系，并尊重关系说明中的边界。",
           "example": "帮助被认可后又被否认可产生委屈；直接贬低可产生受伤；亲密关注可产生害羞。",
+          "parent": "",
+          "level": 0
+        },
+        {
+          "key": "context_emotion_shadow_enabled",
+          "label": "对象情绪语义对照",
+          "section": "emotion",
+          "value": false,
+          "type": "boolean",
+          "advanced": false,
+          "help": "对照新旧对象情绪判定，只记录差异。",
+          "details": "在「设置 → 情绪」开启并保存，需同时开启对象情绪和模型分析。后台额外调用每个进程连续24小时最多12次；只在 AstrBot 日志记录差异，不改情绪、不影响回复上下文。关闭即停止额外调用。",
+          "example": "在 AstrBot 日志搜索 [LE-emotion-shadow]。",
           "parent": "",
           "level": 0
         },
@@ -5416,6 +5445,7 @@ export const nativeDTO = {
           "field_keys": [
             "emotion_model_enabled",
             "context_emotions_enabled",
+            "context_emotion_shadow_enabled",
             "scheduler_seconds",
             "model_concurrency",
             "queue_size",
@@ -6172,6 +6202,7 @@ export const nativeDTO = {
         "field_keys": [
           "emotion_model_enabled",
           "context_emotions_enabled",
+          "context_emotion_shadow_enabled",
           "scheduler_seconds",
           "model_concurrency",
           "queue_size",
@@ -8264,16 +8295,16 @@ export const nativeDTO = {
   }
 };
 export const nativeDTOEvidence = {
-  "captured_at": "2026-11-26T13:40:33.583892+00:00",
-  "field_count": 138,
+  "captured_at": "2026-11-28T07:24:20.515374+00:00",
+  "field_count": 139,
   "scope": "real Console DTO / synthetic host / temporary database",
   "sources_sha256": {
-    "config.py": "1bd499737f0e6b259ef8827bc13b2069fbc941c658cd6a38833160a8fe3f94ee",
+    "config.py": "4a97df8208952ac9af157ef675f9632fbd1ec06736825326cd40a9360c5e2abc",
     "contracts.py": "40307c7c6e4a242493328f2eca7fc23bb6699b9a6dca1e393e7e499de6af0cad",
-    "runtime/console.py": "db3643da755d39cc2b046bbde657eb1e732054930b3bfd8d71401f93745ac868",
-    "runtime/config_help.py": "55a2f43422f3d6bf15ae84d855dafcdd05bd76530c934e083c1265856414b2fc",
+    "runtime/console.py": "5e854c7d14781e26e39219f3b5de7dd2a0b3acdbc33afa074d256ecde833b936",
+    "runtime/config_help.py": "ca4fcd82cc462dd32d6a0735bc8ef1ec231cf92ebaf8b80851d59cb037808176",
     "storage/schema.py": "096a90b582af5d6694f957ff4df29a8d6230fa5dc880f8bff5fd33c2eba17115",
-    "storage/sqlite.py": "98f05579910455ee5afba276d1c5920d20d83d3533bf868f6325eb19345978ab",
+    "storage/sqlite.py": "c4427d129b3abed681d68b0ab5efa8994b8f879cc512053683594037df8a4f9c",
     "storage/state_scope.py": "2b8e9fc28c36ea0d880aa0a21b7f98c1308d7b143f4a0db6be74734dbccb12e5",
     "storage/console_data.py": "b6402d329edcabf809d1a074c33da8392b4e980732395449bbd09f7706e5ad4f",
     "domain/relationship_inference.py": "73f329394e7094180b7824a0d329826bc7cda3a524c4f5f64a839284b5ec01e9",
