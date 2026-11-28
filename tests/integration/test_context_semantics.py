@@ -9,9 +9,9 @@ from types import SimpleNamespace
 import pytest
 
 from astrbot_plugin_livingemotion.contracts import ActorRole, Context, StateWrite
-from astrbot_plugin_livingemotion.domain.context_emotion import LABELS
+from astrbot_plugin_livingemotion.domain.context_emotion import LABELS, empty_state
 from astrbot_plugin_livingemotion.storage.console_data import write_relationship_override
-from astrbot_plugin_livingemotion.storage.context_emotions import PERSON_KIND
+from astrbot_plugin_livingemotion.storage.context_emotions import PERSON_KIND, person_value
 from test_context_emotions import group_ingest, injected, local_app, ingest, feelings
 from test_application import Message
 
@@ -158,7 +158,8 @@ async def test_semantic_increase_decrease_clear_and_none_with_existing_state(tmp
         _, _, record, _ = await turn(app, "create", body)
         original = record.value["_account_affect"]["context_emotions"]["items"][0]
         clock[0] += 1
-        _, _, increased, _ = await turn(app, "increase", "这是新的刺激方式")
+        latest, _, increased, _ = await turn(app, "increase", "这是新的刺激方式")
+        refs = (latest.extra["livingemotion:event_key"],)
         value = increased.value["_account_affect"]["context_emotions"]["items"][0]
         assert value["intensity"] > original["intensity"]
         assert value["expires_at"] == original["expires_at"]
@@ -168,12 +169,15 @@ async def test_semantic_increase_decrease_clear_and_none_with_existing_state(tmp
         _, _, unchanged, _ = await turn(app, "none", "继续讲原来的事")
         assert unchanged.value["_account_affect"]["context_emotions"]["items"][0]["intensity"] < value["intensity"]
         clock[0] += 1
-        provider.respond = lambda p: [appraisal(kind, p["message"], action="decrease", strength=.3)]
-        _, _, decreased, _ = await turn(app, "decrease", "刚才那样说不妥，我收回一些")
+        provider.respond = lambda p: [
+            appraisal(kind, p["message"], action="decrease", strength=.3, context_refs=refs)]
+        _, _, decreased, _ = await turn(app, "decrease", "我收回刚才那句新的刺激方式的说法")
+        assert refs[0] in {row["ref"] for row in provider.snapshots[-1]["data"]["recent_dialogue"]}
         assert decreased.value["_account_affect"]["context_emotions"]["items"][0]["intensity"] < .4
         clock[0] += 1
-        provider.respond = lambda p: [appraisal(kind, p["message"], action="clear")]
-        _, _, cleared, expression = await turn(app, "clear", "这件事解释清楚了，放下吧")
+        provider.respond = lambda p: [appraisal(kind, p["message"], action="clear", context_refs=refs)]
+        _, _, cleared, expression = await turn(app, "clear", "我收回之前那句新的刺激方式的整句话")
+        assert refs[0] in {row["ref"] for row in provider.snapshots[-1]["data"]["recent_dialogue"]}
         assert not cleared.value["_account_affect"]["context_emotions"]["items"]
         assert not expression["bot"].get("context_emotions")
     finally:
@@ -214,8 +218,10 @@ async def test_context_only_preserves_four_axes_relation_ledger_and_deduplicates
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("change", ["new_message", "provider", "persona", "clear", "relationship"])
-async def test_context_only_late_results_are_discarded(tmp_path, change):
+@pytest.mark.parametrize("change", [
+    "neutral", "provider", "persona", "route", "clear", "relationship", "correction", "expired",
+])
+async def test_context_only_late_result_respects_origin_fences(tmp_path, change):
     app, host, _, clock, context, provider = await semantic_app(tmp_path)
     release = asyncio.Event()
     try:
@@ -225,27 +231,45 @@ async def test_context_only_late_results_are_discarded(tmp_path, change):
         provider.respond = lambda p: [appraisal("hurt", p["message"])]
         message, _, before = await ingest(app, "delayed", "再见，我不想见到你")
         await asyncio.wait_for(provider.started.wait(), 2)
-        if change == "new_message":
+        if change == "neutral":
             clock[0] += 1
-            _, _, before = await ingest(app, "newer", "刚才说得过了")
-            # Keep the newer event off the provider so only the old result is tested.
-            newer_key = next(k for k in app._refinement_tasks if k != message.extra["livingemotion:event_key"]
-                             and not app._refinement_tasks[k]["task"].done())
-            app._refinement_tasks[newer_key]["task"].cancel()
+            _, _, before = await ingest(app, "newer", "那我们继续检查下一项配置。")
         elif change == "provider":
             provider.fingerprint = "changed"
         elif change == "persona":
             host.prompt = "changed native persona"
+        elif change == "route":
+            source = app.bridge.source(context)
+            app.bridge.sources[context.account_key] = replace(
+                source, context=replace(context, route=context.route + ":changed"))
         elif change == "clear":
             await app.store.clear_scope(context, await app.store.get_generation(context))
             before = None
-        else:
+        elif change == "relationship":
             await write_relationship_override(app.store, context, expected_version=1,
                 actor_id="offline-test", reason="edit while analyzing", score=60)
             before = await app.store.get_state(context, "relationship", context.account_id)
+        elif change == "correction":
+            result = await app.store.correct_relationship(
+                context, before.generation, expected_version=before.version,
+                actor_id="offline-test", reason="direct correction while analyzing", score=60,
+            )
+            assert result.accepted
+            before = await app.store.get_state(context, "relationship", context.account_id)
+        else:
+            clock[0] += 7200
+        bot = await app.store.get_state(context, "bot")
+        ledger = await app.store.relationship_ledger(context)
         release.set()
         await app.await_context_refinement(message.extra["livingemotion:event_key"])
-        assert await app.store.get_state(context, "relationship", context.account_id) == before
+        after = await app.store.get_state(context, "relationship", context.account_id)
+        if change == "neutral":
+            assert after.version == before.version + 1
+            assert [row["kind"] for row in feelings(app, after, context)] == ["hurt"]
+        else:
+            assert after == before
+        assert await app.store.get_state(context, "bot") == bot
+        assert await app.store.relationship_ledger(context) == ledger
         assert len(provider.snapshots) == 2
     finally:
         release.set()
@@ -261,7 +285,7 @@ async def test_wait_timeout_keeps_background_analysis_and_writes_back_once(tmp_p
     try:
         provider.release = release
         provider.respond = lambda p: [appraisal("hurt", p["message"])]
-        message, _, record, expression = await turn(app, "timeout", "你就是个废物")
+        message, _, record, expression = await turn(app, "timeout", "你的存在对我没有任何价值")
         # 回复不等分析：这次回复不带对象情绪，记录也未改动。
         assert not feelings(app, record, context)
         assert not expression["bot"].get("context_emotions")
@@ -280,6 +304,146 @@ async def test_wait_timeout_keeps_background_analysis_and_writes_back_once(tmp_p
         assert json.loads(block.split("\n")[-1])["bot"]["context_emotions"][0]["kind"] == "hurt"
         assert len(provider.snapshots) == 1
         assert host.sends == 0
+    finally:
+        release.set()
+        await app.terminate()
+
+
+@pytest.mark.asyncio
+async def test_native_request_does_not_wait_for_model_after_confirmed_local_change(
+        tmp_path, monkeypatch):
+    import astrbot_plugin_livingemotion.runtime.refinement as refinement
+    monkeypatch.setattr(refinement, "CONTEXT_WAIT_SECONDS", 30)
+    app, _, _, _, context, provider = await semantic_app(tmp_path)
+    release = asyncio.Event()
+    try:
+        provider.release = release
+        provider.respond = lambda p: [appraisal("hurt", p["message"])]
+        message, _, local = await ingest(app, "realtime", "你就是个废物")
+        await asyncio.wait_for(provider.started.wait(), 2)
+        bot = await app.store.get_state(context, "bot")
+        ledger = await app.store.relationship_ledger(context)
+        items = await asyncio.wait_for(injected(app, message), 2)
+        assert [row["kind"] for row in items] == ["hurt"]
+        assert not release.is_set() and len(provider.snapshots) == 1
+        release.set()
+        await asyncio.gather(*tuple(app._actions))
+        assert await app.store.get_state(context, "relationship", context.account_id) == local
+        assert await app.store.get_state(context, "bot") == bot
+        assert await app.store.relationship_ledger(context) == ledger
+    finally:
+        release.set()
+        await app.terminate()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("dimension", ["conversation", "user"])
+async def test_lane_coalesces_near_repeats_without_delaying_neutral_or_sharing_evidence(
+        tmp_path, monkeypatch, dimension):
+    import astrbot_plugin_livingemotion.runtime.refinement as refinement
+    monkeypatch.setattr(refinement, "CONTEXT_WAIT_SECONDS", 30)
+    app, _, _, clock, context, provider = await semantic_app(
+        tmp_path, context_emotions_dimension=dimension)
+    release = asyncio.Event()
+    repeated = "和你说话对我已经没有任何价值。"
+    distinct = "突然想把脸靠近一点，你会不会躲开"
+    neutral = ["接下来是普通技术讨论。", "把第二项列出来。", "这里使用默认端口。",
+               "这个变量叫 timeout。", "我记下这个参数了。", "继续下一项。"]
+    try:
+        provider.release = release
+        first, _, _ = await ingest(app, "first", repeated)
+        await asyncio.wait_for(provider.started.wait(), 2)
+        first_task = app._refinement_tasks[first.extra["livingemotion:event_key"]]["task"]
+        clock[0] += 1
+        duplicate, _, _ = await ingest(app, "active-repeat", " " + repeated)
+        assert duplicate.extra["livingemotion:event_key"] not in app._refinement_tasks
+        assert not await asyncio.wait_for(injected(app, duplicate), 2)
+        for index, body in enumerate(neutral):
+            clock[0] += 7
+            message, _, _, _ = await asyncio.wait_for(turn(app, f"neutral-{index}", body), 2)
+            assert message.extra["livingemotion:event_key"] not in app._refinement_tasks
+        queued, _, _ = await ingest(app, "queued", distinct)
+        duplicate, _, _ = await ingest(app, "pending-repeat", distinct)
+        assert duplicate.extra["livingemotion:event_key"] not in app._refinement_tasks
+        assert app._refinement_tasks[queued.extra["livingemotion:event_key"]]["task"] is first_task
+
+        other, _, _ = await ingest(app, "other-person", repeated, account="other")
+        scene, _ = await group_ingest(app, "other-scene", repeated, "group", context.account_id)
+        assert app._refinement_tasks[other.extra["livingemotion:event_key"]]["task"] is not first_task
+        assert (app._refinement_tasks[scene.extra["livingemotion:event_key"]]["task"] is first_task
+                ) == (dimension == "user")
+        assert [p["data"]["message"] for p in provider.snapshots].count(distinct) == 0
+        release.set()
+        await asyncio.wait_for(asyncio.gather(*tuple(app._actions)), 3)
+        assert sorted(p["data"]["message"] for p in provider.snapshots) == sorted(
+            [repeated, repeated, repeated, distinct])
+    finally:
+        release.set()
+        await app.terminate()
+
+
+@pytest.mark.asyncio
+async def test_alternative_technical_updates_skip_but_qualified_status_dispatches(tmp_path):
+    updates = (
+        "请求返回的是 200 状态码。",
+        "这个端口当前没有进程占用。",
+        "命令的退出码是 0。",
+        "测试通过了 12 项。",
+        "配置文件已加载。",
+        "接下来检查日志。",
+    )
+    app, host, _, clock, _, provider = await semantic_app(tmp_path)
+    try:
+        start = clock[0]
+        for offset, body in zip((0, 8, 18, 28, 38, 48), updates, strict=True):
+            clock[0] = start + offset
+            await turn(app, f"technical-{offset}", body)
+            await asyncio.gather(*tuple(app._actions))
+        assert [packet["data"]["message"] for packet in provider.snapshots] == []
+
+        charged = updates[0][:-1] + "，你的存在对我没有任何价值。"
+        uncertain = updates[1][:-1] + "？"
+        for body in (charged, uncertain):
+            clock[0] += 1
+            await turn(app, f"technical-{clock[0] - start}", body)
+            await asyncio.gather(*tuple(app._actions))
+        assert [packet["data"]["message"] for packet in provider.snapshots] == [charged, uncertain]
+        assert host.sends == 0
+    finally:
+        await app.terminate()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("body", ["能说清楚一点吗？", "请求返回的是 200 状态码。"])
+async def test_coalescing_keeps_different_native_reply_anchors(tmp_path, body):
+    class Reply:
+        def __init__(self, sender, reply_id):
+            self.sender_id, self.id = sender, reply_id
+
+    app, _, _, clock, context, provider = await semantic_app(tmp_path)
+    release = asyncio.Event()
+    try:
+        anchors = {}
+        for reply_id in ("first-reply", "second-reply"):
+            _, event = await app.bridge.normalize(Message(reply_id, reply_id), clock[0])
+            event = replace(event, producer="livingemotion.host", event_type="bot_reply_submitted",
+                            actor_role=ActorRole.BOT, actor_id=context.bot_id)
+            assert (await app.store.commit_event(event, 0)).accepted
+            anchors[reply_id] = event.idempotency_key
+        provider.release = release
+        for i, reply_id in enumerate(("first-reply", "first-reply", "second-reply")):
+            clock[0] += 1
+            message = Message(f"reply-{i}", body)
+            message.message_obj.message = (Reply(message.get_self_id(), reply_id),)
+            await app.on_message(message)
+            assert message.extra["livingemotion:ingest"] == "accepted"
+            assert (message.extra["livingemotion:event_key"] in app._refinement_tasks) == (i != 1)
+            if i == 0:
+                await asyncio.wait_for(provider.started.wait(), 2)
+        release.set()
+        await asyncio.wait_for(asyncio.gather(*tuple(app._actions)), 3)
+        for packet, anchor in zip(provider.snapshots, anchors.values(), strict=True):
+            assert anchor in {row["ref"] for row in packet["data"]["recent_dialogue"]}
     finally:
         release.set()
         await app.terminate()
@@ -340,37 +504,57 @@ async def test_user_dimension_model_writes_person_record_shared_across_scenes(tm
 
 
 @pytest.mark.asyncio
-async def test_user_dimension_person_write_retries_on_version_conflict(tmp_path, monkeypatch):
+@pytest.mark.parametrize("dimension", ["conversation", "user"])
+@pytest.mark.parametrize("conflicts", [1, 3])
+async def test_deferred_write_cas_retries_latest_record_only(
+        tmp_path, monkeypatch, dimension, conflicts):
     app, host, _, clock, context, provider = await semantic_app(
-        tmp_path, context_emotions_dimension="user")
+        tmp_path, context_emotions_dimension=dimension)
     try:
-        provider.respond = lambda p: []
-        await turn(app, "warm", "先聊一句")
-        original, raced = app.store.refine_context_emotions, []
+        original, versions, accepted = app.store.calibrate_context_emotions, [], []
 
-        async def racing(event, generation, write, trace):
-            if not raced:
-                # The same QQ's record changes after the model verdict but before the write.
-                current = await app.store.context_emotion_record(context)
-                def bump(db):  # Store work runs on the connection's worker thread.
-                    return app.store._write_person(db, context, StateWrite(
-                        PERSON_KIND, current.value, current.version, context.account_id), clock[0])
-                await app.store._run(bump)
-                raced.append(True)
-            return await original(event, generation, write, trace)
+        async def racing(event, generation, **kwargs):
+            current = kwargs["target"]
+            version = current.version if current else 0
+            if len(versions) < conflicts:
+                if dimension == "user":
+                    value = (current.value if current else person_value(
+                        context, empty_state(), kwargs["fingerprint"], kwargs["epoch"]))
+                    kind = PERSON_KIND
+                else:
+                    value = {**current.value, "_racing_write": len(versions) + 1}
+                    kind = "relationship"
+                result = await app.store.write_states(
+                    context, generation, (StateWrite(kind, value, version, context.account_id),))
+                assert result.accepted
+            versions.append(version)
+            result = await original(event, generation, **kwargs)
+            if result.accepted:
+                accepted.append((event, generation, kwargs))
+            return result
 
-        monkeypatch.setattr(app.store, "refine_context_emotions", racing)
-        clock[0] += 601
+        monkeypatch.setattr(app.store, "calibrate_context_emotions", racing)
+        clock[0] += 1
         body = "你的存在对我没有任何价值"
         provider.respond = lambda p: [appraisal("hurt", body)]
         await turn(app, "joint", body)
-        assert raced == [True]
+        assert len(versions) == min(conflicts + 1, 3)
+        assert versions == list(range(versions[0], versions[0] + len(versions)))
         record = await app.store.context_emotion_record(context)
-        # 1 warm-up, 2 the racing write, 3 this verdict replayed on the latest record.
-        assert record.version == 3 and [row["kind"] for row in record.value[
-            "context_emotions"]["items"]] == ["hurt"]
-        assert app.emotion_model_analysis([context])["reason_code"] == "completed"
-        assert len(provider.snapshots) == 2  # A conflict replays the verdict, never the paid call.
+        assert record.version == versions[0] + min(conflicts + 1, 3)
+        if dimension == "conversation":
+            assert record.value["_racing_write"] == conflicts
+        if conflicts == 1:
+            event, generation, kwargs = accepted.pop()
+            duplicate = await original(event, generation, **kwargs)
+            assert duplicate.reason_code == "duplicate_event"
+            assert await app.store.context_emotion_record(context) == record
+            values = await app.api.get_current_emotion(context)
+            assert values["data"]["context_emotions"]["hurt"] == pytest.approx(.45)
+        else:
+            assert not accepted
+            assert app.emotion_model_analysis([context])["reason_code"] == "version_conflict"
+        assert len(provider.snapshots) == 1  # Retry the CAS, not the provider.
         assert host.sends == 0
     finally:
         await app.terminate()
@@ -423,12 +607,46 @@ async def test_no_lexical_fallback_or_retry_after_failure(tmp_path, failure):
                     raise ModelResultUnknown("unknown")
                 return "{invalid"
             provider.generate = fail
-        body = "你就是个废物" if failure != "oversize" else "你就是个废物" * 10000
+        body = "你的存在对我没有任何价值"
+        if failure == "oversize":
+            body *= 10000
         message, _, record, expression = await turn(app, "failure", body)
         assert not feelings(app, record, context)
         assert not expression["bot"].get("context_emotions")
         await app.on_llm_request(message, SimpleNamespace(extra_user_content_parts=[]))
         assert len(provider.snapshots) == (0 if failure == "oversize" else 1)
+    finally:
+        await app.terminate()
+
+
+@pytest.mark.asyncio
+async def test_realtime_failures_never_change_legacy_provider_routing(tmp_path):
+    app, _, native, clock, _, provider = await semantic_app(tmp_path)
+    try:
+        native["emotion_provider_id"] = "synthetic-dedicated"
+        await app.refresh_config()
+        routes = []
+
+        async def binding(_context, *, purpose=""):
+            routes.append(purpose)
+            return provider
+
+        app.model_binding = binding
+        generate = provider.generate
+
+        async def invalid(*args):
+            await generate(*args)
+            return "{invalid"
+
+        provider.generate = invalid
+        for i, body in enumerate(("我不想听你解释了", "和你说话没有意义", "也许我高估了你")):
+            clock[0] += 1
+            _, context, record, _ = await turn(app, f"failed-{i}", body)
+            assert not feelings(app, record, context)
+        assert len(provider.snapshots) == 3
+        assert set(routes) == {"emotion"}
+        assert not getattr(app, "_emotion_failures", 0)
+        assert not getattr(app, "_emotion_blocked_until", 0)
     finally:
         await app.terminate()
 
@@ -448,10 +666,11 @@ async def test_recent_history_is_latest_authorized_and_bounded(tmp_path):
         await app.refresh_config()
         await turn(app, "current", "接着聊")
         history = provider.snapshots[-1]["data"]["recent_dialogue"]
-        assert [r["text"] for r in history] == [f"本对象对话{i}" for i in range(4, 12)]
+        assert [r["text"] for r in history] == ["本对象对话10", "本对象对话11"]
         assert all(len(r["text"]) <= 400 for r in history)
         # A mismatched persona or identity cannot reuse any of those rows.
         _, normalized = await app.bridge.normalize(Message("current", "接着聊"), clock[0])
+        assert len(await app.store.recent_dialogue(normalized)) == 8  # Old storage API unchanged.
         for field in ("persona_revision", "identity_revision"):
             alien = replace(normalized, context=replace(context, **{field: "different"}))
             assert not await app.store.recent_dialogue(alien)
@@ -484,12 +703,16 @@ async def test_many_empty_turns_do_not_freeze_later_emotion_or_repair(tmp_path):
             clock[0] += 1
             await turn(app, f"empty-{i}", "正常聊天")
         provider.respond = lambda p: [appraisal("hurt", p["message"])]
-        _, _, record, expression = await turn(app, "after-many", "我不想再搭理你")
+        message, _, record, expression = await turn(app, "after-many", "我不想再搭理你")
         assert feelings(app, record, context)
         assert expression["bot"]["context_emotions"]
         clock[0] += 1
-        provider.respond = lambda p: [appraisal("hurt", p["message"], action="clear")]
-        _, _, cleared, expression = await turn(app, "after-many-repair", "误会已经解开")
+        ref = message.extra["livingemotion:event_key"]
+        provider.respond = lambda p: [
+            appraisal("hurt", p["message"], action="clear", context_refs=(ref,))]
+        _, _, cleared, expression = await turn(
+            app, "after-many-repair", "我收回刚才那句不想再搭理你的话")
+        assert ref in {row["ref"] for row in provider.snapshots[-1]["data"]["recent_dialogue"]}
         assert not feelings(app, cleared, context)
         assert not expression["bot"].get("context_emotions")
         assert len(cleared.value["_account_affect"]["context_emotions"]["seen"]) <= 16

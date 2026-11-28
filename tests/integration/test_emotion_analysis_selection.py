@@ -9,12 +9,13 @@ import pytest
 from astrbot_plugin_livingemotion.contracts import Context, SceneKind
 from astrbot_plugin_livingemotion.storage.console_data import selected_contexts
 from test_application import generation_app, Message
+from test_context_emotions import At
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("group", ["", "test-group"])
+@pytest.mark.parametrize("group,targeted", [("", False), ("test-group", True), ("test-group", False)])
 @pytest.mark.parametrize("enabled", [False, True])
-async def test_persisted_selection_preserves_live_diagnostics(tmp_path, group, enabled):
+async def test_persisted_selection_preserves_live_diagnostics(tmp_path, group, targeted, enabled):
     app, host, native, _, _, binding, _ = await generation_app(tmp_path)
     calls = []
     try:
@@ -34,6 +35,8 @@ async def test_persisted_selection_preserves_live_diagnostics(tmp_path, group, e
 
         binding.generate = generate
         message = Message("filtered-diagnostic", "Synthetic neutral message", group=group)
+        if targeted:
+            message.message_obj.message = (At(message.get_self_id()),)
         await app.on_message(message)
         if app._actions:
             await asyncio.wait_for(asyncio.gather(*tuple(app._actions)), 3)
@@ -48,12 +51,13 @@ async def test_persisted_selection_preserves_live_diagnostics(tmp_path, group, e
         before = await app.store.get_state(context, "relationship", context.account_id)
         live = await app.console_state(context.account_key)
         filtered = await app.console_state(**selection)
-        expected = "completed" if enabled else "skipped"
+        expected_calls = int(enabled and (not group or targeted))
+        expected = "completed" if expected_calls else "skipped"
         assert live["emotion_model_analysis"]["status"] == expected
         assert filtered["emotion_model_analysis"] == live["emotion_model_analysis"]
         assert filtered["context_emotions"] == live["context_emotions"]
         assert await app.store.get_state(context, "relationship", context.account_id) == before
-        assert len(calls) == int(enabled) and host.sends == 0
+        assert len(calls) == expected_calls and host.sends == 0
     finally:
         await app.terminate()
 

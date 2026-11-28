@@ -24,6 +24,10 @@ from test_application import application, generation_app, Message
 NOW = 1793919600.0
 OPTIONS = {"context_emotions_enabled": True, "promise_enabled": False,
            "weather_factor_enabled": False}
+HELP_ACK = "谢谢你帮我解决了路由超时"
+HELP_DENIAL = "你从没帮我解决路由超时"
+WARM = "我喜欢跟你待在一起"
+UNFAIR_REPAIR = "对不起，我刚才不该怪你"
 
 
 async def local_app(path, **options):
@@ -52,10 +56,10 @@ def feelings(app, record, context):
 async def test_local_proof_observation_and_switch(tmp_path, enabled):
     app, host, _, clock = await local_app(tmp_path, context_emotions_enabled=enabled)
     try:
-        _, context, proof = await ingest(app, "ack", "谢谢你帮我解决了问题")
+        _, context, proof = await ingest(app, "ack", HELP_ACK)
         assert not feelings(app, proof, context)
         clock[0] += 1
-        message, context, record = await ingest(app, "denial", "你从来没帮过我")
+        message, context, record = await ingest(app, "denial", HELP_DENIAL)
         assert [r["kind"] for r in feelings(app, record, context)] == (["wronged"] if enabled else [])
         result = await app.api.get_current_emotion(event=message)
         assert result["status"] == "ok"
@@ -69,6 +73,24 @@ async def test_local_proof_observation_and_switch(tmp_path, enabled):
         observation = await app.store.get_state(human, "observation", human.account_id)
         assert ("wronged" in observation.value["labels"] if observation else False) == enabled
         assert host.sends == 0 and not app._actions
+    finally:
+        await app.terminate()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prior", [None, "谢谢你帮我解决了问题", "谢谢你帮我修好了打印机"])
+async def test_help_denial_without_same_topic_proof_does_not_guess(tmp_path, prior):
+    app, _, _, clock = await local_app(tmp_path)
+    try:
+        if prior is not None:
+            await ingest(app, "unrelated-ack", prior)
+        clock[0] += 1
+        message, context, record = await ingest(app, "unsupported-denial", HELP_DENIAL)
+        assert not feelings(app, record, context)
+        assert not await injected(app, message)
+        clock[0] += 1
+        _, context, record = await ingest(app, "independent-insult", "你就是个废物")
+        assert [row["kind"] for row in feelings(app, record, context)] == ["hurt"]
     finally:
         await app.terminate()
 
@@ -107,7 +129,7 @@ async def test_shyness_manual_relation_and_boundary(tmp_path, score, note, expec
         await write_relationship_override(app.store, context, expected_version=0,
             actor_id="test-admin", reason="offline", score=score, note=note)
         clock[0] += 1
-        message, context, record = await ingest(app, "warm", "你好可爱，我一直看着你呢")
+        message, context, record = await ingest(app, "warm", WARM)
         rows = feelings(app, record, context)
         assert bool(rows) == expected
         if expected:
@@ -132,7 +154,7 @@ async def test_config_relationship_description_blocks_shyness(tmp_path):
         await write_relationship_override(app.store, context, expected_version=0,
             actor_id="test", reason="offline", score=50)
         clock[0] += 1
-        _, _, record = await ingest(app, "warm", "你好可爱")
+        _, _, record = await ingest(app, "warm", WARM)
         assert feelings(app, record, context)
         native["relationship_stage_descriptions"] = '["","","","只聊工作，保持专业"]'
         await app.refresh_config()
@@ -183,7 +205,7 @@ async def test_restart_decay_repair_and_expired_reenable(tmp_path):
         _, context, record = await ingest(app, "after-restart", "你好")
         assert feelings(app, record, context)[0]["intensity"] == pytest.approx(original / 2, abs=.0001)
         clock[0] += 1
-        _, _, repaired = await ingest(app, "repair", "对不起，是我误会你了")
+        _, _, repaired = await ingest(app, "repair", UNFAIR_REPAIR)
         assert not feelings(app, repaired, context)  # .25 × .4 is below expression threshold.
         native["context_emotions_enabled"] = False
         await app.refresh_config()
@@ -256,8 +278,9 @@ async def test_config_four_surfaces_and_invalid_save(tmp_path):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("output", ["old", "valid", "invalid"])
-async def test_joint_model_replaces_original_snapshot_once(tmp_path, output):
-    app, host, native, _, context, binding, clock = await generation_app(tmp_path)
+async def test_joint_model_keeps_legacy_refinement_without_recounting_realtime_objects(tmp_path, output):
+    app, host, native, _, context, binding, _ = await generation_app(tmp_path)
+    started, release = asyncio.Event(), asyncio.Event()
     calls = []
     try:
         native.update(context_emotions_enabled=True, emotion_model_enabled=True,
@@ -268,6 +291,9 @@ async def test_joint_model_replaces_original_snapshot_once(tmp_path, output):
         async def generate(system, data, *_):
             calls.append(json.loads(data))
             assert "context_appraisals" in system
+            assert "不要四维delta" not in system
+            started.set()
+            await release.wait()
             result = {"rule_version": "emotion-2", "delta": {"pleasure": .04},
                       "confidence": .9, "control": .62, "appraisals": []}
             if output != "old":
@@ -278,25 +304,37 @@ async def test_joint_model_replaces_original_snapshot_once(tmp_path, output):
             return json.dumps(result)
 
         binding.generate = generate
-        message, _, _ = await ingest(app, "refinement", body)
+        message, _, local = await ingest(app, "refinement", body)
+        await asyncio.wait_for(started.wait(), 2)
+        assert [row["kind"] for row in feelings(app, local, context)] == ["wronged"]
+        bot = await app.store.get_state(context, "bot")
+        ledger = await app.store.relationship_ledger(context)
+        release.set()
         await asyncio.wait_for(asyncio.gather(*tuple(app._actions)), 3)
         record = await app.store.get_state(context, "relationship", context.account_id)
-        items = record.value["_account_affect"]["context_emotions"]["items"]
-        assert ([r["intensity"] for r in items] == pytest.approx([.675])
-                if output == "valid" else not items)
+        refined_bot = await app.store.get_state(context, "bot")
+        assert refined_bot.version == bot.version + 1
+        assert refined_bot.value["pleasure"] == bot.value["pleasure"]  # No pleasure without evidence.
+        assert refined_bot.value["control"] > bot.value["control"]
+        assert record.value["score"] == local.value["score"]
+        assert record.value["_runtime"] == local.value["_runtime"]
+        assert await app.store.relationship_ledger(context) == ledger
+        assert record.value["_account_affect"]["context_emotions"] == local.value[
+            "_account_affect"]["context_emotions"]
         assert app.emotion_model_analysis([context])["applied"]
         assert len(calls) == 1
-        before = record
         await app.on_message(message)
-        assert await app.store.get_state(context, "relationship", context.account_id) == before
+        assert await app.store.get_state(context, "relationship", context.account_id) == record
+        assert await app.store.get_state(context, "bot") == refined_bot
         assert len(calls) == 1 and host.sends == 0
     finally:
+        release.set()
         await app.terminate()
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("change", [
-    "none", "revoke", "new_message", "provider", "relationship", "clear",
+    "none", "revoke", "new_message", "related_repair", "provider", "relationship", "clear",
 ])
 async def test_authorized_help_memory_and_late_result_fences(tmp_path, change):
     app, host, native, _, context, binding, clock = await generation_app(tmp_path)
@@ -309,7 +347,7 @@ async def test_authorized_help_memory_and_late_result_fences(tmp_path, change):
         material = Material(EvidenceRef(
             "fake-authorized", "help", context, context.account_id, context.bot_id,
             ContentKind.INTERACTION, clock[0] - 10, expires_at=clock[0] + 100),
-            "谢谢你帮我解决了问题")
+            HELP_ACK)
 
         async def recall(*_, **__):
             return RecallResult((material,))
@@ -318,31 +356,34 @@ async def test_authorized_help_memory_and_late_result_fences(tmp_path, change):
             return ValidationResult(authorized[0], materials if authorized[0] else ())
 
         app.memory.recall, app.memory.validate_evidence = recall, validate
-        body = "你从来没帮过我"
 
         async def generate(system, data, *_):
             payload = json.loads(data)
             calls.append(payload)
+            if payload["message"] != HELP_DENIAL:
+                return json.dumps({"context_appraisals": []})
             started.set()
             await release.wait()
             return json.dumps({"rule_version": "emotion-2", "delta": {"pleasure": 0},
                 "control": .6, "confidence": .9, "context_appraisals": [{
                     "kind": "wronged", "cause_code": "devalued_contribution",
-                    "evidence": body, "confidence": .9, "strength": .75,
+                    "evidence": HELP_DENIAL, "confidence": .9, "strength": .75,
                     "context_refs": payload["context_support_refs"],
                 }]})
 
         binding.generate = generate
-        await ingest(app, "with-memory", body)
+        await ingest(app, "with-memory", HELP_DENIAL)
         await asyncio.wait_for(started.wait(), 2)
+        assert len(calls[0]["context_support_refs"]) == 1
         local = await app.store.get_state(context, "relationship", context.account_id)
         assert not feelings(app, local, context)  # No lexical guess before the model.
         if change == "revoke":
             authorized[0] = False
-        elif change == "new_message":
+        elif change in ("new_message", "related_repair"):
             clock[0] += 1
-            await ingest(app, "newer", "对不起，是我误会你了")
-            local = await app.store.get_state(context, "relationship", context.account_id)
+            followup = ("那我们继续检查下一项配置" if change == "new_message" else
+                        "路由超时确实是你帮我解决的，对不起")
+            _, _, local = await ingest(app, "newer", followup)
         elif change == "provider":
             binding.fingerprint = "changed-binding"
         elif change == "relationship":
@@ -355,13 +396,17 @@ async def test_authorized_help_memory_and_late_result_fences(tmp_path, change):
         release.set()
         await asyncio.wait_for(asyncio.gather(*tuple(app._actions)), 3)
         result = await app.store.get_state(context, "relationship", context.account_id)
-        if change == "none":
-            assert feelings(app, result, context)[0]["kind"] == "wronged"
-            assert result.version == local.version + 1
+        if change in ("none", "new_message"):
+            assert [row["kind"] for row in feelings(app, result, context)] == ["wronged"]
+            assert result.version > local.version
         else:
             assert result == local
-            assert not app.emotion_model_analysis([context])["applied"]
-        assert len(calls) == (2 if change == "new_message" else 1) and host.sends == 0
+            if change != "related_repair":
+                assert not app.emotion_model_analysis([context])["applied"]
+        assert sum(call["message"] == HELP_DENIAL for call in calls) == 1
+        if change != "related_repair":
+            assert len(calls) == 1
+        assert host.sends == 0
     finally:
         release.set()
         await app.terminate()
@@ -555,7 +600,7 @@ async def test_user_dimension_restart_dimension_switch_and_persona_change(tmp_pa
         await app.refresh_config()
         clock[0] += 1
         # A repair in private chat settles the feeling carried over from the group.
-        _, context, _ = await ingest(app, "repair", "对不起，是我误会你了", account="a")
+        _, context, _ = await ingest(app, "repair", UNFAIR_REPAIR, account="a")
         assert await shared(app, context) == {}
         await group_ingest(app, "unfair-again", "虽然你没做错，但我就是要怪你", "g1", "a")
         host.prompt = "Changed native personality"

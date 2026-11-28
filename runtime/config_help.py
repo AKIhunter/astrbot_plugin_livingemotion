@@ -3,6 +3,11 @@
 from ..config import RELATIONSHIP_STAGE_NAMES_FIELD
 
 CONFIG_HELP = {
+    "context_emotion_shadow_enabled": (
+        "对照新旧对象情绪判定，只记录差异。",
+        "在「设置 → 情绪」开启并保存，需同时开启对象情绪和模型分析。"
+        "后台额外调用每个进程连续24小时最多12次；只在 AstrBot 日志记录差异，不改情绪、不影响回复上下文。关闭即停止额外调用。",
+        "在 AstrBot 日志搜索 [LE-emotion-shadow]。"),
     "context_emotions_enabled": (
         "工作模式为「参与表达与行动」时按聊天对象记录委屈、受伤和害羞，并用于回复。",
         "在「设置 → 情绪」开启并保存；仅观察模式不新增这三项采集，"
@@ -287,7 +292,7 @@ def field_parent(name):
                 "persona_mode", "autonomy_enabled", "promise_enabled", "allow_sleep",
                 "diary_enabled", "dream_enabled", "livingmemory_enabled",
                 "emotion_model_enabled", "context_emotions_enabled",
-                "context_emotions_dimension"):
+                "context_emotions_dimension", "context_emotion_shadow_enabled"):
         return "", 0
     if name.startswith("promise_"):
         return "promise_enabled", 1

@@ -2272,6 +2272,11 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             self._scheduler.cancel()
             await asyncio.gather(self._scheduler, return_exceptions=True)
             self._scheduler = None
+        shadow = getattr(self, "_context_shadow_task", None)
+        if shadow is not None:
+            shadow.cancel()
+            await asyncio.gather(shadow, return_exceptions=True)
+            self._context_shadow_task = None
         for task in tuple(self._actions):
             task.cancel()
         if self._actions:

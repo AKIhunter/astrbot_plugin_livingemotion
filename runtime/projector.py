@@ -25,7 +25,7 @@ from ..contracts import (
     to_dict,
 )
 from ..domain.emotion import apply_emotion, decay_affect, emotion_policy
-from ..domain.context_emotion import apply_context_emotions, empty_state, read_state
+from ..domain.context_emotion import apply_realtime_context_emotions, empty_state, read_state
 from ..domain.night import apply_interaction
 from ..domain.relationship import (
     RelationshipPolicy, apply_relationship, initial_relationship, relationship_stage,
@@ -307,10 +307,12 @@ class Projector:
             relationship_behavior(relationship.score, config,
                                   note=override.get("note", ""))["description"],
         ))
-        contextual = apply_context_emotions(
+        contextual = apply_realtime_context_emotions(
             context_before, event, relationship, now=now,
-            enabled=context_enabled and not config.emotion_model_enabled,
-            relationship_note=relationship_note)
+            enabled=context_enabled, relationship_note=relationship_note)
+        # A cause-specific repair can settle this turn without moving its kind's mark.
+        context_realtime = contextual["applied"] and any(
+            contextual["state"].get(key) != context_before.get(key) for key in ("marks", "repairs"))
         if not config.allow_sleep:
             from ..domain.night import sleepless_state
             night_result = {"night": sleepless_state(night, now=now), "runtime": {}, "cost": 0}
@@ -406,6 +408,7 @@ class Projector:
                             payload, contextual["state"], fingerprint=fingerprint,
                             epoch=self.context_epoch)
                         if "context_emotions" not in payload["_account_affect"]:
+                            context_realtime = False
                             contextual["trace"].update(
                                 after=[], reason_codes=["context_capacity_limited"])
             if context_enabled:
@@ -427,6 +430,7 @@ class Projector:
                                       if records.get("relationship") else 0) + 1,
              "override_version": override_version,
              "account": account, "context_emotions": context_before,
+             "context_realtime": context_realtime,
              "context_fingerprint": fingerprint, "context_epoch": self.context_epoch,
              "relationship_note": relationship_note}
             if config.emotion_model_enabled and config.mode == "active" else None,

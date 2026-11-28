@@ -171,6 +171,7 @@ FIELD_LABELS = {
     "emotion_model_enabled": "模型辅助情绪分析", "emotion_provider_id": "情绪精炼模型",
     "dream_enabled": "生成梦境",
     "context_emotions_enabled": "委屈、受伤与害羞",
+    "context_emotion_shadow_enabled": "对象情绪语义对照",
     "context_emotions_dimension": "对象情绪维度",
     "dream_theme_pool": "梦境主题池", "dream_owner_notify": "梦中惊醒给主人发消息",
     "dream_owner_qq": "主人QQ",

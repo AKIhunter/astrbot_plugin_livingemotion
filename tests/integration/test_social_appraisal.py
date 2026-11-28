@@ -106,7 +106,7 @@ async def test_joint_refinement_authorized_memory_and_single_ledger(tmp_path, re
         material = Material(EvidenceRef(
             "fake-authorized", "old-care", context, context.account_id, context.bot_id,
             ContentKind.INTERACTION, clock[0] - 10, expires_at=clock[0] + 100),
-            "历史：对方以前认真教我怎样检验结果，记忆本身不加分。")
+            "历史：对方以前认真教我怎样校正计算过程和检验结论，记忆本身不加分。")
 
         async def recall(query, *, event=None, **_):
             assert event is not None and query.purpose == "emotion"

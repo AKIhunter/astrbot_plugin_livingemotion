@@ -178,6 +178,11 @@
     ],
     "description": "委屈、受伤与害羞按会话还是按 QQ 号记录。例：conversation 各群和私聊各自独立；user 同一 QQ 在私聊和各群互通，私聊里产生的情绪也会在群里表达。在设置 → 快速开始选择；切换不迁移旧记录。"
   },
+  "context_emotion_shadow_enabled": {
+    "type": "bool",
+    "default": false,
+    "description": "在 LivingEmotion 设置 → 情绪开启语义对照。需同时开启对象情绪和模型分析；最多额外调用12次/进程连续24小时，只在 AstrBot 日志记录判定差异，不改情绪、不影响回复上下文。关闭后停止额外调用。"
+  },
   "emotion_interval_seconds": {
     "type": "int",
     "default": 600,

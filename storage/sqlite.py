@@ -36,7 +36,7 @@ from ..contracts import (
     to_dict,
 )
 from .schema import migrate
-from .context_emotions import PERSON_KIND, ContextEmotionStore
+from .context_emotions import PERSON_KIND, ContextEmotionStore, person_dimension, person_value
 from .state_scope import StateScopeStore
 from .night import NightStore
 from .experiences import ExperienceStore
@@ -44,6 +44,7 @@ from .experiences import ExperienceStore
 T = TypeVar("T")
 STATE_KINDS = frozenset(("bot", "observation", "relationship", "night"))
 _JSON_SCALARS = frozenset((str, int, float, bool, type(None)))
+_OBJECT_FIELDS = ("context_emotions", "context_emotions_persona", "context_emotions_epoch")
 UNVERIFIED_EXPERIENCE = """EXISTS (
     SELECT 1 FROM json_each(experiences.value_json,'$.evidence')
     WHERE json_extract(value,'$.kind')='legacy_unknown')"""
@@ -597,7 +598,8 @@ class SQLiteStore(ContextEmotionStore, StateScopeStore, NightStore, ExperienceSt
     async def refine_emotion(self, event: Event, generation: int, version: int,
                              value: dict, trace: dict, *, owner=None,
                              relationship_write=None, relationship_trace=None,
-                             contributions=()) -> CommitResult:
+                             contributions=(), preserve_objects=False,
+                             locally_authorized=None) -> CommitResult:
         """Replace this event's joint appraisal and ledger in one CAS transaction."""
         payload = canonical_json(trace)
         if len(payload) > 65536 or trace.get("event_key") != event.idempotency_key:
@@ -615,6 +617,8 @@ class SQLiteStore(ContextEmotionStore, StateScopeStore, NightStore, ExperienceSt
         def commit(db):
             def mutate():
                 self._check_generation(db, context, generation)
+                if locally_authorized is not None and not locally_authorized():
+                    raise _Rejected("context_changed")
                 row = db.execute(
                     """SELECT e.seq,s.human_watermark FROM events e JOIN scopes s USING(scope_key)
                        WHERE e.event_key=? AND e.scope_key=? AND e.generation=?""",
@@ -622,10 +626,38 @@ class SQLiteStore(ContextEmotionStore, StateScopeStore, NightStore, ExperienceSt
                 ).fetchone()
                 if not row or row["seq"] != row["human_watermark"]:
                     raise _Rejected("new_human_message")
+                relation_write, relation_json = relationship_write, relation_payload
+                if preserve_objects and relation_write is not None:
+                    current, saved = self._context_refinement_origin(
+                        db, event, generation, owner,
+                        relation_write.value.get("_relationship_override_version", 0),
+                        relation_write.expected_version,
+                    )
+                    if current.version != relation_write.expected_version:
+                        raise _Rejected("version_conflict")
+                    old = current.value.get("_account_affect") or {}
+                    value_with_objects = relation_write.value
+                    if any(key in old for key in _OBJECT_FIELDS):
+                        value_with_objects = {
+                            **value_with_objects,
+                            "_account_affect": {**value_with_objects["_account_affect"],
+                                                **{k: old[k] for k in _OBJECT_FIELDS if k in old}},
+                        }
+                        relation_write = replace(relation_write, value=value_with_objects)
+                        if len(_state_json(value_with_objects)) > 65536:
+                            raise _Rejected("context_capacity_limited")
+                    if relationship_trace is not None:
+                        objects = saved.get("context_emotions")
+                        if objects is not None:
+                            relation_json = canonical_json({
+                                **relationship_trace, "context_emotions": objects,
+                            })
+                            if len(relation_json) > 65536:
+                                raise _Rejected("trace_capacity_limited")
                 versions = self._write_states(
                     db, context, generation,
                     (StateWrite("bot", value, version, owner=owner),)
-                    + ((relationship_write,) if relationship_write else ()), now,
+                    + ((relation_write,) if relation_write else ()), now,
                 )
                 changed = db.execute(
                     """UPDATE event_traces SET value_json=? WHERE event_key=? AND scope_key=?
@@ -634,11 +666,11 @@ class SQLiteStore(ContextEmotionStore, StateScopeStore, NightStore, ExperienceSt
                 ).rowcount
                 if changed != 1:
                     raise _Rejected("trace_missing")
-                if relation_payload is not None:
+                if relation_json is not None:
                     changed = db.execute(
                         """UPDATE event_traces SET value_json=? WHERE event_key=? AND scope_key=?
                            AND generation=? AND kind='relationship'""",
-                        (relation_payload, event.idempotency_key, context.scope_key, generation),
+                        (relation_json, event.idempotency_key, context.scope_key, generation),
                     ).rowcount
                     if changed != 1:
                         raise _Rejected("trace_missing")
@@ -667,6 +699,139 @@ class SQLiteStore(ContextEmotionStore, StateScopeStore, NightStore, ExperienceSt
         result = await self._run(commit)
         if result.accepted:
             self.record_diagnostic("emotion_refined", trace)
+        return result
+
+    def _context_refinement_origin(self, db, event, generation, owner, override_version,
+                                   first_origin_version):
+        from ..domain.context_emotion import POLICIES
+        from .console_data import _override
+
+        context = event.context
+        if self._generation(db, context) != generation:
+            raise _Rejected("stale_generation")
+        self._check_owner(db, context, owner)
+        if not 0 <= self._now() - event.occurred_at < max(p[2] for p in POLICIES.values()):
+            raise _Rejected("expired_event")
+        row = db.execute(
+            """SELECT e.occurred_at,e.metadata_json,t.value_json FROM events e
+               JOIN event_traces t USING(event_key,scope_key,generation)
+               WHERE e.event_key=? AND e.scope_key=? AND e.generation=? AND e.account_id=?
+               AND e.producer='astrbot' AND e.actor_role='human' AND e.event_type='message'
+               AND t.kind='relationship'""",
+            (event.idempotency_key, context.scope_key, generation, context.account_id),
+        ).fetchone()
+        if (not row or row["occurred_at"] != event.occurred_at
+                or json.loads(row["metadata_json"]).get("context")
+                != to_dict(replace(context, route=None))):
+            raise _Rejected("origin_missing")
+        trace = json.loads(row["value_json"])
+        if (trace.get("context_emotions") or {}).get("deferred"):
+            raise _Rejected("duplicate_event")
+        if (_override(db, context) or {}).get("version", 0) != override_version:
+            raise _Rejected("relationship_changed")
+        # Direct corrections need not create an override. Their audit records the
+        # prior relationship version, which orders them even at the same clock tick.
+        if db.execute(
+            """SELECT 1 FROM audit WHERE scope_key=? AND generation=?
+               AND action='relationship.correct' AND occurred_at>=?
+               AND json_extract(value_json,'$.account_id')=?
+               AND json_extract(value_json,'$.expected_version')>=? LIMIT 1""",
+            (context.scope_key, generation, event.occurred_at,
+             context.account_id, first_origin_version),
+        ).fetchone():
+            raise _Rejected("relationship_changed")
+        current = db.execute(
+            """SELECT version,updated_at,value_json FROM states WHERE scope_key=? AND generation=?
+               AND kind='relationship' AND record_key=?""",
+            (context.scope_key, generation, context.account_id),
+        ).fetchone()
+        if not current:
+            raise _Rejected("origin_missing")
+        origin = StateRecord("relationship", json.loads(current["value_json"]), current["version"],
+                             generation, current["updated_at"], context.account_id, owner)
+        return origin, trace
+
+    async def context_refinement_snapshot(self, event, generation, *, owner, override_version,
+                                          first_origin_version):
+        """Read the origin relationship and the current object in one store operation."""
+        def read(db):
+            try:
+                origin, _ = self._context_refinement_origin(
+                    db, event, generation, owner, override_version, first_origin_version)
+                target = (self._person_record(db, event.context)
+                          if person_dimension(self.config) else origin)
+                return "", origin, target
+            except _Rejected as exc:
+                return exc.reason, None, None
+        return await self._run(read)
+
+    async def calibrate_context_emotions(self, event, generation, *, origin, target,
+                                         owner, override_version, first_origin_version,
+                                         shared_person, state, trace, fingerprint, epoch,
+                                         context_token, locally_authorized):
+        """CAS only the object fields and this event's diagnostic, against both records."""
+        context = event.context
+
+        def commit(db):
+            def mutate():
+                if (not locally_authorized()
+                        or shared_person != person_dimension(self.config)):
+                    raise _Rejected("context_changed")
+                latest, diagnostic = self._context_refinement_origin(
+                    db, event, generation, owner, override_version, first_origin_version)
+                if latest.version != origin.version:
+                    raise _Rejected("version_conflict")
+                latest_target = self._person_record(db, context) if shared_person else latest
+                if latest_target != target:
+                    raise _Rejected("version_conflict")
+                target_version = target.version if target else 0
+                update = {**trace, "event_key": event.idempotency_key, "deferred": True}
+                prior = diagnostic.get("context_emotions") or {}
+                if prior:
+                    update["before"] = prior.get("before", update["before"])
+                    update["reason_codes"] = list(dict.fromkeys(
+                        (*prior.get("reason_codes", ()), *update["reason_codes"])))
+                versions = {}
+                now = self._now()
+                if state is not None:
+                    if shared_person:
+                        versions = self._write_person(db, context, StateWrite(
+                            PERSON_KIND, person_value(context, state, fingerprint, epoch),
+                            target_version, context.account_id), now)
+                    else:
+                        account = latest.value.get("_account_affect") or {"context": context_token}
+                        if account.get("context") != context_token:
+                            raise _Rejected("context_changed")
+                        payload = {**latest.value, "_account_affect": {
+                            **account, "context_emotions": state,
+                            "context_emotions_persona": fingerprint,
+                            "context_emotions_epoch": epoch,
+                        }}
+                        if len(_state_json(payload)) > 65536:
+                            raise _Rejected("context_capacity_limited")
+                        versions = self._write_scene_states(db, context, generation, (
+                            StateWrite("relationship", payload, target_version, context.account_id),
+                        ), now)
+                diagnostic["context_emotions"] = update
+                payload = canonical_json(diagnostic)
+                if len(payload) > 65536:
+                    raise _Rejected("trace_capacity_limited")
+                db.execute(
+                    """UPDATE event_traces SET value_json=? WHERE event_key=? AND scope_key=?
+                       AND generation=? AND kind='relationship'""",
+                    (payload, event.idempotency_key, context.scope_key, generation),
+                )
+                return CommitResult("accepted", "context_emotions_refined",
+                                    event.idempotency_key, generation, versions)
+            try:
+                return self._transaction(db, mutate)
+            except _Rejected as exc:
+                return CommitResult("rejected", exc.reason, event.idempotency_key, generation)
+        result = await self._run(commit)
+        if result.accepted:
+            self.record_diagnostic("context_emotions_refined", {
+                **trace, "at": self.clock(), "event_key": event.idempotency_key,
+            })
         return result
 
     async def refine_context_emotions(self, event: Event, generation: int,
@@ -768,21 +933,33 @@ class SQLiteStore(ContextEmotionStore, StateScopeStore, NightStore, ExperienceSt
         """Latest same-account, same-persona dialogue up to this event, in time order."""
         if type(limit) is not int or not 1 <= limit <= 8:
             raise ValueError("invalid dialogue limit")
+        return await self._dialogue_rows(event, limit=limit)
+
+    async def emotion_dialogue_candidates(self, event: Event, *, limit: int):
+        # Scan more than the prompt can hold; do not clip the relevant quote
+        # before ranking. Keep the existing recent-dialogue API unchanged.
+        if type(limit) is not int or not 1 <= limit <= 48:
+            raise ValueError("invalid emotion dialogue limit")
+        return await self._dialogue_rows(event, limit=limit, for_emotion=True)
+
+    async def _dialogue_rows(self, event: Event, *, limit: int, for_emotion=False):
         context = event.context
         cutoff = self._now() - self.config.window_days * 86400
 
         def read(db):
             rows = db.execute(
-                """SELECT e.event_key,e.actor_role,e.occurred_at,e.metadata_json,w.body
+                """SELECT e.event_key,e.event_id,e.actor_role,e.occurred_at,e.metadata_json,w.body
                    FROM body_window w JOIN events e ON e.seq=w.seq
                    WHERE w.scope_key=? AND e.account_id=? AND w.occurred_at>?
+                   AND (?=0 OR e.occurred_at<=?)
                    AND e.seq<(SELECT seq FROM events WHERE event_key=?)
                    AND e.generation=(SELECT generation FROM scopes WHERE scope_key=?)
                    AND ((e.event_type='message' AND e.actor_role='human')
                      OR (e.event_type='bot_reply_submitted' AND e.actor_role='bot'
                          AND e.producer='livingemotion.host'))
                    ORDER BY e.seq DESC LIMIT ?""",
-                (context.scope_key, context.account_id, cutoff, event.idempotency_key,
+                (context.scope_key, context.account_id, cutoff, for_emotion, event.occurred_at,
+                 event.idempotency_key,
                  context.scope_key, self.config.window_per_scope),
             ).fetchall()
             result = []
@@ -793,8 +970,16 @@ class SQLiteStore(ContextEmotionStore, StateScopeStore, NightStore, ExperienceSt
                         or any(raw.get(key) != to_dict(getattr(context, key)) for key in (
                             "bot_id", "persona_id", "persona_revision", "identity_revision", "audience"))):
                     continue
-                result.append({"ref": row["event_key"], "role": row["actor_role"],
-                               "at": row["occurred_at"], "text": row["body"][:400]})
+                if for_emotion and row["actor_role"] == "human":
+                    signals = set(metadata.get("signals", ()))
+                    if ("native_other_target" in signals or context.scene_kind.value != "private"
+                            and not signals & {"native_bot_mention", "native_bot_reply"}):
+                        continue
+                item = {"ref": row["event_key"], "role": row["actor_role"],
+                        "at": row["occurred_at"], "text": row["body"] if for_emotion else row["body"][:400]}
+                if for_emotion:
+                    item["event_id"] = row["event_id"]
+                result.append(item)
                 if len(result) >= limit:
                     break
             return list(reversed(result))

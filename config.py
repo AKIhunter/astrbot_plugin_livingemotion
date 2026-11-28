@@ -55,6 +55,8 @@ class Config:
     emotion_model_enabled: bool = False
     # Optional account-scoped feelings; existing installations retain their behavior.
     context_emotions_enabled: bool = False
+    # Opt-in diagnostics. Never a source for emotion or prompt state.
+    context_emotion_shadow_enabled: bool = False
     # 对象情绪按会话还是按 QQ 号记录：conversation 各群与私聊独立（存量行为），user 同一 QQ 互通。
     context_emotions_dimension: str = "conversation"
     dream_enabled: bool = False
