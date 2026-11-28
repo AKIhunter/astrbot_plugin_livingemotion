@@ -18,10 +18,10 @@ def test_all_sources_reject_builtin_logging_and_runtime_uses_api_logger():
         sources.extend((ROOT / directory).rglob("*.py"))
     for path in sources:
         tree = ast.parse(path.read_text(), filename=str(path))
-        # The recorder only defines a Handler attached to astrbot.api.logger;
+        # The diagnostic adapter only attaches a Handler to existing host sinks;
         # its isolated test constructs synthetic LogRecords. Neither adds a backend.
         handler_only = path.relative_to(ROOT).as_posix() in (
-            "diagnostic_bundle.py", "tests/test_diagnostic_bundle.py")
+            "diagnostic_event.py", "tests/test_diagnostic_bundle.py")
         runtime = path.parent == ROOT or path.relative_to(ROOT).parts[0] in RUNTIME_DIRS
         imports = []
         uses_logger = False
@@ -47,8 +47,8 @@ def test_all_sources_reject_builtin_logging_and_runtime_uses_api_logger():
 
 
 def test_diagnostic_handler_never_constructs_a_logging_backend():
-    tree = ast.parse((ROOT / "diagnostic_bundle.py").read_text())
+    tree = ast.parse((ROOT / "diagnostic_event.py").read_text())
     accesses = {node.attr for node in ast.walk(tree)
                 if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
                 and node.value.id == "logging"}
-    assert accesses == {"Handler", "INFO"}
+    assert accesses == {"Handler", "INFO", "WARNING"}

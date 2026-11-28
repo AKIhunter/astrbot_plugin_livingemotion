@@ -5,7 +5,7 @@
 ![livingEmotion wordmark and state lines](.github/img/Banner.png)
 
 [![AstrBot](https://img.shields.io/badge/AstrBot-4.29.1–4.29.4-3a8060)](https://docs.astrbot.app/)
-[![Version](https://img.shields.io/badge/version-0.12.0-3a8060)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.12.1-3a8060)](CHANGELOG.md)
 
 [简体中文](README.md) · **English**
 
@@ -136,8 +136,8 @@ Platform declarations cover basic message intake. QQ OneBot has isolated-host ac
 
 ## 📜 Changelog
 
-Current version: `v0.12.0` (2026-11-28)
+Current version: `v0.12.1` (2026-11-28)
 
-- 🔧 With LivingHello 2.11.0, LH drafts, revises and sends promised images. LE tracks the original promise and its completion. Configure the prompt model and daily limit in LH's AI Image Generation settings. See [compatibility and migration](docs/image-prompt-retry.md).
+- 🔧 Diagnostic exports now include message archiving, reply reservations, early stops and send callbacks. Match events across exports with LH 2.11.2. See [diagnostics](docs/diagnostics.md).
 
 Full history: [CHANGELOG.md](CHANGELOG.md) (Chinese).

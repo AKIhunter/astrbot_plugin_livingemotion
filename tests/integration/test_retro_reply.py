@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 from datetime import datetime, timezone
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -54,6 +55,46 @@ async def seed_nap(app, message):
     assert (await app.store.write_states(context, await app.store.get_generation(context), (
         StateWrite("night", to_dict(state), record.version, owner=record.owner),
     ))).accepted
+
+
+async def test_diagnostics_explain_duplicate_stop_and_distinguish_raw_events(tmp_path, le_export):
+    app, _, _, clock = await at_time(tmp_path, 12)
+    app.diagnostics.clock = lambda: clock[0] + 1
+    try:
+        # The native adapter reuses the original message ID, but makes a fresh
+        # host event object on each delivery.
+        messages = [FinalMessage(identifier="private-platform-message-id", body="private-chat-body")
+                    for _ in range(2)]
+        raw_events = [("notice", {"notice_type": "notify", "sub_type": "poke"}),
+                      ("request", {"request_type": "friend", "sub_type": "private-unknown-value"})]
+        for message in messages:
+            message.message_obj.raw_message = {"post_type": "message", "message_type": "private",
+                                               "raw_message": "private-wire-body"}
+            await app.on_llm_request(message, SimpleNamespace(extra_user_content_parts=[]))
+        assert not messages[0].stopped and messages[1].stopped
+        for category, detail in raw_events:
+            message = FinalMessage(identifier=f"private-{category}-id", body="")
+            message.message_obj.raw_message = {"post_type": category, **detail}
+            await app.on_message(message)
+
+        clock[0] += 1
+        exported = le_export(app)
+        rows = [json.loads(line) for line in exported["runtime.jsonl"].splitlines()]
+        ready, = [row for row in rows if row.get("stage") == "supplement_request" and row["status"] == "ready"]
+        stopped, = [row for row in rows if row.get("stage") == "supplement_request" and row["status"] == "stopped"]
+        assert stopped["reason_code"] == "reply_exists"
+        assert stopped["reply_id"] == ready["reply_id"]
+        assert stopped["event_id"] == ready["event_id"]
+        assert stopped["event_key"] == ready["event_key"]
+        assert stopped["flow_id"] != ready["flow_id"]
+        assert stopped["native_post_type"] == ready["native_post_type"] == "message"
+        ingest = {r["native_post_type"]: r for r in rows if r.get("stage") == "ingest"}
+        assert ingest["notice"]["native_sub_type"] == "poke"
+        assert ingest["request"]["native_request_type"] == "friend"
+        assert ingest["request"]["native_sub_type"] == "other"
+        assert "private-" not in "\n".join(exported.values())
+    finally:
+        await app.terminate()
 
 
 @pytest.mark.asyncio

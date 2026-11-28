@@ -8,6 +8,7 @@ from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star, StarTools, register
 
 from .runtime.application import Application
+from .runtime.diagnostics import native_step
 from .runtime.reply_alert import ALERT_ID, ALERT_TEXT, ReplyBlockAlert
 from .livinghello_coupling import allowed as coupling_allowed
 
@@ -21,7 +22,7 @@ def _private_route(event) -> str | None:
 
 
 @register("astrbot_plugin_livingemotion", "AKIhunter",
-          "Independent source-scoped bot state", "0.12.0")
+          "Independent source-scoped bot state", "0.12.1")
 class LivingEmotionPlugin(Star):
     api_version = 1
 
@@ -37,6 +38,7 @@ class LivingEmotionPlugin(Star):
             context, config,
             StarTools.get_data_dir("astrbot_plugin_livingemotion"),
         )
+        self.application.diagnostic_logger = getattr(self, "logger", None)
         self.api = None
         self.page_api = None
         self.reply_alert = ReplyBlockAlert()
@@ -75,11 +77,18 @@ class LivingEmotionPlugin(Star):
                 availability = await self.application.availability(
                     context, exempt=exempt,
                 )
+                if "state_unavailable" in availability.reason_codes:
+                    native_step(self.application, event, "observe_availability", "failed",
+                                reason="state_unavailable", context=context)
                 if availability.block_chat:
+                    native_step(self.application, event, "observe_message", "stopped", context=context,
+                                reason=next(iter(availability.reason_codes), "unknown"))
                     self._note_livinghello_blocked(event, context, availability)
                     event.stop_event()
-        except Exception:
+        except Exception as exc:
             # Optional state must not turn normal chat into a host plugin error.
+            native_step(self.application, event, "observe_availability", "failed",
+                        reason="state_unavailable", exc=exc)
             event.set_extra("livingemotion:unavailable", "state_unavailable")
 
     def _note_livinghello_blocked(self, event, context, availability) -> None:
@@ -121,7 +130,11 @@ class LivingEmotionPlugin(Star):
 
     @filter.on_llm_request(priority=11000)
     async def supplement_request(self, event: AstrMessageEvent, request: ProviderRequest):
-        await self.application.on_llm_request(event, request)
+        try:
+            await self.application.on_llm_request(event, request)
+        except Exception as exc:
+            native_step(self.application, event, "supplement_request", "failed", phase="prepare", exc=exc)
+            raise
 
     @filter.on_llm_request(priority=-sys.maxsize - 1)
     async def buffer_final_request(self, event: AstrMessageEvent, request: ProviderRequest):
@@ -137,8 +150,12 @@ class LivingEmotionPlugin(Star):
         # the native runner always streams and has no guarded submission point.
         event.set_extra("enable_streaming", False)
         if event.get_extra("action_type") == "live":
+            native_step(self.application, event, "buffer_final_request", "stopped",
+                        reason="live_submission_unsupported")
             event.stop_event()
             event.set_extra("livingemotion:unavailable", "live_submission_unsupported")
+        else:
+            native_step(self.application, event, "buffer_final_request", "ready")
 
     @filter.on_llm_request(priority=-sys.maxsize - 2)
     async def arbitrate_future_tasks(self, event: AstrMessageEvent, request: ProviderRequest):
@@ -149,13 +166,31 @@ class LivingEmotionPlugin(Star):
     @getattr(filter, "after_message_sent", lambda **kw: lambda fn: fn)(
         priority=-sys.maxsize - 2)
     async def remember_sent_promises(self, event: AstrMessageEvent):
-        await self.application.on_reply_sent(event)
+        native_step(self.application, event, "after_message_sent", "observed")
+        try:
+            await self.application.on_reply_sent(event)
+        except Exception as exc:
+            native_step(self.application, event, "after_message_sent", "failed", exc=exc)
+            raise
+
+    @getattr(filter, "on_agent_begin", lambda **kw: lambda fn: fn)()
+    async def observe_agent_begin(self, event: AstrMessageEvent, run_context):
+        native_step(self.application, event, "agent_begin", "observed")
+
+    @getattr(filter, "on_agent_done", lambda **kw: lambda fn: fn)()
+    async def observe_agent_done(self, event: AstrMessageEvent, run_context, response):
+        native_step(self.application, event, "agent_done", "observed")
 
     @filter.on_llm_response(priority=11000)
     async def confirm_consumption(self, event: AstrMessageEvent, response):
         if not coupling_allowed(self.context, "livingemotion"):
             return
-        await self.application.mark_request_read(event)
+        native_step(self.application, event, "on_llm_response", "observed")
+        try:
+            await self.application.mark_request_read(event)
+        except Exception as exc:
+            native_step(self.application, event, "confirm_consumption", "failed", exc=exc)
+            raise
 
     # 必须排在 LivingHello 的发送前复核（priority=-sys.maxsize）之前：
     # 睡前晚安在这时并入 chain，才会被它的分段、表情装饰与逐包投递照常处理。
@@ -167,8 +202,9 @@ class LivingEmotionPlugin(Star):
             return
         try:
             await self.application.merge_closing_into_reply(event)
-        except Exception:
+        except Exception as exc:
             # 并入失败只放弃晚安本身，绝不能拖垮正常回复的投递。
+            native_step(self.application, event, "merge_closing", "failed", exc=exc)
             logger.warning("[LE-closing] 睡前晚安并入失败", exc_info=True)
 
     # Runs after LivingHello's last decoration. The time is a host submission
@@ -183,10 +219,12 @@ class LivingEmotionPlugin(Star):
             allowed = await self.application.on_reply_submitted(event)
             if allowed is False:
                 outcome = "blocked"
-        except Exception:
+        except Exception as exc:
             # A failed final check cannot authorize a buffered response.
             allowed = False
             outcome = "error"
+            native_step(self.application, event, "reply_submission", "failed",
+                        reason="reply_validation_failed", exc=exc)
             event.set_extra("livingemotion:unavailable", "reply_validation_failed")
         if outcome == "blocked":
             # 只有状态机真的拦下回复才计数；校验异常不算「静音」。

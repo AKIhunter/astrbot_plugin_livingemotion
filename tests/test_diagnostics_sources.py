@@ -50,9 +50,10 @@ def test_settings_export_is_complete_and_omits_notification_account(diagnostic_a
         diary_at diary_backfill_yesterday diary_provider_id autonomy_enabled group_autonomy_enabled
         proactive_native_yield scheduler_seconds model_input_tokens model_output_tokens
         emotion_provider_id context_emotions_enabled dream_owner_qq_set providers
+        night_schedule_enabled night_block_chat wake_reply_limit
     """.split())
     default = json.loads(le_export(app)["settings.json"])
-    assert len(default) == len(fields) == 55 and set(default) == fields
+    assert set(default) == fields
     assert default["dream_owner_qq_set"] is False
     assert default["providers"] == []
     assert default["closing_random"] == Config().closing_random

@@ -40,6 +40,7 @@ class BundleTests(unittest.TestCase):
             return {name: archive.read(name).decode() for name in archive.namelist()}
 
     def test_nested_credentials_private_bodies_aliases_and_hashes(self):
+        self.recorder.redactor.salt = "00000000000000000000000000000008"
         self.recorder.record("event", {
             "at": self.now - 1, "request_id": "a" * 32,
             "account_id": "123456789", "body": "private-body-sentinel",
@@ -54,6 +55,7 @@ class BundleTests(unittest.TestCase):
             self.assertNotIn(forbidden, all_text)
         row = json.loads(content["runtime.jsonl"])
         self.assertEqual(row["request_id"], "a" * 32)
+        self.assertEqual(row["account_id"], "account-720390289237")
         self.assertIn(row["account_id"], row["detail"])
         manifest = json.loads(content["manifest.json"])
         import hashlib
@@ -291,8 +293,47 @@ class BundleTests(unittest.TestCase):
         content = "\n".join(self.read(bundle).values())
         self.assertNotIn("private-body-sentinel", content)
         self.assertNotIn(credentials[0], content)
-        self.assertIn("message sent: %s", content)
+        self.assertNotIn("message sent: %s", content)
         bundle.close()
+
+    def test_host_pipeline_stops_and_only_correlated_warnings_are_exported(self):
+        sink = logging.getLogger("isolated-host-pipeline")
+        pipeline = Path(self.folder.name) / "host" / "core" / "pipeline"
+        self.recorder.install(sink, host_pipeline=pipeline)
+        trace, flow = "c" * 32, "flow-" + "d" * 32
+        self.recorder.remember_host_event({"host_trace_id": trace, "flow_id": flow})
+
+        def emit(path, level, message, trace_id=None, exc_info=None):
+            record = logging.LogRecord(sink.name, level, str(path), 42, message, (), exc_info)
+            record.created = self.now - 1
+            record.trace_id = trace_id
+            sink.handle(record)
+
+        stop = "astrbot_plugin_livingemotion - supplement_request stopped event propagation."
+        emit(pipeline / "context_utils.py", logging.INFO, stop)
+        emit(pipeline / "context_utils.py", logging.INFO,
+             "astrbot_plugin_other - gate stopped event propagation.", trace)
+        emit(pipeline / "context_utils.py", logging.WARNING, "private-unrelated-warning")
+        emit(pipeline.parent / "other.py", logging.INFO, stop)
+        try:
+            raise ValueError("private-exception-body")
+        except ValueError as exc:
+            emit(pipeline / "process_stage" / "stage.py", logging.ERROR, "private-log-body",
+                 trace, (ValueError, exc, exc.__traceback__))
+        bundle = self.bundle()
+        try:
+            text = self.read(bundle)["runtime.jsonl"]
+            rows = [json.loads(line) for line in text.splitlines()]
+            self.assertEqual([row["operation"] for row in rows],
+                             ["host_stop", "host_stop", "host_pipeline_log"])
+            self.assertEqual(rows[0]["handler"], "supplement_request")
+            self.assertNotIn("flow_id", rows[0])
+            self.assertEqual(rows[1]["flow_id"], flow)
+            self.assertEqual(rows[2]["exception_type"], "ValueError")
+            self.assertEqual(rows[2]["frames"][-1]["file"], "test_diagnostic_bundle.py")
+            self.assertNotIn("private-", text)
+        finally:
+            bundle.close()
 
     def test_sqlite_wal_snapshot_consistent_during_concurrent_commit(self):
         path = Path(self.folder.name) / "wal.sqlite3"

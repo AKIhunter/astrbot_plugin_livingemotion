@@ -2,9 +2,12 @@
 from datetime import date
 import json
 from pathlib import Path
-from astrbot.api import logger
+from time import monotonic
+import astrbot
 
+from ..contracts import NightPhase, SleepState
 from ..diagnostic_bundle import DiagnosticRecorder, credentials_from, runtime_environment, sqlite_rows, local_plugin_version
+from ..diagnostic_event import event_metadata, exception_metadata
 
 SETTING_FIELDS = (
     "enabled", "mode", "timezone", "persona_shared_state", "provider_id",
@@ -23,6 +26,7 @@ SETTING_FIELDS = (
     "autonomy_enabled", "group_autonomy_enabled", "proactive_native_yield",
     "scheduler_seconds", "model_input_tokens", "model_output_tokens",
     "emotion_provider_id", "context_emotions_enabled",
+    "night_schedule_enabled", "night_block_chat", "wake_reply_limit",
 )
 SUMMARY_FIELDS = frozenset((
     "kind", "status", "reason_code", "reason_codes", "before", "after", "delta",
@@ -46,6 +50,31 @@ _RUNTIME_FIELDS = {
                              "reason_code", "closing_random"),
     "scheduler_tick_failed": ("at", "stage", "exception_type", "site", "first_at", "count"),
 }
+_NATIVE_STATUSES = frozenset((
+    "entered", "accepted", "duplicate", "rejected", "skipped", "stopped",
+    "failed", "ready", "observed", "submitted", "ignored", "unknown",
+))
+_NATIVE_REASONS = frozenset((
+    "committed", "duplicate_event", "version_conflict", "stale_generation",
+    "plugin_disabled", "plugin_stopped", "instance_mismatch", "invalid_event",
+    "store_closed", "processing_failed", "unreliable_source", "future_event",
+    "event_too_large", "context_changed", "state_owner_changed", "state_mode_changed",
+    "not_human_source", "webchat_special_persona_unsupported", "native_message_id_required",
+    "native_persona_unavailable", "source_resolution_failed", "coupling_disabled",
+    "context_missing", "mode_inactive", "mode_or_source_unavailable", "state_unavailable",
+    "night_timezone_required", "night_disabled", "night_exempt",
+    "admitted_final_reply", "live_submission_unsupported", "reply_exists", "night_v1",
+    "sleep_blocks_reply", "reply_started", "reply_not_started", "reply_ticket_required",
+    "reply_context_changed", "reply_submission_expired", "reply_submitted",
+    "reply_submission_rejected", "reply_validation_failed", "reply_lease_missing",
+    "streaming_finish", "streaming_conflict", "agent_runner_error", "general_result",
+    "event_stopped", "empty_chain", "send_check_error", "new_message",
+    "configuration_changed", "superseded_by_new_message", "memory_evidence_changed",
+    "message_recalled", "no_reply", "policy_changed", "peer_blocked",
+    "blacklist", "outside_whitelist", "gray_silent", "source_unknown", "policy_invalid",
+    "message_expired", "stale_context", "newer_message", "delivery_inactive",
+    "submitted", "already_submitted", "submitted_deferred",
+)) | frozenset("night_" + state.value for state in (*NightPhase, *SleepState))
 QUEUE_FAILURE_CODES = frozenset((
     "runtime_stopped", "observe_only", "duplicate_job", "model_disabled", "token_limit",
     "missing_token_budget", "invalid_timeout", "queue_full",
@@ -97,6 +126,48 @@ _MODEL_RESULT_CODES = frozenset((
 
 def known_code(value, allowed):
     return value if type(value) is str and value in allowed else "unknown"
+
+
+def native_step(app, event, stage, status, *, reason=None, context=None,
+                attempt_id=None, generation=None, phase=None, exc=None, count=None,
+                started=None):
+    """Record only decision metadata, including paths that never reached storage."""
+    recorder = getattr(app, "diagnostics", None)
+    if recorder is None:
+        return
+    try:
+        row = event_metadata(event) if event is not None else {}
+        recorder.remember_host_event(row)
+        row.update(stage=stage, status=known_code(status, _NATIVE_STATUSES))
+        if event is not None:
+            row["event_id"] = str(getattr(getattr(event, "message_obj", None), "message_id", "") or "")
+            row["session_id"] = str(getattr(event, "unified_msg_origin", "") or "")
+            row["event_key"] = event.get_extra("livingemotion:event_key")
+            if attempt_id is None:
+                lease = event.get_extra("livingemotion:reply_lease")
+                if isinstance(lease, dict):
+                    attempt_id = lease.get("attempt_id")
+                    if generation is None:
+                        generation = lease.get("generation")
+        if context is not None:
+            row["scope_key"] = context.scope_key
+        if reason is not None:
+            row["reason_code"] = known_code(reason, _NATIVE_REASONS)
+        if attempt_id is not None:
+            row["reply_id"] = attempt_id
+        if type(generation) is int:
+            row["generation"] = generation
+        if phase is not None:
+            row["phase"] = phase
+        if type(count) is int:
+            row["count"] = count
+        if started is not None:
+            row["duration_ms"] = round((monotonic() - started) * 1000, 2)
+        if exc is not None:
+            row.update(exception_metadata(exc))
+        recorder.record("native_step", row)
+    except Exception:
+        recorder.dropped += 1
 
 
 def _iso_day(value):
@@ -155,7 +226,15 @@ def start(app):
         return credentials_from(app.host.get_config()) + credentials_from(app.native_config)
     recorder = DiagnosticRecorder(app.data_dir, "astrbot_plugin_livingemotion",
                                   Path(__file__).resolve().parents[1], credentials=credentials)
-    recorder.install(logger)
+    host_file = getattr(astrbot, "__file__", None)
+    host_logger = getattr(astrbot, "logger", None)
+    if host_logger is not None:
+        recorder.install(host_logger, host_pipeline=Path(host_file).parent / "core/pipeline" if host_file else None)
+    # astrbot.api.logger is a caller-dependent proxy on new hosts. Install
+    # on the concrete logger so a reload removes exactly the original handler.
+    plugin_logger = getattr(app, "diagnostic_logger", None)
+    if plugin_logger is not None and not getattr(plugin_logger, "propagate", True):
+        recorder.install(plugin_logger)
     recorder.record("lifecycle", {"status": "loading"})
     return recorder
 

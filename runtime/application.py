@@ -48,7 +48,7 @@ from ..storage.catchup import CatchupArchive
 from .background import BackgroundRuntime, ModelResultUnknown
 from .console import ApplicationError as ApplicationError
 from .console import Console
-from .diagnostics import QUEUE_FAILURE_CODES, QUOTA_FAILURE_CODES, known_code, record_runtime
+from .diagnostics import QUEUE_FAILURE_CODES, QUOTA_FAILURE_CODES, exception_metadata, known_code, native_step, record_runtime
 from .lifecycle import Lifecycle
 
 from .materials import Materials
@@ -173,7 +173,13 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
     async def initialize(self):
         try:
             await self._initialize()
-        except BaseException:
+        except BaseException as exc:
+            diagnostics = getattr(self, "diagnostics", None)
+            if diagnostics is not None:
+                diagnostics.record("lifecycle", {
+                    "status": "cancelled" if isinstance(exc, asyncio.CancelledError) else "load_failed",
+                    **exception_metadata(exc),
+                })
             # The host may never call terminate() after a failed initialize.
             # Stop workers and close the store even before services are built.
             self.closed = False
@@ -206,7 +212,6 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                                    config_for_context=self.scoped_config)
         self.api._project_event = self.projector
         self.closed = False
-        self.diagnostics.record("lifecycle", {"status": "loaded"})
         await self.initialize_manual_experience()
         for context in reversed(await self.store.list_contexts()):
             self._contexts[context.account_key] = context
@@ -242,6 +247,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                     await self.advance_scope(context, recovering=True)
             self._start_scheduler()
         self._monitor = asyncio.create_task(self._watch_config(), name="livingemotion-config")
+        self.diagnostics.record("lifecycle", {"status": "loaded"})
 
     async def _build_services(self):
         backend = await build_memory_backend(
@@ -1221,16 +1227,25 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         await self.store.register_context(context)
 
     async def on_message(self, event):
+        started, phase, context = time.monotonic(), "refresh_config", None
         try:
             await self.refresh_config()
             if self.closed or not self.config.enabled:
+                native_step(self, event, "observe_message", "skipped",
+                            reason="plugin_stopped" if self.closed else "plugin_disabled", started=started)
                 return
+            phase = "normalize"
             source, normalized = await self.bridge.normalize(event, self.store.clock())
             context = source.context
             event.set_extra("livingemotion:context", to_dict(context))
             event.set_extra("livingemotion:event_key", normalized.idempotency_key)
+            phase = "initialize_state"
             await self.initialize_state_scope(context)
+            phase = "ingest"
             result = await self.api.ingest_event(normalized)
+            native_step(self, event, "ingest", result["status"], reason=result.get("reason_code"),
+                        context=context, generation=result.get("generation"), started=started)
+            phase = "post_ingest"
             if result["status"] in ("accepted", "duplicate"):
                 await self.remember_context(context)
             event.set_extra("livingemotion:ingest", result["status"])
@@ -1259,7 +1274,11 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                 await self.catchup_archive.append(normalized, generation)
                 await self.auto_memory.ingest(normalized, generation=generation)
                 await self._chat_wake(context, normalized)
-        except Exception:
+        except Exception as exc:
+            reason = (exc.args[0] if phase == "normalize" and type(exc) is ValueError
+                      and len(exc.args) == 1 else "source_resolution_failed")
+            native_step(self, event, "observe_message", "failed", reason=reason,
+                        context=context, phase=phase, exc=exc, started=started)
             event.set_extra("livingemotion:unavailable", "source_resolution_failed")
 
     def _note_livinghello_blocked_llm(self, event, context) -> None:
@@ -1329,6 +1348,8 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                        [str(r.get("description") or "")[:16] for r in rows])
 
     async def on_llm_request(self, event, request):
+        started, phase, context = time.monotonic(), "prepare", None
+        native_step(self, event, "supplement_request", "entered")
         from ..prompt_bundle import offer, request_variant, variant_for, prompts, shared_modules
         offer(request, "LE", {}, self.bridge.text_part)
         # Always remove stale blocks, including when disabled or after a reload.
@@ -1343,35 +1364,61 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         logger.warning("[LE-promise] on_llm_request 进入 coupling=%s enabled=%s",
                        _ok, getattr(self.config, "promise_enabled", "?"))
         if not _ok:
+            native_step(self, event, "supplement_request", "skipped",
+                        reason="coupling_disabled", started=started)
             return
         await self.on_message(event)
         raw = event.get_extra("livingemotion:context")
         if not raw or not self.config.enabled or self.closed:
+            native_step(self, event, "supplement_request", "skipped", started=started,
+                        reason=("plugin_stopped" if self.closed else "plugin_disabled"
+                                if not self.config.enabled else "context_missing"))
             return
         try:
             context = Context.from_dict(raw)
-            if self.effective_mode(context) != "active" or not await self.validate_context(context):
+            if self.effective_mode(context) != "active":
+                native_step(self, event, "supplement_request", "skipped",
+                            reason="mode_inactive", context=context, started=started)
+                return
+            if not await self.validate_context(context):
+                native_step(self, event, "supplement_request", "skipped",
+                            reason="context_changed", context=context, started=started)
                 return
             if event.get_extra("action_type") == "live":
+                native_step(self, event, "supplement_request", "stopped",
+                            reason="live_submission_unsupported", context=context, started=started)
                 event.stop_event()
                 event.set_extra("livingemotion:unavailable", "live_submission_unsupported")
                 return
+            phase = "availability"
             generation = await self.store.get_generation(context)
             if self.config.night_policy_version == 2:
                 await self.advance_scope(context)
-            if (await self.availability(context)).block_chat:
+            availability = await self.availability(context)
+            if "state_unavailable" in availability.reason_codes:
+                native_step(self, event, "availability", "failed", reason="state_unavailable",
+                            context=context, generation=generation)
+            if availability.block_chat:
+                native_step(self, event, "supplement_request", "stopped", context=context,
+                            generation=generation, started=started,
+                            reason=next(iter(availability.reason_codes), "unknown"))
                 self._note_livinghello_blocked_llm(event, context)
                 event.stop_event()
                 return
+            phase = "refinement"
             if self.config.context_emotions_enabled and self.config.emotion_model_enabled:
                 await self.await_context_refinement(event.get_extra("livingemotion:event_key"))
                 if not await self.validate_context(context, generation):
+                    native_step(self, event, "supplement_request", "skipped", reason="context_changed",
+                                context=context, phase=phase, generation=generation, started=started)
                     return
+            phase = "catchup"
             await self._prepare_catchup(event, request, context)
             attempt = stable_key("native-reply", context.scope_key,
                                  str(event.message_obj.message_id),
                                  event.get_extra("livingemotion:reply_attempt") or 0)
-            if not await self._begin_reply_attempt(context, attempt):
+            phase = "reply_admission"
+            if not await self._begin_reply_attempt(context, attempt, event=event, request_started=started):
                 event.stop_event()
                 return
             event.set_extra("livingemotion:reply_attempt",
@@ -1381,6 +1428,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                 "watermark": await self.store.human_watermark(context),
                 "started_at": self.store.clock(),
             })
+            phase = "supplement"
             state = source_affect(current_affect(
                 await self.store.get_state(context, "bot"), now=self.store.clock()), context)
             obs_record = await self.store.get_state(context, "observation", context.account_id)
@@ -1454,10 +1502,12 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             try:
                 await self._inject_promise_contract(request, context)
             except Exception as exc:
+                native_step(self, event, "promise_contract", "failed", context=context, exc=exc)
                 logger.warning("[LE-promise] 注入失败 %r", exc)
             try:
                 await self._inject_pending_promises(request, context)
             except Exception as exc:
+                native_step(self, event, "pending_promises", "failed", context=context, exc=exc)
                 logger.warning("[LE-promise] 待交付注入失败 %r", exc)
             await self._inject_image_receipts(request, context)
             from ..livinghello_coupling import policy as coupling_policy
@@ -1471,7 +1521,10 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             self._pending_replies.move_to_end(context.scope_key)
             while len(self._pending_replies) > 128:
                 self._pending_replies.popitem(last=False)
-        except Exception:
+            native_step(self, event, "supplement_request", "ready", context=context, started=started)
+        except Exception as exc:
+            native_step(self, event, "supplement_request", "failed",
+                        context=context, phase=phase, exc=exc, started=started)
             return
 
     async def _chat_wake(self, context, event):
@@ -1487,9 +1540,15 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         normalized = replace(event, signals=(*event.signals, *(("native_bot_mention",) if native_at else ())))
         await self.wake_attempt(context, normalized)
 
-    async def _begin_reply_attempt(self, context, attempt_id):
+    async def _begin_reply_attempt(self, context, attempt_id, *, event=None, request_started=None):
         result = await self.reply_started(context, attempt_id)
-        if result.get("allowed") is True:
+        allowed = result.get("allowed") is True
+        native_step(self, event, "reply_admission", result.get("status"), context=context,
+                    reason=result.get("reason_code"), attempt_id=attempt_id)
+        if not allowed and event is not None:
+            native_step(self, event, "supplement_request", "stopped", context=context,
+                        reason=result.get("reason_code"), attempt_id=attempt_id, started=request_started)
+        if allowed:
             self._reply_tickets[attempt_id] = result.get("ticket")
             self._reply_contexts[attempt_id] = context
             self._reply_tickets.move_to_end(attempt_id)
@@ -1794,6 +1853,13 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                        [str(p)[:8] for p in done])
 
     async def on_reply_submitted(self, event):
+        started = time.monotonic()
+
+        def finish(value, status, reason=None, *, count=None):
+            native_step(self, event, "reply_submission", status, reason=reason,
+                        count=count, started=started)
+            return value
+
         result = event.get_result() if callable(getattr(event, "get_result", None)) else None
         content_type = getattr(getattr(result, "result_content_type", None), "name", None)
         if content_type in ("GENERAL_RESULT", "AGENT_RUNNER_ERROR"):
@@ -1804,43 +1870,41 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             raw = event.get_extra("livingemotion:context")
             if lease and raw and not self.closed:
                 await self.store.reply_failed(Context.from_dict(raw), lease["attempt_id"])
-            return None
+            return finish(None, "ignored", content_type.lower())
         if content_type == "STREAMING_FINISH":
-            return None
+            return finish(None, "ignored", "streaming_finish")
         if content_type == "STREAMING_RESULT" or getattr(result, "async_stream", None) is not None:
             # A competing hook cannot restore output before the final checks.
             self._discard(event, "streaming_conflict")
-            return False
+            return finish(False, "stopped", "streaming_conflict")
         raw = event.get_extra("livingemotion:context")
         lease = event.get_extra("livingemotion:reply_lease")
         if not raw or not lease or self.closed or not self.config.enabled:
-            return None
+            return finish(None, "skipped", "plugin_stopped" if self.closed else "plugin_disabled"
+                          if not self.config.enabled else "context_missing" if not raw else "reply_lease_missing")
         if callable(getattr(event, "is_stopped", None)) and event.is_stopped():
             self._discard(event, "event_stopped")
-            return False
+            return finish(False, "stopped", "event_stopped")
         context = Context.from_dict(raw)
         if not await self._native_reply_valid(event, context, lease, memory=False):
-            return False
+            return finish(False, "stopped", event.get_extra("_at_guard_delivery_blocked") or "peer_blocked")
         await self.advance_scope(context)
         if not await self._native_reply_valid(event, context, lease):
-            return False
+            return finish(False, "stopped", event.get_extra("_at_guard_delivery_blocked") or "peer_blocked")
         result = event.get_result() if callable(getattr(event, "get_result", None)) else None
         chain = getattr(result, "chain", ()) or ()
         if not chain:
-            return None
+            return finish(None, "skipped", "empty_chain")
         text = "".join(str(getattr(part, "text", "")) for part in chain)
-        # 临时诊断：列出最终提交链的组件构成，定位「同一段正文发两遍」
-        # 到底发生在提交前（这里能看到重复）还是提交后（宿主/表情包再发）。
-        logger.warning("[LE-debug] 提交链组件=%s text=%r",
-                       [type(part).__name__ for part in chain], text[:60])
         # 承诺指令先抠出来：标记绝不能出现在用户看到的正文里。
         text = self._strip_promise_marks(event, result, text)
         # 此处仍是发送前装饰；新承诺留给 after_message_sent 建立。
         submission = await self._record_host_submission(context, lease["attempt_id"], text)
         if submission.get("allowed") is not True:
             # Do not turn expiration/context failure into a misleading duplicate.
-            self._discard(event, submission.get("reason_code") or "reply_submission_rejected")
-            return False
+            reason = submission.get("reason_code") or "reply_submission_rejected"
+            self._discard(event, reason)
+            return finish(False, "stopped", reason)
         # 回复已经真正交给宿主，这才算待交付的承诺完成了交付。
         await self._confirm_awaiting_delivery(context)
         await self.catchup_archive.mark_consumed(
@@ -1848,7 +1912,10 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
         )
         # Persistence is also asynchronous; authorization is the last awaited
         # operation before handing the buffered result back to the host.
-        return await self._native_reply_valid(event, context, lease)
+        allowed = await self._native_reply_valid(event, context, lease)
+        if not allowed:
+            return finish(allowed, "stopped", event.get_extra("_at_guard_delivery_blocked") or "peer_blocked")
+        return finish(allowed, "submitted", submission.get("reason_code"), count=len(chain))
 
     async def merge_closing_into_reply(self, event):
         """把睡前晚安并入本条正在提交的原生回复。

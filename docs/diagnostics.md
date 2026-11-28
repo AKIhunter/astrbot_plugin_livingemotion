@@ -8,14 +8,18 @@
 | --- | --- |
 | `说明.txt`、`manifest.json` | 范围、条数、实际时间、缺失来源、损坏/截断计数及 SHA-256 |
 | `environment.json`、`settings.json` | 本地版本、采集健康、调度状态、集成状态和白名单设置；Provider 的 `api_type` 未声明时为 `null` |
-| `runtime.jsonl` | 梦境跳过、晚安并入失败、调度失败等结构化事件，以及既有运行日志和业务摘要 |
+| `runtime.jsonl` | 原始事件分类、归档结果、回复准入和停止原因、宿主 Agent 开始与结束、发送前校验和发送回调，以及梦境/晚安/调度等后台事件 |
 | `events.jsonl` | 事件 ID、角色、时间、代次与会话别名 |
 | `emotion.jsonl` | 仍保留的情绪数值、受控投影追踪和精力变化 |
 | `behavior.jsonl` | 主动行为状态、实际/模拟标记和已有投递回执 |
 | `promises.jsonl` | 承诺状态、到期时间、重试次数与是否存在错误 |
 | `experiences.jsonl` | 日记/梦境归档元数据、手动任务、最新自动结果和窗口内的尝试预留数 |
 
-不导出完整配置、数据库、聊天正文、提示词、媒体、承诺描述/记忆片段、日记或梦境正文和标题。凭据在采集和导出时脱敏，账号和客户端提供的手动生成请求 ID 使用一致别名。既有日志处理器只保留模板和安全栈帧；新增事件由业务代码写入固定字段，不采集任意日志参数或异常消息。承诺的自由文本错误只输出存在状态。
+不导出完整配置、数据库、聊天正文、提示词、媒体、承诺描述/记忆片段、日记或梦境正文和标题。原生事件 ID、会话、账号和回复占位 ID 使用一致别名。日志处理器保留级别、文件行号、异常类别和栈帧位置，不采集模板、参数和异常原文。承诺的自由文本错误只输出存在状态。
+
+排查无回复时，在 `runtime.jsonl` 按 `flow_id` 串起 `ingest` → `supplement_request` → `reply_admission` → `reply_submission` → `after_message_sent`，再用同一个 ID 查 LH 的诊断包。`native_post_type` 可区分普通消息、通知和平台请求；未知值标为 `other`，没有原始类型标为 `unavailable`。相同事件和回复占位别名、不同 `flow_id` 表示同一个原始消息 ID 进入了两个独立宿主事件。后一个事件记录 `reason_code=reply_exists` 时，可确认 LE 因占位已存在而停止。`reply_submission` 的 `status=submitted` 表示 LE 通过了发送前校验；`after_message_sent` 的 `status=observed` 表示看到宿主发送回调，不能证明对端收到消息。
+
+`host_stop` 保留 AstrBot 已实际输出的停止标记。宿主日志携带已关联的 `host_trace_id` 时，也能收录同一流水线的其他插件停止和警告、错误位置。没有宿主追踪 ID 的停止标记只能按时间参考。`environment.json` 显示当前宿主追踪开关和日志收集状态；启动失败前未初始化的采集、宿主未输出的日志、轮转删除的记录无法补回。
 
 `settings.json` 补充作息、晚安、补答、日记/梦境及主动行为的生效配置；`dream_owner_qq_set` 只表示是否填写通知号码。`environment.json` 的 `scheduler` 显示当前任务、阶段、开始/结束时间与最近成功时间。`in_flight` 表示该轮还没结束，单次快照无法判断是否卡死；一轮完成也不代表消息已送达。
 
@@ -33,9 +37,16 @@
 
 ```bash
 python -m pytest -q tests/test_diagnostic_bundle.py tests/test_diagnostics_sources.py \
+  tests/integration/test_retro_reply.py tests/integration/test_submission_reason.py \
   tests/integration/test_retro_closing.py tests/experience/test_restart_private.py \
   tests/verification/test_logger_contract.py
 npm --prefix tests/ui test
+```
+
+对照两个诊断包，可用固定宿主的解释器回放重复投递；复用实际 `AstrMessageEvent`、追踪和请求派发，在临时目录验证两个 ZIP 的 `flow_id`、`host_trace_id` 和 `reply_exists`：
+
+```bash
+python -B tests/host/diagnostic_flow.py --host-source /path/to/AstrBot --lh /path/to/LivingHello
 ```
 
 原生联合验收需要固定版本 AstrBot 的完整解释器和同级 LH 工作树。以下服务仅监听本机，数据目录应使用临时路径：

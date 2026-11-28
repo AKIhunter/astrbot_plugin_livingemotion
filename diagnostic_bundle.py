@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import hashlib
 import asyncio
+from collections import OrderedDict
 import json
-import logging
 import math
 import os
 import platform
@@ -19,9 +19,13 @@ import sqlite3
 import tempfile
 import threading
 import time
-import traceback
 import zipfile
 from pathlib import Path
+
+try:
+    from .diagnostic_event import DiagnosticLogHandler
+except ImportError:  # Standalone ZIP tools and tests load this module by path.
+    from astrbot_plugin_livingemotion.diagnostic_event import DiagnosticLogHandler
 
 WINDOW = 72 * 3600
 DISK_LIMIT = 32 * 1024 * 1024
@@ -34,11 +38,11 @@ PRIVATE_FIELDS = frozenset((
     "recent_messages_old_to_new", "image_sources", "image_summaries",
 ))
 SECRET_KEY = re.compile(r"api.?key|authorization|cookie|password|secret|jwt|access.?token|refresh.?token", re.I)
-ACCOUNT_KEY = re.compile(r"^(?:session_id|unified_msg_origin|account_id|actor_id|qq|group_id|target_id|context_id|persona_id|owner_key|conversation_id|scope_key|source_scope_key)$", re.I)
+ACCOUNT_KEY = re.compile(r"^(?:session_id|unified_msg_origin|account_id|actor_id|qq|group_id|target_id|context_id|persona_id|owner_key|conversation_id|scope_key|source_scope_key|message_id|event_id|reply_id)$", re.I)
 TOKEN = re.compile(r"\b(?:sk-[A-Za-z0-9_-]{6,}|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)\b")
 AUTH = re.compile(r"(?i)\b(?:authorization|cookie|api[_-]?key|password|jwt[_-]?secret|access[_-]?token)\b[\"']?\s*[:=]\s*(?:[\"'][^\"'\n]*[\"']|[^\n,;}]+)")
 URL = re.compile(r"https?://[^\s<>\"']+")
-NUMBER = re.compile(r"(?<![\w])\d{5,12}(?![\w])")
+NUMBER = re.compile(r"(?<!\w)(account-[0-9a-f]{12}|\d{5,12})(?!\w)")
 
 
 class DiagnosticBusy(RuntimeError):
@@ -73,6 +77,15 @@ def json_lines(paths, line_limit=LINE_LIMIT):
                     yield row if isinstance(row, dict) else None
                 except (ValueError, UnicodeError):
                     yield None
+
+
+def runtime_lines(paths):
+    for row in json_lines(paths):
+        if row is not None and row.get("operation") == "runtime":
+            # Older collectors retained the log template. Drop it on export of
+            # existing files too; templates can accidentally embed arguments.
+            row.pop("detail", None)
+        yield row
 
 
 def sqlite_rows(path, query, parameters):
@@ -127,6 +140,7 @@ class Redactor:
         value = TOKEN.sub("[secret]", value)
         value = re.sub(r"(?i)\bBearer\s+[^\s,;]+", "[credential]", value)
         value = AUTH.sub("[credential]", value)
+        # Export cleans stored rows again; alias() keeps an existing alias intact.
         value = NUMBER.sub(lambda match: self.alias(match.group()), value)
         return value[:8192]
 
@@ -207,35 +221,6 @@ def require_admin(context, request):
         raise PermissionError("unauthorized") from None
 
 
-class _LogHandler(logging.Handler):
-    def __init__(self, recorder):
-        super().__init__(logging.INFO)
-        self.recorder = recorder
-
-    def emit(self, record):
-        try:
-            # A fallback global logger is acceptable only with this source filter.
-            path = Path(record.pathname).resolve()
-            if not path.is_relative_to(self.recorder.plugin_root):
-                return
-            # Arbitrary log arguments and f-strings can contain chat/prompt bodies.
-            # Retain a format template, source location and exception type instead.
-            message = str(record.msg)[:1024] if record.args else "runtime log"
-            if record.exc_info:
-                # Exception frame locations help debugging; omit source-code/body lines.
-                message += "\n" + "".join(
-                    f"{Path(frame.filename).name}:{frame.lineno} {frame.name}\n"
-                    for frame in traceback.extract_tb(record.exc_info[2])
-                ) + type(record.exc_info[1]).__name__
-            self.recorder.record("runtime", {
-                "at": record.created, "level": record.levelname,
-                "module": record.module, "line": record.lineno,
-                "detail": message,
-            })
-        except Exception:
-            self.recorder.dropped += 1
-
-
 def runtime_environment(host, plugin_version, settings):
     """Read local metadata only: never enumerate models or contact providers."""
     try:
@@ -243,8 +228,11 @@ def runtime_environment(host, plugin_version, settings):
     except ImportError:
         host_version = None
     providers = []
+    trace_enabled = None
     try:
         config = host.get_config()
+        value = config.get("trace_enable")
+        trace_enabled = value if type(value) is bool else None
         for provider in config.get("provider", []):
             if isinstance(provider, dict):
                 providers.append({key: provider.get(key) for key in ("id", "type", "api_type", "enable")})
@@ -252,6 +240,7 @@ def runtime_environment(host, plugin_version, settings):
         pass
     settings["providers"] = providers
     return {"host_version": host_version, "plugin_version": plugin_version,
+            "host_trace_enabled": trace_enabled,
             "snapshot_kind": "current runtime, not historical state"}
 
 
@@ -343,6 +332,8 @@ class DiagnosticRecorder:
         self._bundles = set()
         self._bundle_lock = threading.Lock()
         self._handlers = []
+        self._host_flows = OrderedDict()
+        self._host_flow_lock = threading.Lock()
         self._worker = None
         self._active = None
         self._active_hour = None
@@ -394,16 +385,29 @@ class DiagnosticRecorder:
                 target=self._run, name=f"{plugin_name}-diagnostics", daemon=True)
             self._worker.start()
 
-    def install(self, sink):
-        if self._stop.is_set() or self._handlers:
+    def install(self, sink, *, host_pipeline=None):
+        if self._stop.is_set() or any(registered is sink for registered, _ in self._handlers):
             return
-        handler = _LogHandler(self)
+        handler = DiagnosticLogHandler(self, host_pipeline)
         try:
             sink.addHandler(handler)
             self._handlers.append((sink, handler))
         except (AttributeError, TypeError):
             handler.close()
             self.dropped += 1
+
+    def remember_host_event(self, metadata):
+        trace, flow = metadata.get("host_trace_id"), metadata.get("flow_id")
+        if trace and flow:
+            with self._host_flow_lock:
+                self._host_flows[trace] = flow
+                self._host_flows.move_to_end(trace)
+                if len(self._host_flows) > 2048:
+                    self._host_flows.popitem(last=False)
+
+    def flow_for_host_trace(self, trace):
+        with self._host_flow_lock:
+            return self._host_flows.get(trace)
 
     def record(self, operation, value):
         if self._stop.is_set():
@@ -426,7 +430,9 @@ class DiagnosticRecorder:
                 "pending": self._queue.unfinished_tasks, "dropped": self.dropped,
                 "write_errors": self.write_errors, "pruned_files": self.pruned_files,
                 "window_seconds": WINDOW, "disk_limit_bytes": self.disk_limit,
-                "closed": self._stop.is_set()}
+                "closed": self._stop.is_set(), "log_sinks": len(self._handlers),
+                "host_pipeline_capture": any(handler.host_pipeline is not None
+                                             for _, handler in self._handlers)}
 
     def _prune(self, *, reserve=0, startup=False):
         now = self.clock()
@@ -609,7 +615,7 @@ class DiagnosticRecorder:
                 write("environment.json", [environment], history=False)
                 write("settings.json", [snapshot.get("settings", {})], history=False)
                 paths = sorted(self.directory.glob("records-*.jsonl"), reverse=True)
-                write("runtime.jsonl", json_lines(paths))
+                write("runtime.jsonl", runtime_lines(paths))
                 for filename, source in sources.items():
                     if re.fullmatch(r"[a-z_]+\.jsonl", filename) is None:
                         raise ValueError("invalid diagnostic member name")
