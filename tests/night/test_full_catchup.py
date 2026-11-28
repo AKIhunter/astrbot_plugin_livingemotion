@@ -267,3 +267,36 @@ async def test_changed_identity_and_expired_or_derived_history_remain_unread(tmp
         assert len(await archive.rows(CONTEXT, batch)) == 1
     finally:
         await store.close()
+
+
+@pytest.mark.asyncio
+async def test_read_only_pass_sends_nothing_and_leaves_messages_unread(tmp_path):
+    """清醒轮次只读不消费：不发消息，也不把消息标成已处理。
+
+    2026-11-27 19:21 群里那条就是这样发出去的：一次正常回复在准备阶段
+    把"三分钟前没回的消息"当成未读补答。清醒时段的"没回"是 LH 判定的
+    正常结论，不是漏回；补不补要由主动行为自己决定。所以这里既要停发，
+    也要让消息保持未处理，否则主动行为事后读不到它们。
+    """
+    store, archive = await make_archive(tmp_path)
+    try:
+        await append(archive, "old", "question?")
+        await append(archive, "trigger")
+
+        async def reader(context, text, key, include_items):
+            # 只读轮次不需要候选判定，避免模型白产出 items。
+            assert include_items is False
+            return {"summary": "old question", "items": [
+                {"source_id": "old", "targets_me": True, "answered": False, "expired": False}]}
+
+        # sender 默认是 no_send：任何发送都会让用例失败。
+        result = await service(archive, reader, reply_enabled=True).prepare(
+            CONTEXT, exclude_source_id="trigger", wake_key="wake-1", revision="rev",
+            allow_reply=False,
+        )
+        assert result.summaries == ("old question",)
+        batch = await archive.begin(CONTEXT, 0, exclude_source_id="trigger",
+                                    wake_key="wake-2", revision="rev")
+        assert [row["source_id"] for row in await archive.rows(CONTEXT, batch)] == ["old"]
+    finally:
+        await store.close()

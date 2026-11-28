@@ -12,8 +12,8 @@ import math
 from zoneinfo import ZoneInfo
 
 from ..contracts import (
-    ActorRole, ContentKind, Context, Event, Relationship, account_person_key, canonical_json, stable_key,
-    to_dict,
+    ActorRole, ContentKind, Context, Event, Relationship, StateWrite, account_person_key,
+    canonical_json, stable_key, to_dict,
 )
 from ..domain.relationship import initial_relationship, relationship_stage, relationship_stage_dto
 from ..domain.relationship_inference import RelationshipStatement, infer_relationships
@@ -21,6 +21,63 @@ from ..domain.relationship_inference import RelationshipStatement, infer_relatio
 OVERRIDE_PREFIX = "console.relationship.override.v1:"
 NICKNAME_PREFIX = "console.qq.nickname.v1:"
 RELATIONSHIP_LIST_PREFIX = "console.relationship.daily.v1:"
+SELF_PROFILE_PREFIX = "console.profile.self.v1:"
+
+
+def _profile_items(items, limit=12):
+    return [str(item).strip()[:24] for item in (items or []) if str(item).strip()][:limit]
+
+
+async def write_profile(store, context, *, interests=None, tags=None, note=None):
+    """用户画像：兴趣与标签全量替换，note 覆盖。返回写入后的值。
+
+    画像由 LivingEmotion 自己维护（监听消息沉淀 + 面板补编），不放 LivingMemory。
+    """
+    current = await store.get_state(context, "profile", context.account_id)
+    old = dict(current.value) if current else {}
+    value = {
+        "interests": _profile_items(
+            interests if interests is not None else old.get("interests")),
+        "tags": _profile_items(tags if tags is not None else old.get("tags")),
+        "note": str(note if note is not None else old.get("note") or "")[:500],
+        "updated_at": store.clock(),
+    }
+    await store.write_states(
+        context, await store.get_generation(context),
+        (StateWrite("profile", value, expected_version=current.version if current else 0,
+                    record_key=context.account_id),),
+    )
+    return value
+
+
+def read_self_profile(db, persona_id):
+    row = db.execute("SELECT value FROM runtime_meta WHERE key=?",
+                     (SELF_PROFILE_PREFIX + str(persona_id),)).fetchone()
+    return json.loads(row["value"]) if row else {}
+
+
+async def write_self_profile(store, persona_id, *, interests=None, tags=None, note=None):
+    """Bot 自画像：人格之外的兴趣与自我描述，按 persona 存。"""
+
+    def read(db):
+        return read_self_profile(db, persona_id)
+
+    old = await store._run(read)
+    value = {
+        "interests": _profile_items(
+            interests if interests is not None else old.get("interests")),
+        "tags": _profile_items(tags if tags is not None else old.get("tags")),
+        "note": str(note if note is not None else old.get("note") or "")[:500],
+        "updated_at": store.clock(),
+    }
+
+    def write(db):
+        db.execute("INSERT INTO runtime_meta(key,value) VALUES(?,?) "
+                   "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                   (SELF_PROFILE_PREFIX + str(persona_id), canonical_json(value)))
+
+    await store._run(write)
+    return value
 
 
 async def remember_qq_nickname(store, context, nickname, generation, *, occurred_at):
@@ -266,6 +323,12 @@ def _relationship_node(db, sources, config=None):
     relation = _apply_override(context, relation, override,
                               applied_version=raw.get("_relationship_override_version", 0))
     stage = relationship_stage_dto(relation.score, config)
+    # 画像由 LivingEmotion 自己沉淀（监听消息时写入），这里只读出来给浮层用。
+    profile_row = db.execute(
+        "SELECT value_json FROM states WHERE scope_key=? AND kind='profile' AND record_key=?",
+        (context.scope_key, context.account_id),
+    ).fetchone()
+    profile = json.loads(profile_row["value_json"]) if profile_row else {}
     return {
         "id": relationship_account_key(context), "persona_id": context.persona_id,
         "platform": context.platform, "account_id": context.account_id,
@@ -278,6 +341,12 @@ def _relationship_node(db, sources, config=None):
                      "view_scope": c.scene_kind.value, "scene_id": c.scene_id} for c in sources],
         "version": override["version"] if override else 0, "updated_at": relation.updated_at,
         "note": (override or {}).get("note", ""),
+        "profile": {
+            "interests": [str(item)[:24] for item in (profile.get("interests") or [])][:12],
+            "tags": [str(item)[:24] for item in (profile.get("tags") or [])][:12],
+            "note": str(profile.get("note") or "")[:500],
+            "updated_at": profile.get("updated_at") or 0,
+        },
     }
 
 

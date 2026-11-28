@@ -16,6 +16,7 @@ from dataclasses import replace
 from astrbot.api import logger
 
 from ..contracts import Context, rebuild_route, stable_key
+from ..services.behavior import next_allowed_at
 from ..storage.promise_store import (
     PromiseStore, bucket_label, fingerprint, parse_bucket,
 )
@@ -385,6 +386,33 @@ class PromiseService:
                                str(promise_id)[:8], outcome)
         return done
 
+    async def _send_deferral(self, context) -> float | None:
+        """承诺要不要为「不可发送时段」让路；要让则返回顺延到的时刻。
+
+        用户约的时间点他自己定，但不能在半夜或午休把人吵醒：这类时段只顺延，
+        算「还不到时候」，不消耗重试次数。
+        """
+        now = self.store.clock()
+        try:
+            policy = self.app.behavior_policy()
+        except Exception:
+            return None
+        target = next_allowed_at(policy, now)
+        night = None
+        try:
+            night = await self.app.night_snapshot(context)
+        except Exception:
+            night = None
+        if night is not None:
+            state = (night.display_state or night.phase).value
+            if state in ("nap", "deep_sleep"):
+                # 睡着时顺延到醒后窗口；没有窗口就按一小时后再看。
+                wake = night.wake_window_deadline or (now + 3600)
+                target = max(target or 0.0, wake)
+        if target is None or target <= now + 1:
+            return None
+        return target
+
     async def _deliver(self, row: dict) -> bool:
         promise_id = row["promise_id"]
         # 到点就是到点了：这里必须自己把消息发出去。
@@ -408,6 +436,16 @@ class PromiseService:
                 error="context_unavailable", no_penalty=True)
             logger.warning("[LE-promise] 会话不在内存 推迟承诺 %s -> %s",
                            promise_id[:8], outcome.get("status"))
+            return False
+        # 到点了，但如果此刻是免打扰、午休或深睡，就先不吵人：
+        # 顺延到下一个可发送时刻，且按「还不到时候」处理，不烧重试次数。
+        deferral = await self._send_deferral(context)
+        if deferral is not None:
+            outcome = await self.promises.defer(
+                promise_id, retry_at=deferral, error="outside_send_window",
+                no_penalty=True)
+            logger.warning("[LE-promise] 不可发送时段 顺延承诺 %s -> %s (retry_at=%s)",
+                           promise_id[:8], outcome.get("status"), int(deferral))
             return False
         # 和 future_task 写入共用锁；宿主先接管就不抢执行，LE 先运行就不再双建。
         async with self.ownership.lock:

@@ -23,7 +23,8 @@ from ..domain.dreaming import six_emotions, weather_bonus
 from ..domain.relationship import IMAGE_REFUSAL_FIELDS, relationship_stage_dto
 from ..storage.console_data import (
     apply_relationship_override, context_dto, query_console_records, query_relationships,
-    project_relationship_clues, query_scopes, selected_contexts, write_relationship_override,
+    project_relationship_clues, query_scopes, read_self_profile, selected_contexts,
+    write_profile, write_relationship_override, write_self_profile,
 )
 from ..services.experience import dream_ready, dream_view
 from .projector import account_affect, snapshot, stored_context_emotions
@@ -891,6 +892,8 @@ class Console:
                                            relationship=relation, relationship_note=boundary)
             contextual_rows = expression_items(raw_context, context, now=self.store.clock(),
                                                relationship=relation, relationship_note=boundary)
+        self_profile = await self.store._run(
+            lambda db: read_self_profile(db, context.persona_id))
         state.update({
             "context_emotions": {
                 "version": 1, "scope_kind": "account",
@@ -915,7 +918,8 @@ class Console:
             "persona": {"id": context.persona_id, "name": context.persona_id,
                         "source": "AstrBot native", "revision": context.persona_revision,
                         "description": source.persona.prompt if source else "",
-                        "description_available": bool(source and source.persona.prompt)},
+                        "description_available": bool(source and source.persona.prompt),
+                        "profile": self_profile},
             "bot_state": {"dimensions": dimensions(bot), "baseline": bot_baseline,
                           "label": ", ".join(bot.labels),
                           "emotion_analysis": emotion_analysis(bot),
@@ -1611,6 +1615,42 @@ class Console:
                 raise ApplicationError("version_conflict", "Relationship changed; refresh first") from None
             raise ApplicationError("validation_error", "Invalid relationship correction") from None
         return {"api_version": 1, "version": override["version"], "node": override["node"]}
+
+    async def console_profile(self, persona_id="", platform="", account_id="", *,
+                              interests=None, tags=None, note=None, context_id=""):
+        """用户画像：不带字段为读，带字段为写（列表全量替换）。"""
+        self._open()
+        _, contexts = await self._selection(persona_id, "global", context_id, platform)
+        context = next((c for c in contexts if c.account_id == account_id), None)
+        if context is None:
+            raise ApplicationError("validation_error", "Unknown platform account")
+        if interests is None and tags is None and note is None:
+            record = await self.store.get_state(context, "profile", context.account_id)
+            value = dict(record.value) if record else {}
+            return {"api_version": 1, "profile": {
+                "interests": list(value.get("interests") or []),
+                "tags": list(value.get("tags") or []),
+                "note": value.get("note", ""),
+                "updated_at": value.get("updated_at", 0),
+            }}
+        try:
+            value = await write_profile(self.store, context, interests=interests,
+                                        tags=tags, note=note)
+        except ValueError:
+            raise ApplicationError("validation_error", "Invalid profile") from None
+        return {"api_version": 1, "profile": value}
+
+    async def console_self_profile(self, persona_id="", *, interests=None, tags=None,
+                                   note=None):
+        """Bot 自画像：按 persona 存，不带字段为读。"""
+        self._open()
+        pid = persona_id or (await self.manual_persona())[0]
+        if interests is None and tags is None and note is None:
+            value = await self.store._run(lambda db: read_self_profile(db, pid))
+        else:
+            value = await write_self_profile(self.store, pid, interests=interests,
+                                             tags=tags, note=note)
+        return {"api_version": 1, "profile": value}
 
     async def console_energy(self, persona_id, view_scope="global", context_id="", platform="",
                              page=1, page_size=10, event_type=""):

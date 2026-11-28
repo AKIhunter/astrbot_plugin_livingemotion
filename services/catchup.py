@@ -353,7 +353,16 @@ class FullCatchupService:
         self.reply_enabled, self.max_replies = reply_enabled, min(3, max_replies)
         self._locks = WeakValueDictionary()
 
-    async def prepare(self, context, *, exclude_source_id, wake_key, revision):
+    async def prepare(self, context, *, exclude_source_id, wake_key, revision,
+                      allow_reply: bool = True):
+        """Read the lane's history; optionally send historical replies.
+
+        ``allow_reply`` is the per-call gate. Normal turns pass False so that
+        reading history never turns into an unsolicited message: only the wake
+        path may reply. Owning the send here (rather than at the call site) keeps
+        a single place that decides, but the decision must come from the caller.
+        """
+        want_reply = self.reply_enabled and allow_reply
         lock = self._locks.setdefault(context.scope_key, asyncio.Lock())
         async with lock:
             generation = await self.archive.store.get_generation(context)
@@ -419,7 +428,7 @@ class FullCatchupService:
                                                          reason="context_changed")
                             raw = await self.read_model(
                                 context, part, stable_key(chunk_id, index, revision),
-                                self.reply_enabled,
+                                want_reply,
                             )
                             readings.append(parse_reading(raw))
                         cached = {"summary": "\n".join(r["summary"] for r in readings),
@@ -429,7 +438,7 @@ class FullCatchupService:
                         await self.archive.save_chunk(context, batch, valid, cached)
                     summaries.append(cached["summary"])
                     sources = {row["source_id"]: row for row in valid}
-                    if self.reply_enabled:
+                    if want_reply:
                         for item in cached["items"]:
                             if not isinstance(item, dict):
                                 continue
@@ -479,7 +488,12 @@ class FullCatchupService:
                 pending.discard(row["seq"])
                 batch["status"] = "submitted"
                 await self.archive.save_batch(context, batch)
-            handled = [seq for seq in read_seqs if seq not in pending]
+            # 调用方明确说「这一轮不许回复」时，也不能消费消息：
+            # rows() 只返回 handled=0 的行，标成已处理就等于替主动行为做了
+            # 「这些不用回」的决定，之后再也读不到。
+            # 用户配置关掉补答（reply_enabled=False）仍沿用旧语义——读完即处理。
+            handled = ([seq for seq in read_seqs if seq not in pending]
+                       if allow_reply else [])
             batch["status"] = "limited" if pending else "done"
             await self.archive.save_batch(context, batch, handled=handled)
             return FullCatchupResult(

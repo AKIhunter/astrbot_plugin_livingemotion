@@ -357,6 +357,38 @@ export function mountRelationships(root, {
     void detail.offsetWidth;
     detail.classList.add("entering");
   }
+  // 画像区块：用户画像与自画像共用同一套渲染，空的时候说清楚而不是留白。
+  function profileBlock(profile, emptyText) {
+    const section = node("section", undefined, "profile-block");
+    section.append(node("h3", t("画像")));
+    const interests = list(profile?.interests), tags = list(profile?.tags);
+    if (interests.length) {
+      section.append(node("p", `${t("爱好")} · ${interests.join("、")}`, "profile-tags"));
+    }
+    if (tags.length) {
+      section.append(node("p", `${t("标签")} · ${tags.join("、")}`, "profile-tags"));
+    }
+    if (profile?.note) section.append(node("p", text(profile.note), "hint"));
+    if (!interests.length && !tags.length && !profile?.note) {
+      section.append(node("p", emptyText, "hint"));
+    }
+    return section;
+  }
+  // 点中心节点看 TA 自己：人格说明 + 自画像，标签与爱好同用户画像一致。
+  function showSelf() {
+    selected = null;
+    card.replaceChildren(); openDetail();
+    hint.textContent = t("TA 自己");
+    detail.dataset.anchor = "360,210";
+    card.append(node("h2", text(persona.name, t("人格"))),
+      node("p", t("TA 自己"), "hint"));
+    const dl = node("dl", undefined, "key-values");
+    dl.append(node("dt", t("人格说明")), node("dd", text(persona.description, t("未提供"))));
+    card.append(dl, profileBlock(persona.profile, t("还没有自画像记录。")),
+      button(t("收起详情"), hideDetail));
+    world.querySelectorAll("[data-node-id]").forEach(element => element.classList.remove("selected"));
+    world.querySelectorAll("[data-edge-source]").forEach(element => element.classList.remove("selected-edge"));
+  }
   function show(item) {
     selected = item;
     card.replaceChildren(); openDetail(); placeDetail(item);
@@ -371,6 +403,8 @@ export function mountRelationships(root, {
       [t("来源完整性"), text(item.source_completeness, t("未提供"))], [t("版本"), text(item.version)],
     ]) dl.append(node("dt", label), node("dd", value));
     card.append(dl);
+    // 基础信息之后紧跟画像：爱好是用户最想先看到的。
+    card.append(profileBlock(item.profile, t("还没有画像记录。")));
     const sources = node("details"); sources.append(node("summary", t("真实来源会话")));
     const sourceBody = node("div", undefined, "details-content");
     for (const source of list(item.sources)) sourceBody.append(node("p",
@@ -567,6 +601,14 @@ export function mountRelationships(root, {
     });
     centerGroup.addEventListener("pointerleave", () => {
       clearTimeout(hoverTimer); centerGroup.classList.remove("reveal");
+    });
+    // 点自己看自画像：中心节点也是可点的，别让它只当装饰。
+    centerGroup.style.cursor = "pointer";
+    centerGroup.setAttribute("role", "button");
+    centerGroup.setAttribute("tabindex", "0");
+    centerGroup.addEventListener("click", () => { if (!disposed) showSelf(); });
+    centerGroup.addEventListener("keydown", event => {
+      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); showSelf(); }
     });
     world.append(centerGroup);
     // 可信人物连线形成分团；Bot 中心吸引、排斥与碰撞同时作用于三个轴。

@@ -7,7 +7,7 @@ import pytest
 
 from astrbot_plugin_livingemotion.adapters.behavior_sender import AstrBotBehaviorSender
 from astrbot_plugin_livingemotion.contracts import Context, stable_key
-from astrbot_plugin_livingemotion.services.behavior import SendRequest
+from astrbot_plugin_livingemotion.services.behavior import SendRequest, mention_target
 
 
 def modules(monkeypatch):
@@ -68,7 +68,7 @@ async def test_native_receipt_once(monkeypatch, group, response, status):
         raise AssertionError("native path must never dispatch a second time")
     async def authorize():
         return True
-    sender = AstrBotBehaviorSender(host, make_chain=lambda text: text,
+    sender = AstrBotBehaviorSender(host, make_chain=lambda text, at=None: text,
                                   recorded_route=recorded, current_source=current)
     receipt = await sender(SendRequest("intent", context, "合成文本", authorize))
     assert receipt.status == status and len(calls) == 1
@@ -84,3 +84,58 @@ async def test_native_receipt_once(monkeypatch, group, response, status):
     event.unified_msg_origin = "adapter:FriendMessage:999"
     assert (await sender(SendRequest("wrong-route", context, "test", authorize))).status == "rejected"
     assert calls == []
+
+
+def test_mention_target_only_for_group():
+    """群聊取最后发言者，私聊留空——私聊 @ 没有意义。"""
+    group = Context("bot", "persona", "adapter", "qq", "group", "333", "222")
+    private = Context("bot", "persona", "adapter", "qq", "private", "222", "222")
+    assert mention_target(group) == "222"
+    assert mention_target(private) == ""
+
+
+@pytest.mark.asyncio
+async def test_group_proactive_puts_at_on_first_bubble_only(monkeypatch):
+    """群聊主动消息必须 @ 接收对象，且只 @ 第一条气泡。
+
+    多段话连 @ 同一个人会被当成刷屏；一条都不 @ 则是无指向的话。
+    """
+    Event = modules(monkeypatch)
+    event = Event()
+    event.platform_meta = SimpleNamespace(id="adapter", name="aiocqhttp")
+    event.get_group_id = lambda: "333"
+    event.get_sender_id = lambda: "222"
+    event.get_self_id = lambda: "111"
+    route = "adapter:GroupMessage:333"
+    event.unified_msg_origin = route
+    context = Context(stable_key("local", "adapter", "aiocqhttp", "qq", "111"),
+                      "persona", "adapter", "qq", "group", "333", "222", route=route)
+    calls = []
+
+    async def transport(**params):
+        calls.append(params)
+        return {"message_id": len(calls)}
+
+    event.bot = SimpleNamespace(send_private_msg=transport, send_group_msg=transport)
+    source = SimpleNamespace(context=context, event=lambda: event)
+
+    async def current(_):
+        return source
+
+    async def recorded(_):
+        return route
+
+    async def host(*_):
+        raise AssertionError("native path must never dispatch a second time")
+
+    async def authorize():
+        return True
+
+    sender = AstrBotBehaviorSender(host, make_chain=lambda text, at=None: text,
+                                  recorded_route=recorded, current_source=current)
+    receipt = await sender(SendRequest("intent", context, "第一句\n第二句", authorize, at="222"))
+    assert receipt.status == "confirmed" and len(calls) == 2
+    first, second = calls[0]["message"], calls[1]["message"]
+    assert first[0] == {"type": "at", "data": {"qq": "222"}}
+    assert {"type": "text", "data": {"text": "第一句"}} in first
+    assert all(item["type"] != "at" for item in second)

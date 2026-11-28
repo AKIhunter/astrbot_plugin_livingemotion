@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
 from typing import Any, Protocol
 from weakref import WeakValueDictionary
@@ -154,6 +154,19 @@ class SendRequest:
     # 承诺这类“必须送达”的消息不走原生句柄：反向 WS 适配器上
     # send_private_msg 会回 ok 但消息实际没到，宿主通道才是可靠的。
     host_only: bool = False
+    # 群聊主动消息必须 @ 一个具体的人，否则是一条没有指向的话。
+    # 私聊留空：那里 @ 没有意义，也会被适配器忽略。
+    at: str = ""
+
+
+def mention_target(context: Context) -> str:
+    """群聊主动消息必须 @ 一个具体的人，否则是一条没有指向的话。
+
+    取该会话最后发言者（``Context.account_id``）。私聊返回空串：那里 @
+    没有意义，适配器也会忽略。
+    """
+    target = str(getattr(context, "account_id", "") or "")
+    return target if context.scene_kind == SceneKind.GROUP else ""
 
 
 @dataclass(frozen=True)
@@ -223,6 +236,27 @@ _MANUAL_SOFT_REASONS = frozenset({
 def _inside(minute: int, window: tuple[int, int]) -> bool:
     start, end = window
     return start <= minute < end if start < end else minute >= start or minute < end
+
+
+def next_allowed_at(policy: BehaviorPolicy, now: float) -> float | None:
+    """从 now 起最近的可发送时刻；现在就在窗口内则返回 None。
+
+    只按「可发送时段 + 免打扰」算，睡眠状态要问 night 由调用方叠加。
+    没有有效时区时不猜：返回 None，调用方按原时刻处理。
+    """
+    if not policy.timezone:
+        return None
+    zone = ZoneInfo(policy.timezone)
+    local = datetime.fromtimestamp(now, zone)
+    for step in range(0, 24 * 60 + 1):
+        candidate = local + timedelta(minutes=step)
+        minute = candidate.hour * 60 + candidate.minute
+        if _inside(minute, policy.dnd):
+            continue
+        if not any(_inside(minute, window) for window in policy.active_hours):
+            continue
+        return None if step == 0 else candidate.timestamp()
+    return None
 
 
 def behavior_score(snapshot: BehaviorSnapshot) -> float:
@@ -776,7 +810,8 @@ class BehaviorService:
             attempt.stage = "send"
             attempt.sender_calls += 1
             receipt = await asyncio.wait_for(
-                self.sender(SendRequest(intent_id, context, text.strip(), authorize)),
+                self.sender(SendRequest(intent_id, context, text.strip(), authorize,
+                                        at=mention_target(context))),
                 timeout=self.policy().send_timeout_seconds,
             )
             status, reason = self._receipt_status(attempt, receipt)

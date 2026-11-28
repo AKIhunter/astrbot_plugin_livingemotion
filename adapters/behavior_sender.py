@@ -119,14 +119,19 @@ class AstrBotBehaviorSender:
         parts = self._bubbles(request.text)
         if not parts:
             return SendReceipt(request.intent_id, route, "rejected")
+        # 群聊主动消息要 @ 一个具体的人；私聊的 at 为空。
+        at = str(getattr(request, "at", "") or "")
         if native:
             method, parameters = native
             confirmed, receipt_id = 0, None
             status = "confirmed"
             for index, part in enumerate(parts):
+                payload = [{"type": "text", "data": {"text": part}}]
+                # 只 @ 第一条：多气泡连 @ 同一个人会被当成刷屏。
+                if at and index == 0:
+                    payload.insert(0, {"type": "at", "data": {"qq": at}})
                 try:
-                    response = await method(
-                        **parameters, message=[{"type": "text", "data": {"text": part}}])
+                    response = await method(**parameters, message=payload)
                 except Exception:
                     # Submission may have happened. Do not dispatch again via the host.
                     status = "unknown"
@@ -148,7 +153,16 @@ class AstrBotBehaviorSender:
         # 承诺这类直发会因此把同一句说两遍。
         confirmed, result = 0, True
         for index, part in enumerate(parts):
-            result = await self.send_message(route, self.make_chain(part))
+            built = self.make_chain(part)
+            # 宿主通道靠消息链里的 At 组件；只有第一段带，避免连 @。
+            # 组件不可用（离线桩、旧链路）时退化为纯文本：少一个 @ 好过发不出去。
+            if at and index == 0:
+                try:
+                    from astrbot.api.message_components import At
+                    built.chain.insert(0, At(qq=at))
+                except Exception:
+                    pass
+            result = await self.send_message(route, built)
             if result is False:
                 break
             confirmed += 1

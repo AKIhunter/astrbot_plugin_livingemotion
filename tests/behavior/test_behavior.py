@@ -3,6 +3,7 @@
 import asyncio
 from dataclasses import replace
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 import random
 import sys
@@ -20,7 +21,7 @@ from astrbot_plugin_livingemotion.contracts import (
 from astrbot_plugin_livingemotion.ports.memory import Material, RecallResult, ValidationResult
 from astrbot_plugin_livingemotion.services.behavior import (
     BehaviorHistory, BehaviorPolicy, BehaviorService, BehaviorSnapshot,
-    SendReceipt, SendRequest,
+    SendReceipt, SendRequest, next_allowed_at,
 )
 from astrbot_plugin_livingemotion.storage import SQLiteStore
 
@@ -1027,7 +1028,7 @@ class HostSenderTests(unittest.IsolatedAsyncioTestCase):
                 return context.route
             async def authorize():
                 return True
-            sender = AstrBotBehaviorSender(send, make_chain=lambda text: [text],
+            sender = AstrBotBehaviorSender(send, make_chain=lambda text, at=None: [text],
                                            recorded_route=recorded)
             result = await sender(SendRequest("i", context, "Synthetic", authorize))
             self.assertEqual(result.status, "rejected" if raw is False else "unknown")
@@ -1039,7 +1040,7 @@ class HostSenderTests(unittest.IsolatedAsyncioTestCase):
             self.fail("unrecorded route sent")
         async def recorded(context):
             return None
-        sender = AstrBotBehaviorSender(forbidden, make_chain=lambda text: text,
+        sender = AstrBotBehaviorSender(forbidden, make_chain=lambda text, at=None: text,
                                        recorded_route=recorded)
         result = await sender(SendRequest("i", context, "Synthetic", forbidden))
         self.assertEqual(result.status, "rejected")
@@ -1047,3 +1048,35 @@ class HostSenderTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_next_allowed_at_defers_past_do_not_disturb():
+    """凌晨落在免打扰里：顺延到免打扰结束那一刻，而不是照发。"""
+    policy = BehaviorPolicy(timezone="Asia/Shanghai", dnd=(60, 480))
+    now = datetime(2026, 11, 29, 3, 0, tzinfo=ZoneInfo("Asia/Shanghai")).timestamp()
+    target = next_allowed_at(policy, now)
+    assert target is not None
+    local = datetime.fromtimestamp(target, ZoneInfo("Asia/Shanghai"))
+    assert (local.hour, local.minute) == (8, 0)
+
+
+def test_next_allowed_at_handles_window_across_midnight():
+    """跨午夜的免打扰（23:00-08:00）也要算对。"""
+    policy = BehaviorPolicy(timezone="Asia/Shanghai", dnd=(1380, 480))
+    now = datetime(2026, 11, 29, 23, 30, tzinfo=ZoneInfo("Asia/Shanghai")).timestamp()
+    target = next_allowed_at(policy, now)
+    assert target is not None
+    local = datetime.fromtimestamp(target, ZoneInfo("Asia/Shanghai"))
+    assert (local.day, local.hour, local.minute) == (30, 8, 0)
+
+
+def test_next_allowed_at_returns_none_inside_window():
+    """本来就能发的时候不制造延后。"""
+    policy = BehaviorPolicy(timezone="Asia/Shanghai", dnd=(60, 480))
+    now = datetime(2026, 11, 29, 15, 0, tzinfo=ZoneInfo("Asia/Shanghai")).timestamp()
+    assert next_allowed_at(policy, now) is None
+
+
+def test_next_allowed_at_without_timezone_does_not_guess():
+    """没有时区就不猜，交给调用方按原时刻处理。"""
+    assert next_allowed_at(BehaviorPolicy(timezone=None), 0.0) is None

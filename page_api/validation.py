@@ -38,6 +38,9 @@ BODY_FIELDS = {
                          "entry_id", "pinned", "expected_pinned", "promise_id"}),
     "relationship": frozenset({"persona_id", "platform", "account_id", "context_id",
                                "score", "frozen", "note", "expected_version", "reason"}),
+    "profile": frozenset({"persona_id", "platform", "account_id", "context_id",
+                          "interests", "tags", "note"}),
+    "self-profile": frozenset({"persona_id", "interests", "tags", "note"}),
     "memory-sync": frozenset({"context_id"}),
     "behavior-simulate": frozenset({"context_id", "persona_id", "emotion", "request_id"}),
     "emotion-image-save": frozenset({"mood", "data_url", "index", "remove"}),
@@ -221,6 +224,32 @@ async def body_parameters(operation: str, request) -> dict:
         invalid()
     if not isinstance(values, dict) or values.keys() - BODY_FIELDS[operation]:
         invalid()
+    if operation in ("profile", "self-profile"):
+        def clean_items(name):
+            raw_items = values.get(name)
+            if raw_items is None:
+                return None
+            if not isinstance(raw_items, list) or len(raw_items) > 12:
+                invalid()
+            cleaned = []
+            for entry in raw_items:
+                if not isinstance(entry, str) or "\x00" in entry or len(entry) > 24:
+                    invalid()
+                if entry.strip():
+                    cleaned.append(entry.strip())
+            return cleaned
+
+        note = values.get("note")
+        parsed = {
+            "interests": clean_items("interests"), "tags": clean_items("tags"),
+            "note": None if note is None else text(note, 500, required=False),
+            "persona_id": text(values.get("persona_id") or "", 512, required=False),
+        }
+        if operation == "profile":
+            parsed["platform"] = text(values.get("platform") or "", 64, required=False)
+            parsed["account_id"] = text(values.get("account_id") or "", 128, required=False)
+            parsed["context_id"] = text(values.get("context_id") or "", 512, required=False)
+        return parsed
     if operation == "style-summary-save":
         body = values.get("text")
         if not isinstance(body, str) or len(body) > 2000 or "\x00" in body:

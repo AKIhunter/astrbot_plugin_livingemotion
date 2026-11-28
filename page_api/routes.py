@@ -13,6 +13,7 @@ ROUTES = (
     ("state", "GET"), ("records", "GET"), ("config", "POST"), ("configuration", "GET"),
     ("preview", "POST"), ("action", "POST"),
     ("scopes", "GET"), ("relationships", "GET"), ("relationship", "POST"),
+    ("profile", "POST"), ("self-profile", "POST"),
     ("energy", "GET"), ("settings-options", "GET"), ("persona-description", "GET"),
     ("style-summary", "GET"), ("style-summary-save", "POST"),
     ("style-summary-draft", "POST"),
@@ -68,6 +69,12 @@ class PageAPI:
 
     async def relationship(self):
         return await self._dispatch("relationship")
+
+    async def profile(self):
+        return await self._dispatch("profile")
+
+    async def self_profile(self):
+        return await self._dispatch("self-profile")
 
     async def energy(self):
         return await self._dispatch("energy")

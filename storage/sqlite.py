@@ -42,7 +42,7 @@ from .night import NightStore
 from .experiences import ExperienceStore
 
 T = TypeVar("T")
-STATE_KINDS = frozenset(("bot", "observation", "relationship", "night"))
+STATE_KINDS = frozenset(("bot", "observation", "relationship", "night", "profile"))
 _JSON_SCALARS = frozenset((str, int, float, bool, type(None)))
 _OBJECT_FIELDS = ("context_emotions", "context_emotions_persona", "context_emotions_epoch")
 UNVERIFIED_EXPERIENCE = """EXISTS (
@@ -462,7 +462,7 @@ class SQLiteStore(ContextEmotionStore, StateScopeStore, NightStore, ExperienceSt
                         record_key: str = "") -> StateRecord | None:
         if kind not in STATE_KINDS:
             raise ValueError("invalid state kind")
-        if kind in ("observation", "relationship") and (
+        if kind in ("observation", "relationship", "profile") and (
             not context.account_id or record_key != context.account_id
         ):
             raise ValueError("account-scoped state requires source account record_key")
