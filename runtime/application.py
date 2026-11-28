@@ -1451,6 +1451,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
             override = await read_relationship_override(self.store, context)
             expression["relationship"] = relationship_behavior(
                 relationship.score, self.config, note=(override or {}).get("note", ""))
+            context_note = ""
             if self.config.context_emotions_enabled:
                 contextual = expression_items(stored_context_emotions(
                     await self.store.context_emotion_record(context), context,
@@ -1460,8 +1461,14 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                     context, now=self.store.clock(), relationship=relationship,
                     relationship_note="\n".join((
                         (override or {}).get("note", ""), expression["relationship"]["description"])))
-                if contextual:
-                    expression["bot"]["context_emotions"] = contextual
+                # 空数组同样是实测结果：委屈/受伤/害羞此刻都不可表现。必须显式注入，
+                # 否则模型看不到「当前没有害羞」，被夸就顺口自称害羞，面板一直是 0
+                # （2026-11-28 线上实测）。约束文本跟数据同块，模型才不会当它是人格发挥。
+                expression["bot"]["context_emotions"] = contextual or []
+                context_note = (
+                    "情绪按状态里的实测值自然反应：不要在回复里直接写出情绪词"
+                    "（害羞、委屈、受伤、开心、难过、生气、害怕、惊讶、喜欢），"
+                    "用语气、动作和细节表现；状态里没有的情绪不要演。\n")
             night = await self.night_snapshot(context)
             expression["night"] = {"phase": night.phase.value, "energy": night.energy}
             expression["night"]["display_state"] = (
@@ -1477,7 +1484,7 @@ class Application(Console, NightRuntime, Generation, Materials, Refinement, Proa
                 return
             # 本轮状态只供模型读取，不随历史累积；首块位置仍兼容现有消费者。
             request.extra_user_content_parts.append(self.bridge.text_part(
-                SUFFIX + "\n" + STATE_HEADER
+                SUFFIX + "\n" + STATE_HEADER + context_note
                 + prompt_json(prompt_state(expression))
             ).mark_as_temp())
             request.extra_user_content_parts.append(self.bridge.text_part(

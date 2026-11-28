@@ -681,3 +681,69 @@ async def test_dimension_config_surfaces_and_invalid_save(tmp_path):
             Config(context_emotions_dimension="account")
     finally:
         await app.terminate()
+
+
+@pytest.mark.asyncio
+async def test_empty_context_emotions_injects_measured_zero_and_claim_guard(tmp_path):
+    """没有可表现的对象情绪时也要注入空实测值与禁止自称。
+
+    2026-11-28 线上实测：用户只说「好看」，模型仍回「我都害羞了」，
+    面板却一直是 0。根因是状态为空时整块 context_emotions 不注入，
+    模型看不到「当前没有害羞」。空数组同样是实测结果，必须一起给出。
+    """
+    app, host, _, clock = await local_app(tmp_path)
+    try:
+        message, _, _ = await ingest(app, "plain-praise", "好看")
+        request = SimpleNamespace(extra_user_content_parts=[])
+        await app.on_llm_request(message, request)
+        parts = [p.text for p in request.extra_user_content_parts if p.text.startswith(SUFFIX)]
+        assert len(parts) == 1
+        parsed = json.loads(parts[0].split("\n")[-1])
+        assert parsed["bot"]["context_emotions"] == []
+        assert "不要在回复里直接写出情绪词" in parts[0]
+        assert "状态里没有的情绪不要演" in parts[0]
+        assert host.sends == 0
+    finally:
+        await app.terminate()
+
+
+@pytest.mark.asyncio
+async def test_context_emotions_disabled_has_no_zero_claim_guard(tmp_path):
+    """关闭对象情绪时不注入字段，也不该出现这句约束。"""
+    app, host, _, clock = await local_app(tmp_path, context_emotions_enabled=False)
+    try:
+        message, _, _ = await ingest(app, "plain-off", "好看")
+        request = SimpleNamespace(extra_user_content_parts=[])
+        await app.on_llm_request(message, request)
+        parts = [p.text for p in request.extra_user_content_parts if p.text.startswith(SUFFIX)]
+        assert len(parts) == 1
+        parsed = json.loads(parts[0].split("\n")[-1])
+        assert "context_emotions" not in parsed.get("bot", {})
+        assert "不要在回复里直接写出情绪词" not in parts[0]
+        assert host.sends == 0
+    finally:
+        await app.terminate()
+
+@pytest.mark.asyncio
+async def test_intimate_praise_raises_shyness_without_saying_the_word(tmp_path):
+    """明确亲密举动（亲亲你）要真的产生害羞状态，但提示词要求不直接写出情绪词。"""
+    app, host, _, clock = await local_app(tmp_path)
+    try:
+        _, context, _ = await ingest(app, "start-warm", "你好")
+        await write_relationship_override(app.store, context, expected_version=0,
+            actor_id="test", reason="offline", score=50)
+        clock[0] += 1
+        message, context, record = await ingest(app, "praise", "亲亲你")
+        rows = feelings(app, record, context)
+        assert [row["kind"] for row in rows] == ["shyness"]
+        assert rows[0]["intensity"] > 0
+        request = SimpleNamespace(extra_user_content_parts=[])
+        await app.on_llm_request(message, request)
+        parts = [p.text for p in request.extra_user_content_parts if p.text.startswith(SUFFIX)]
+        assert len(parts) == 1
+        parsed = json.loads(parts[0].split("\n")[-1])
+        assert [item["kind"] for item in parsed["bot"]["context_emotions"]] == ["shyness"]
+        assert "不要在回复里直接写出情绪词" in parts[0]
+        assert host.sends == 0
+    finally:
+        await app.terminate()

@@ -57,8 +57,13 @@ _UNFAIR = re.compile(r"你.{0,4}(?:没做错|没有错|没错|是无辜的).{0,1
                      r"(?:就是要|偏要|仍然要|还是要|就要|却要|要)?(?:怪你|责怪你|冤枉你)")
 # Bare compliments can be dialogue practice or teasing; only direct affection
 # has enough evidence to move shyness without looking at the surrounding turn.
-_WARM = re.compile(r"我(?:真的|真心|很|好|特别)?喜欢(?:你(?=$|[啊呀呢啦哦喔，,、 ]|这个人)"
-                   r"|(?:跟|和)你(?:待|呆)在一起)")
+# 明确的亲密举动（亲亲/抱抱/贴贴等）算温柔亲密关注，可由规则直接判定；
+# 容貌夸奖与注视要看上下文（可能是练习台词或玩笑），交给语义精炼层判断。
+_WARM = re.compile(
+    r"我(?:真的|真心|很|好|特别)?喜欢(?:你(?=$|[啊呀呢啦哦喔，,、 ]|这个人)"
+    r"|(?:跟|和)你(?:待|呆)在一起)"
+    r"|(?:亲亲|抱抱|抱一下|贴贴|蹭蹭|摸摸头|揉揉头)你")
+_WARM_TECH = re.compile(r"代码|方案|文档|逻辑|思路|分析|回答|文章|设计|功能|接口|实现|配置|报告")
 _WARM_DENIAL = re.compile(r"你.{0,3}(?:不|没|并非).{0,3}(?:可爱|迷人)|我.{0,3}不喜欢你|不.{0,3}看着你")
 _HELP_ACK = re.compile(r"^(?:我(?:真的)?)?(?:谢谢你|感谢你|多谢你)(?:刚才|之前|上次|昨天|这次)?"
                        r"帮(?:了|过)?我([^，,、：:]{0,80})(?=[，,、：:]|$)")
@@ -433,6 +438,7 @@ def local_appraisals(event, relationship, state, *, relationship_note="", bounda
         result.append(ContextAppraisal("hurt", "direct_devaluation", harm))
     warm = _matching(event.body, _WARM)
     if (warm and relationship.score >= 250 and not _WARM_DENIAL.search(warm)
+            and not _WARM_TECH.search(warm)
             and not state.get("boundary") and not boundary
             and not _BOUNDARY.search(relationship_note)):
         result.append(ContextAppraisal("shyness", "warm_attention", warm))

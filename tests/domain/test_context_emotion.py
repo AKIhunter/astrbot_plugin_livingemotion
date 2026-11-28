@@ -47,6 +47,9 @@ def transition(event, body, state=None, *, offset=0, score=500, **kwargs):
     (DENIAL + "。你就是个废物", "hurt"),
     ("虽然你没做错，但我就是要怪你", "wronged"),
     (WARM, "shyness"),
+    # 明确亲密举动由规则直接判定；容貌夸奖与注视交给语义层（看上下文）。
+    ("亲亲你", "shyness"),
+    ("贴贴你", "shyness"),
 ])
 def test_explicit_current_evidence(le_event, body, kind):
     result, _ = transition(le_event, body)
@@ -58,8 +61,9 @@ def test_explicit_current_evidence(le_event, body, kind):
 
 @pytest.mark.parametrize("body", [
     '他说“我喜欢你”', '请翻译“你就是废物”', "他说我喜欢你",
-    "你不是废物", "我不是说你没用", "你好可爱", "我不喜欢你", "我喜欢你写的代码",
-    "代码写得好", "你的计算错了，因为原文是12", "如何实现害羞情绪",
+    "你不是废物", "我不是说你没用", "我不喜欢你", "我喜欢你写的代码",
+    "你好可爱", "我盯着你看",
+    "你写的代码真漂亮", "代码写得好", "你的计算错了，因为原文是12", "如何实现害羞情绪",
     "我害羞了", "我被老板骂了，好委屈", "比如你从来没帮过我", "你从来没帮过我", DENIAL,
     "你说他是废物", "你觉得我是废物",
     "你觉得我好可爱", "你说她很可爱",
