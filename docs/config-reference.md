@@ -4,6 +4,8 @@
 维护者修改配置、范围或帮助文案时同步生成本表，每次提交运行 `python scripts/check_docs.py`。
 全部功能开关和参数均逐项列出；使用操作见[使用手册](user-guide.md)，原理见[技术说明](technical-guide.md)。
 
+功能归属、依赖与插件重叠见[功能边界](feature-boundaries.md)；本表只列字段、默认值和保存范围。
+
 ## 保存与生效
 
 在插件页面 `livingemotion → 设置` 修改，统一保存。原生 AstrBot 配置页可编辑同一份配置。

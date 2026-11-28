@@ -80,6 +80,7 @@
 | 底气怎样影响情绪、聊天与历史 | [掌控感说明](docs/control-integration.md) |
 | 导出近 3 天的脱敏诊断包、确认文件内容和证据范围 | [诊断日志](docs/diagnostics.md) |
 | 常见问题、保存冲突、不生成、不发送 | [排障手册](docs/troubleshooting.md) |
+| 功能边界、依赖与插件重叠 | [边界与重叠](docs/feature-boundaries.md) |
 | 全部专题文档与开发接口 | [文档索引](docs/README.md) |
 
 ## ❓ 常见问题
@@ -125,6 +126,7 @@
 - 数据：诊断包对正文剔除、凭据脱敏、账号一致别名化。
 
 平台声明表示基础接入能力。OneBot已有隔离宿主验收；真实平台送达与其他适配器的完整能力须分别验证，详见[兼容说明](docs/compatibility.md)。
+装多个主动发送、记忆或情绪插件前，先看[功能边界与插件重叠](docs/feature-boundaries.md)。
 
 ## ⌨️ 使用指令
 

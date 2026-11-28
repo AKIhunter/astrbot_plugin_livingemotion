@@ -18,6 +18,7 @@
 | 图片映射与有限调整 | [映射](image-prompt-retry.md) | LH公开能力、LE修复模型与持久状态 |
 | 精力、睡眠与票据 | [睡眠规则](sleep-energy-rules.md) | domain/night、runtime/night、storage/night |
 | 模型、素材和体验 | [日记梦境](experience.md)、[记忆](memory.md) | 实际生成与来源许可 |
+| 功能归属、依赖与插件重叠 | [功能边界](feature-boundaries.md) | 各开关职责、主动/记忆/情绪插件取舍 |
 | 开发测试与显式宿主分层 | [交付分层](delivery-notes.md)、[独立运行](local-runtime.md) | pytest、宿主、浏览器与双插件入口 |
 | 承诺重试、等待期限与取消 | [重试与收尾](promise-retry.md) | 配置预算、旧任务迁移和未知结果保护 |
 | 早安避重与其他时段随机主动 | [定时问候让行](native-proactive-yield.md) | 宿主目标、UTC时间与±15分钟窗口 |
