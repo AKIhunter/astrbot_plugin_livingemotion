@@ -28,17 +28,34 @@ def _profile_items(items, limit=12):
     return [str(item).strip()[:24] for item in (items or []) if str(item).strip()][:limit]
 
 
-async def write_profile(store, context, *, interests=None, tags=None, note=None):
-    """用户画像：兴趣与标签全量替换，note 覆盖。返回写入后的值。
+def _merge_items(old, new, limit=12):
+    merged = []
+    for item in list(old or []) + list(new or []):
+        text = str(item).strip()[:24]
+        if text and text not in merged:
+            merged.append(text)
+    return merged[:limit]
+
+
+async def write_profile(store, context, *, interests=None, tags=None, note=None,
+                        merge=False):
+    """用户画像：兴趣与标签全量替换（merge=True 时只追加），note 覆盖。
 
     画像由 LivingEmotion 自己维护（监听消息沉淀 + 面板补编），不放 LivingMemory。
+    自动沉淀走 merge=True：模型提炼的东西只增不删，手动写过的条目不会被冲掉。
     """
     current = await store.get_state(context, "profile", context.account_id)
     old = dict(current.value) if current else {}
+    if merge:
+        value_interests = _merge_items(old.get("interests"), interests)
+        value_tags = _merge_items(old.get("tags"), tags)
+    else:
+        value_interests = _profile_items(
+            interests if interests is not None else old.get("interests"))
+        value_tags = _profile_items(tags if tags is not None else old.get("tags"))
     value = {
-        "interests": _profile_items(
-            interests if interests is not None else old.get("interests")),
-        "tags": _profile_items(tags if tags is not None else old.get("tags")),
+        "interests": value_interests,
+        "tags": value_tags,
         "note": str(note if note is not None else old.get("note") or "")[:500],
         "updated_at": store.clock(),
     }

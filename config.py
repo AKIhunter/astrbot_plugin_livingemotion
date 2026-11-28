@@ -149,6 +149,7 @@ class Config:
     # version-two sleep rules use the fixed strict >20% awake threshold.
     catchup_enabled: bool = True
     catchup_reply_enabled: bool = True
+    profile_autofill_enabled: bool = True
     promise_enabled: bool = True
     promise_max_active: int = 3
     promise_max_depth: int = 3

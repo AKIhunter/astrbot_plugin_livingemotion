@@ -7,7 +7,9 @@ import pytest
 
 from astrbot_plugin_livingemotion.config import Config
 from astrbot_plugin_livingemotion.contracts import ActorRole, ContentKind, Context, Event, EvidenceRef
-from astrbot_plugin_livingemotion.services.catchup import FullCatchupService, transcript_parts
+from astrbot_plugin_livingemotion.services.catchup import (
+    FullCatchupService, parse_reading, transcript_parts,
+)
 from astrbot_plugin_livingemotion.storage import SQLiteStore
 from astrbot_plugin_livingemotion.storage.catchup import CatchupArchive
 
@@ -300,3 +302,17 @@ async def test_read_only_pass_sends_nothing_and_leaves_messages_unread(tmp_path)
         assert [row["source_id"] for row in await archive.rows(CONTEXT, batch)] == ["old"]
     finally:
         await store.close()
+
+
+def test_parse_reading_keeps_profile_hints():
+    """画像线索与摘要同一次调用产出：合法就保留，脏数据丢弃。"""
+    got = parse_reading({"summary": "聊了相机", "interests": ["摄影", "", "  "],
+                         "tags": ["夜猫"], "confidence": 0.8})
+    assert got["profile"]["interests"] == ["摄影"]
+    assert got["profile"]["tags"] == ["夜猫"]
+    assert got["profile"]["confidence"] == 0.8
+
+
+def test_parse_reading_without_profile_is_empty_not_error():
+    got = parse_reading({"summary": "只有摘要"})
+    assert got["profile"] == {"interests": [], "tags": [], "confidence": 0.0}

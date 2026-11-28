@@ -374,6 +374,49 @@ export function mountRelationships(root, {
     }
     return section;
   }
+  // 画像编辑：爱好与标签按顿号/逗号/换行切，保存后原地刷新，不重建 3D 图。
+  const splitItems = value => String(value || "")
+    .split(/[、,，\n]/).map(item => item.trim()).filter(Boolean).slice(0, 12);
+  function profileInput(label, value, multiline) {
+    const input = multiline ? node("textarea") : node("input");
+    if (multiline) input.rows = 2; else input.type = "text";
+    input.value = value;
+    return { input, row: labelled(label, input) };
+  }
+  function profileEditor(item) {
+    const wrap = node("section", undefined, "profile-block");
+    wrap.append(node("h3", t("画像")));
+    const form = node("form", undefined, "profile-edit");
+    const interests = profileInput(t("爱好 · 顿号或逗号分隔"),
+      (item.profile?.interests || []).join("、"));
+    const tags = profileInput(t("标签 · 顿号或逗号分隔"), (item.profile?.tags || []).join("、"));
+    const note = profileInput(t("备注"), text(item.profile?.note, ""), true);
+    const error = node("p", undefined, "error-text");
+    error.setAttribute("role", "alert");
+    const save = node("button", t("保存画像"));
+    save.type = "submit"; save.className = "primary";
+    form.append(interests.row, tags.row, note.row, error, save);
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      save.disabled = true;
+      try {
+        const result = await api.profile({
+          persona_id: selection.persona_id, platform: item.platform,
+          account_id: item.account_id, context_id: selection.context_id || "",
+          interests: splitItems(interests.input.value),
+          tags: splitItems(tags.input.value),
+          note: note.input.value.slice(0, 500),
+        });
+        item.profile = result?.profile || item.profile;
+        show(item);
+      } catch (exc) {
+        error.textContent = String(exc?.message || exc);
+        save.disabled = false;
+      }
+    });
+    wrap.append(form);
+    return wrap;
+  }
   // 点中心节点看 TA 自己：人格说明 + 自画像，标签与爱好同用户画像一致。
   function showSelf() {
     selected = null;
@@ -403,8 +446,9 @@ export function mountRelationships(root, {
       [t("来源完整性"), text(item.source_completeness, t("未提供"))], [t("版本"), text(item.version)],
     ]) dl.append(node("dt", label), node("dd", value));
     card.append(dl);
-    // 基础信息之后紧跟画像：爱好是用户最想先看到的。
-    card.append(profileBlock(item.profile, t("还没有画像记录。")));
+    // 基础信息之后紧跟画像：打开编辑时直接给输入框，否则只读展示。
+    card.append(editEnabled ? profileEditor(item)
+      : profileBlock(item.profile, t("还没有画像记录。")));
     const sources = node("details"); sources.append(node("summary", t("真实来源会话")));
     const sourceBody = node("div", undefined, "details-content");
     for (const source of list(item.sources)) sourceBody.append(node("p",

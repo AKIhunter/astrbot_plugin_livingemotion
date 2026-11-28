@@ -262,6 +262,8 @@ class FullCatchupResult:
     has_more: bool = False
     blocked: bool = False
     reason: str = ""
+    # 本次阅读顺带提炼的画像线索；没有就是空，不额外调用模型。
+    profile: dict | None = None
 
 
 def split_full_chunks(rows, *, size=45, hard_cap=80, window_seconds=3600):
@@ -333,14 +335,47 @@ def parse_reading(value):
         raise ValueError("catchup_reading_failed")
     if not data["summary"].strip():
         raise ValueError("catchup_reading_empty")
+    # 画像线索随这次阅读一起产出，不额外加一次模型调用。模型给不准就当没有。
+    def items_of(name, limit):
+        raw = data.get(name)
+        if not isinstance(raw, list):
+            return []
+        return [str(entry).strip()[:12] for entry in raw if str(entry).strip()][:limit]
+
+    confidence = data.get("confidence")
     return {"summary": data["summary"][:2000],
-            "items": data.get("items", []) if isinstance(data.get("items", []), list) else []}
+            "items": data.get("items", []) if isinstance(data.get("items", []), list) else [],
+            "profile": {
+                "interests": items_of("interests", 6),
+                "tags": items_of("tags", 4),
+                "confidence": (float(confidence)
+                               if isinstance(confidence, (int, float))
+                               and not isinstance(confidence, bool) else 0.0),
+            }}
+
+
+def _merge_profile(readings):
+    """合并多次阅读的画像线索：并集去重、置信度取最大、条目封顶。
+
+    宁可少写也不写脏：模型给不准的时候 confidence 低，调用方据此丢弃。
+    """
+    merged = {"interests": [], "tags": [], "confidence": 0.0}
+    for item in readings:
+        if not isinstance(item, dict):
+            continue
+        for key, limit in (("interests", 8), ("tags", 6)):
+            for value in item.get(key) or ():
+                text = str(value).strip()[:12]
+                if text and text not in merged[key] and len(merged[key]) < limit:
+                    merged[key].append(text)
+        confidence = item.get("confidence")
+        if isinstance(confidence, (int, float)) and not isinstance(confidence, bool):
+            merged["confidence"] = max(merged["confidence"], float(confidence))
+    return merged
 
 
 class FullCatchupService:
-    """Persistent full reading and optional historical replies on one source lane.
-
-    Summary I/O is injected and shares the application's generation budget. The
+    """Persistent full reading and optional historical replies on one source lane.    Summary I/O is injected and shares the application's generation budget. The
     sender is the same guarded behavior executor; an unknown result blocks replay.
     """
 
@@ -381,6 +416,7 @@ class FullCatchupService:
             if batch["revision"] != revision:
                 batch["revision"] = revision
             summaries, read_seqs, candidates = [], [], {}
+            profile_hints = {"interests": [], "tags": [], "confidence": 0.0}
             after = 0
             while True:
                 if not await self.guard(context, generation, revision):
@@ -432,11 +468,14 @@ class FullCatchupService:
                             )
                             readings.append(parse_reading(raw))
                         cached = {"summary": "\n".join(r["summary"] for r in readings),
-                                  "items": [item for r in readings for item in r["items"]]}
+                                  "items": [item for r in readings for item in r["items"]],
+                                  "profile": _merge_profile(
+                                      [r.get("profile") for r in readings])}
                         if not await self.guard(context, generation, revision):
                             return FullCatchupResult(has_more=True, reason="context_changed")
                         await self.archive.save_chunk(context, batch, valid, cached)
                     summaries.append(cached["summary"])
+                    profile_hints = _merge_profile([profile_hints, cached.get("profile")])
                     sources = {row["source_id"]: row for row in valid}
                     if want_reply:
                         for item in cached["items"]:
@@ -499,4 +538,5 @@ class FullCatchupService:
             return FullCatchupResult(
                 tuple(summaries[-8:]), len(handled), has_more=bool(pending),
                 reason="historical_reply_limit" if pending else "full_reading_complete",
+                profile=profile_hints,
             )

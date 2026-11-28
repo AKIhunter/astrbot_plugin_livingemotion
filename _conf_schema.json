@@ -303,6 +303,11 @@
     "default": true,
     "description": "允许醒后有限历史补答，需阅读、模型与预算。例：和醒后阅读同时开启。"
   },
+  "profile_autofill_enabled": {
+    "type": "bool",
+    "default": true,
+    "description": "醒后读历史时顺带提炼对方稳定的兴趣写进画像。只追加不删除，证据不足不写；关掉后画像只能手动补编。"
+  },
   "promise_enabled": {
     "type": "bool",
     "default": true,

@@ -57,3 +57,14 @@ async def test_profile_stale_version_is_rejected(le_store, le_event):
     assert not stale.accepted
     fresh = await le_store.get_state(context, "profile", context.account_id)
     assert fresh.value["interests"] == ["a"]
+
+
+@pytest.mark.asyncio
+async def test_profile_merge_only_appends(le_store, le_event):
+    """自动沉淀只能追加：手动写过的条目不能被模型提炼冲掉。"""
+    context = le_event.context
+    await write_profile(le_store, context, interests=["摄影"], tags=["老友"])
+    value = await write_profile(le_store, context, interests=["摄影", "爬山"],
+                                tags=["夜猫"], merge=True)
+    assert value["interests"] == ["摄影", "爬山"]
+    assert value["tags"] == ["老友", "夜猫"]
