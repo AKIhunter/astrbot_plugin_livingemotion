@@ -136,7 +136,7 @@ Platform declarations cover basic message intake. QQ OneBot has isolated-host ac
 
 ## 📜 Changelog
 
-Current version: `v0.12.2` (2026-11-28)
+Current version: `v0.12.3` (2026-11-28)
 
 - When debounce or LH stops a request before generation, LE no longer reserves a reply ID. If the message comes back, it can be evaluated again. See [diagnostics](docs/diagnostics.md).
 
